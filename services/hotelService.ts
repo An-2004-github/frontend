@@ -1,23 +1,28 @@
-import api from "@/lib/axios"
-import { Hotel } from "@/types/hotel"
+import axiosInstance from "@/lib/axios";
+import { Hotel } from "@/types/hotel";
 
 export const hotelService = {
-
-    async searchHotels(destination?: string): Promise<Hotel[]> {
-
-        const res = await api.get("/hotels", {
-            params: {
-                destination,
-            },
-        })
-
-        return res.data
+    // Lấy danh sách khách sạn (có hỗ trợ tìm kiếm và lọc)
+    getHotels: async (searchQuery?: string): Promise<Hotel[]> => {
+        try {
+            const response = await axiosInstance.get('/hotels', {
+                params: { search: searchQuery }
+            });
+            return response.data;
+        } catch (error) {
+            console.error("Lỗi khi fetch danh sách khách sạn:", error);
+            throw error;
+        }
     },
 
-    async getHotelDetail(id: number): Promise<Hotel> {
-
-        const res = await api.get(`/hotels/${id}`)
-
-        return res.data
-    },
-}
+    // Lấy chi tiết 1 khách sạn theo ID
+    getHotelById: async (id: number | string): Promise<Hotel> => {
+        try {
+            const response = await axiosInstance.get(`/hotels/${id}`);
+            return response.data;
+        } catch (error) {
+            console.error(`Lỗi khi fetch khách sạn ID ${id}:`, error);
+            throw error;
+        }
+    }
+};

@@ -2,150 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
-/* RESET */
+@layer base {
+    html {
+        scroll-behavior: smooth;
+    }
 
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+    body {
+        /* Đảm bảo nền web có màu xám sáng rất nhẹ để làm nổi các thẻ màu trắng */
+        @apply bg-slate-50 text-slate-900;
+    }
+
+    /* Tùy chỉnh màu bôi đen text */
+    ::selection {
+        @apply bg-blue-500 text-white;
+    }
 }
 
-/* BODY */
+/* Thêm animation fade-in nhẹ nhàng cho trang */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
 
-body {
-    font-family: Arial, Helvetica, sans-serif;
-    background: #f5f7fa;
-    color: #333;
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
-/* CONTAINER */
-
-.container {
-    max-width: 1200px;
-    margin: auto;
-    padding: 0 16px;
-}
-
-/* ===================== */
-/* NAVBAR */
-/* ===================== */
-
-.navbar {
-    background: #003580;
-    color: white;
-}
-
-.navbar-inner {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 0;
-}
-
-.logo {
-    font-size: 22px;
-    font-weight: bold;
-}
-
-.nav-links a {
-    color: white;
-    margin-left: 20px;
-    text-decoration: none;
-    font-size: 15px;
-}
-
-.nav-links a:hover {
-    text-decoration: underline;
-}
-
-/* ===================== */
-/* HERO */
-/* ===================== */
-
-.hero {
-    background: #003580;
-    color: white;
-    padding: 60px 0 120px 0;
-}
-
-.hero h1 {
-    font-size: 40px;
-    margin-bottom: 10px;
-}
-
-.hero p {
-    font-size: 18px;
-}
-
-/* ===================== */
-/* SEARCH BOX */
-/* ===================== */
-
-.search-box {
-    background: white;
-    margin-top: -60px;
-    padding: 20px;
-    border-radius: 10px;
-
-    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
-
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-}
-
-.search-box input,
-.search-box select {
-    padding: 12px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    flex: 1;
-    min-width: 160px;
-}
-
-.search-box button {
-    background: #0071c2;
-    color: white;
-    border: none;
-    padding: 12px 20px;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: 0.2s;
-}
-
-.search-box button:hover {
-    background: #005999;
-}
-
-/* ===================== */
-/* CARD */
-/* ===================== */
-
-.card {
-    background: white;
-    border-radius: 10px;
-    padding: 16px;
-
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
-
-    transition: 0.2s;
-}
-
-.card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
-}
-
-/* ===================== */
-/* SECTION */
-/* ===================== */
-
-.section {
-    margin-top: 40px;
-}
-
-.section-title {
-    font-size: 24px;
-    font-weight: bold;
-    margin-bottom: 20px;
+.animate-fade-in {
+    animation: fadeIn 0.6s ease-out forwards;
 }

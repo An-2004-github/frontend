@@ -1,69 +1,87 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { reviewService } from "@/services/reviewService"
+import { useState } from "react";
+import Button from "@/components/ui/button";
 
 interface Props {
-    entityId: number
-    entityType: "hotel" | "flight" | "train" | "bus"
+    // Đây chính là điểm cốt lõi của Polymorphic Association ở Frontend
+    entityType: "hotel" | "flight" | "train" | "bus";
+    entityId: number;
 }
 
-export default function ReviewForm({
-    entityId,
-    entityType,
-}: Props) {
+export default function ReviewForm({ entityType, entityId }: Props) {
+    const [rating, setRating] = useState(5);
+    const [comment, setComment] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const [rating, setRating] = useState(5)
-    const [comment, setComment] = useState("")
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSubmitting(true);
 
-    const handleSubmit = async () => {
+        // Payload chuẩn bị gửi xuống Backend
+        const reviewData = {
+            entity_type: entityType,
+            entity_id: entityId,
+            rating: rating,
+            comment: comment,
+            // user_id sẽ được backend lấy từ token (JWT) để bảo mật
+        };
 
         try {
+            // Giả lập gọi API: 
+            // await axiosInstance.post('/reviews', reviewData);
+            console.log("Dữ liệu gửi lên API:", reviewData);
 
-            await reviewService.createReview({
-                entity_id: entityId,
-                entity_type: entityType,
-                rating,
-                comment,
-            })
-
-            alert("Review submitted!")
-
+            setTimeout(() => {
+                alert("Cảm ơn bạn đã gửi đánh giá!");
+                setComment("");
+                setRating(5);
+                setIsSubmitting(false);
+            }, 800);
         } catch (error) {
-            console.error(error)
+            console.error("Lỗi khi gửi đánh giá:", error);
+            setIsSubmitting(false);
         }
-    }
+    };
 
     return (
-        <div className="flex flex-col gap-2">
+        <form onSubmit={handleSubmit} className="bg-gray-50 p-6 rounded-xl mt-6 border border-gray-200">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">Viết đánh giá của bạn</h3>
 
-            <h3 className="font-bold">
-                Write a review
-            </h3>
+            <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Điểm đánh giá
+                </label>
+                <select
+                    value={rating}
+                    onChange={(e) => setRating(Number(e.target.value))}
+                    className="w-full md:w-48 h-10 px-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white"
+                >
+                    <option value={5}>5 Sao (Tuyệt vời)</option>
+                    <option value={4}>4 Sao (Rất tốt)</option>
+                    <option value={3}>3 Sao (Bình thường)</option>
+                    <option value={2}>2 Sao (Tạm được)</option>
+                    <option value={1}>1 Sao (Tệ)</option>
+                </select>
+            </div>
 
-            <input
-                type="number"
-                min={1}
-                max={5}
-                value={rating}
-                onChange={(e) => setRating(Number(e.target.value))}
-                className="border p-2"
-            />
+            <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Bình luận
+                </label>
+                <textarea
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    required
+                    rows={4}
+                    className="w-full p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Chia sẻ trải nghiệm của bạn về dịch vụ này..."
+                />
+            </div>
 
-            <textarea
-                placeholder="Write comment..."
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                className="border p-2"
-            />
-
-            <button
-                onClick={handleSubmit}
-                className="bg-blue-500 text-white p-2 rounded"
-            >
-                Submit Review
-            </button>
-
-        </div>
-    )
+            <Button type="submit" variant="primary" disabled={isSubmitting}>
+                {isSubmitting ? "Đang gửi..." : "Gửi đánh giá"}
+            </Button>
+        </form>
+    );
 }
