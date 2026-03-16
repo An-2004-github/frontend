@@ -25,7 +25,7 @@ export default function RootLayout({
       {/* min-h-screen: Đảm bảo trang web luôn cao ít nhất bằng màn hình 
                 flex & flex-col: Đẩy Footer xuống dưới cùng nếu nội dung ngắn 
             */}
-      <body className={`${inter.className} flex flex-col min-h-screen bg-gray-50 text-gray-900`}>
+      <body className={`${inter.className} bg-slate-50 text-slate-900 flex flex-col min-h-screen`}>
 
         {/* Component Navbar ở trên cùng */}
         <Navbar />

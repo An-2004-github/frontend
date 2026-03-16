@@ -1,20 +1,16 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Chuẩn khai báo mới của Tailwind v4 */
+@import "tailwindcss";
 
 @layer base {
     html {
         scroll-behavior: smooth;
     }
 
-    body {
-        /* Đảm bảo nền web có màu xám sáng rất nhẹ để làm nổi các thẻ màu trắng */
-        @apply bg-slate-50 text-slate-900;
-    }
-
-    /* Tùy chỉnh màu bôi đen text */
+    /* Tùy chỉnh màu bôi đen text bằng CSS thuần cho an toàn */
     ::selection {
-        @apply bg-blue-500 text-white;
+        background-color: #3b82f6;
+        /* Tương đương bg-blue-500 */
+        color: #ffffff;
     }
 }
 
@@ -33,4 +29,14 @@
 
 .animate-fade-in {
     animation: fadeIn 0.6s ease-out forwards;
+}
+
+/* Ẩn scrollbar ngang cho phần ưu đãi Traveloka */
+.hide-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+.hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
 }
