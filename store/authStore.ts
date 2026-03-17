@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { User } from '@/types/user';
+import { persist } from 'zustand/middleware';
+import { User } from '@/types/auth';
 
 interface AuthState {
     user: User | null;
@@ -9,25 +10,24 @@ interface AuthState {
     logout: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
-    user: null,
-    token: null,
-    isAuthenticated: false,
+export const useAuthStore = create<AuthState>()(
+    // ✅ persist giúp store không bị reset khi reload trang
+    persist(
+        (set) => ({
+            user: null,
+            token: null,
+            isAuthenticated: false,
 
-    login: (user, token) => {
-        // Lưu token vào localStorage để axiosInstance (lib/axios.ts) có thể lấy được
-        if (typeof window !== 'undefined') {
-            localStorage.setItem('token', token);
-            localStorage.setItem('user', JSON.stringify(user));
-        }
-        set({ user, token, isAuthenticated: true });
-    },
+            login: (user, token) => {
+                set({ user, token, isAuthenticated: true });
+            },
 
-    logout: () => {
-        if (typeof window !== 'undefined') {
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
+            logout: () => {
+                set({ user: null, token: null, isAuthenticated: false });
+            },
+        }),
+        {
+            name: 'auth-storage', // key trong localStorage
         }
-        set({ user: null, token: null, isAuthenticated: false });
-    },
-}));
+    )
+);

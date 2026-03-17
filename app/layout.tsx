@@ -1,43 +1,35 @@
-import type { Metadata } from "next";
-// Nếu bạn muốn dùng font Inter của Google:
+"use client";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
+import { GoogleOAuthProvider } from "@react-oauth/google";
+import { useAuthInit } from "@/hooks/useAuthInit";
 
-// Cấu hình font
 const inter = Inter({ subsets: ["latin", "vietnamese"] });
-
-// Cấu hình SEO mặc định cho toàn bộ trang
-export const metadata: Metadata = {
-  title: "TravelApp - Đặt dịch vụ du lịch dễ dàng",
-  description: "Nền tảng tìm kiếm và đặt phòng khách sạn, vé máy bay, tàu hỏa và xe khách.",
-};
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
+  useAuthInit(); // ✅ đúng chỗ
+
   return (
     <html lang="vi">
-      {/* min-h-screen: Đảm bảo trang web luôn cao ít nhất bằng màn hình 
-                flex & flex-col: Đẩy Footer xuống dưới cùng nếu nội dung ngắn 
-            */}
       <body className={`${inter.className} bg-slate-50 text-slate-900 flex flex-col min-h-screen`}>
+        <GoogleOAuthProvider clientId="432427620604-dk7u0doioej55b63neos8rhm2uu4oe0i.apps.googleusercontent.com">
 
-        {/* Component Navbar ở trên cùng */}
-        <Navbar />
+          <Navbar />
 
-        {/* Phần nội dung động của từng trang sẽ render vào đây */}
-        <main className="flex-grow container mx-auto px-4 py-8">
-          {children}
-        </main>
+          <main className="grow container mx-auto px-4 py-8">
+            {children}
+          </main>
 
-        {/* Component Footer ở dưới cùng */}
-        <Footer />
+          <Footer />
 
+        </GoogleOAuthProvider>
       </body>
     </html>
   );

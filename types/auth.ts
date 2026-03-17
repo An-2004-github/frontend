@@ -17,3 +17,16 @@ export interface AuthResponse {
         email: string
     }
 }
+export interface LoginResponse {
+    access_token: string;
+}
+
+export interface ErrorResponse {
+    detail?: string;
+}
+export interface User {
+    email: string;
+    user_id?: number;
+    full_name?: string;
+    wallet: number;
+}
