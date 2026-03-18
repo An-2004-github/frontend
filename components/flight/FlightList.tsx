@@ -3,23 +3,32 @@ import FlightCard from "./FlightCard";
 
 interface Props {
     flights: Flight[];
+    passengers?: number;
 }
 
-export default function FlightList({ flights }: Props) {
+export default function FlightList({ flights, passengers = 1 }: Props) {
     if (!flights || flights.length === 0) {
         return (
-            <div className="text-center py-12 bg-white rounded-xl border border-gray-100 shadow-sm">
-                <div className="text-4xl mb-3">✈️</div>
-                <h3 className="text-lg font-bold text-gray-900">Không tìm thấy chuyến bay</h3>
-                <p className="text-gray-500 mt-1">Vui lòng thử thay đổi điểm đi/đến hoặc ngày bay.</p>
+            <div className="fl-empty">
+                <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>✈️</div>
+                <p style={{ fontWeight: 600, color: "#1a3c6b" }}>
+                    Không tìm thấy chuyến bay phù hợp
+                </p>
+                <p style={{ fontSize: "0.88rem", marginTop: "0.4rem", color: "#6b8cbf" }}>
+                    Thử thay đổi ngày bay hoặc điểm đến
+                </p>
             </div>
         );
     }
 
     return (
-        <div className="flex flex-col gap-4">
+        <div className="fl-list">
             {flights.map((flight) => (
-                <FlightCard key={flight.flight_id} flight={flight} />
+                <FlightCard
+                    key={flight.flight_id}
+                    flight={flight}
+                    passengers={passengers}
+                />
             ))}
         </div>
     );

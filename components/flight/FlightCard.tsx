@@ -1,58 +1,108 @@
-// components/flight/FlightCard.tsx
-import Link from "next/link"
-import { Flight } from "@/types/flight"
-import { formatPrice, formatTime } from "@/lib/utils";
+"use client";
+
+import Link from "next/link";
+import { Flight } from "@/types/flight";
 
 interface Props {
-    flight: Flight
+    flight: Flight;
+    passengers?: number;
 }
 
-export default function FlightCard({ flight }: Props) {
+const AIRLINE_LOGOS: Record<string, string> = {
+    "Vietnam Airlines": "🇻🇳",
+    "VietJet Air": "🔴",
+    "Bamboo Airways": "🟢",
+    "Pacific Airlines": "🔵",
+    "Singapore Airlines": "🇸🇬",
+    "Thai Airways": "🇹🇭",
+    "ANA": "🇯🇵",
+    "Korean Air": "🇰🇷",
+};
+
+function formatTime(dateStr: string) {
+    return new Date(dateStr).toLocaleTimeString("vi-VN", {
+        hour: "2-digit", minute: "2-digit", hour12: false,
+    });
+}
+
+function formatDuration(minutes: number) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${h}g${m > 0 ? ` ${m}p` : ""}`;
+}
+
+export default function FlightCard({ flight, passengers = 1 }: Props) {
+    const duration = flight.duration_minutes ?? 0;
+    const totalPrice = flight.price * passengers;
+    const logo = AIRLINE_LOGOS[flight.airline] ?? "✈️";
+    const isLowSeat = (flight.available_seats ?? 99) <= 5;
+
     return (
-        <div className="border rounded-lg p-5 shadow hover:shadow-md transition-shadow duration-200 bg-white">
-
-            {/* Hãng bay và Giá vé */}
-            <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold text-blue-600">
-                    {flight.airline}
-                </h3>
-                <span className="text-lg font-semibold text-orange-500">
-                    {formatPrice(flight.price)}
-                </span>
+        <div className="fcard">
+            {/* Airline */}
+            <div className="fcard-airline">
+                <span className="fcard-airline-logo">{logo}</span>
+                <div>
+                    <div className="fcard-airline-name">{flight.airline}</div>
+                    <div className="fcard-airline-code">
+                        Bay thẳng · {flight.available_seats ?? "?"} ghế trống
+                    </div>
+                </div>
+                {isLowSeat && (
+                    <span className="fcard-low-seat">🔥 Sắp hết chỗ</span>
+                )}
             </div>
 
-            {/* Thông tin chuyến bay */}
-            <div className="flex justify-between items-center bg-gray-50 p-3 rounded-md mb-4">
-                {/* Điểm đi */}
-                <div className="text-center">
-                    <p className="text-sm text-gray-500">Khởi hành</p>
-                    <p className="font-bold text-lg">{flight.from_city}</p>
-                    <p className="text-sm">{formatTime(flight.depart_time)}</p>
+            {/* Route */}
+            <div className="fcard-route">
+                <div className="fcard-city">
+                    <div className="fcard-time">{formatTime(flight.depart_time)}</div>
+                    <div className="fcard-city-name">{flight.from_city}</div>
                 </div>
 
-                {/* Biểu tượng máy bay ở giữa (dùng text hoặc icon SVG) */}
-                <div className="text-gray-400 font-bold">
-                    {' ✈️ '}
+                <div className="fcard-middle">
+                    <div className="fcard-duration">{formatDuration(duration)}</div>
+                    <div className="fcard-line">
+                        <div className="fcard-dot" />
+                        <div className="fcard-dashes" />
+                        <span className="fcard-plane">✈</span>
+                        <div className="fcard-dashes" />
+                        <div className="fcard-dot" />
+                    </div>
+                    <div className="fcard-direct">Bay thẳng</div>
                 </div>
 
-                {/* Điểm đến */}
-                <div className="text-center">
-                    <p className="text-sm text-gray-500">Đến nơi</p>
-                    <p className="font-bold text-lg">{flight.to_city}</p>
-                    <p className="text-sm">{formatTime(flight.arrive_time)}</p>
+                <div className="fcard-city" style={{ textAlign: "right" }}>
+                    <div className="fcard-time">{formatTime(flight.arrive_time)}</div>
+                    <div className="fcard-city-name">{flight.to_city}</div>
                 </div>
             </div>
 
-            {/* Nút xem chi tiết / Đặt vé */}
-            <div className="flex justify-end">
+            {/* Footer */}
+            <div className="fcard-footer">
+                <div className="fcard-price-wrap">
+                    {passengers > 1 && (
+                        <div className="fcard-price-per">
+                            {flight.price.toLocaleString("vi-VN")}₫/khách
+                        </div>
+                    )}
+                    <div className="fcard-price">
+                        <span className="fcard-price-from">Từ</span>
+                        <span className="fcard-price-value">
+                            {totalPrice.toLocaleString("vi-VN")}₫
+                        </span>
+                    </div>
+                    {passengers > 1 && (
+                        <div className="fcard-price-total">Tổng {passengers} khách</div>
+                    )}
+                </div>
                 <Link
-                    href={`/flights/${flight.flight_id}`}
-                    className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors"
+                    href={`/flights/${flight.flight_id}?passengers=${passengers}`}
+                    className="fcard-btn"
                 >
-                    Xem chi tiết
+                    Chọn chuyến
                 </Link>
             </div>
-
         </div>
-    )
+    );
 }

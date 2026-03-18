@@ -14,7 +14,7 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  useAuthInit(); // ✅ đúng chỗ
+  useAuthInit();
 
   return (
     <html lang="vi">

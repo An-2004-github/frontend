@@ -9,6 +9,10 @@ from routers.reviews import router as reviews_router
 from sqlalchemy import text
 from database import engine
 from routers.auth import router as auth_router
+from routers.promotions import router as promotions_router
+from routers.destinations import router as destinations_router
+from routers.buses import router as buses_router
+
 # Câu lệnh chạy backend: uvicorn main:app --reload
 app = FastAPI()
 
@@ -45,10 +49,12 @@ app.add_middleware(
     allow_headers=["*"], # Cho phép tất cả các headers
 )
 
+app.include_router(promotions_router)
 app.include_router(hotels_router)
 app.include_router(destinations_router)
 app.include_router(flights_router)
 app.include_router(bookings_router)
 app.include_router(reviews_router)
 app.include_router(auth_router)
-
+app.include_router(destinations_router)
+app.include_router(buses_router)

@@ -1,52 +1,119 @@
-// components/bus/BusCard.tsx
+"use client";
+
 import Link from "next/link";
 import { Bus } from "@/types/bus";
-import { formatPrice, formatTime } from "@/lib/utils";
 
 interface Props {
     bus: Bus;
+    passengers?: number;
 }
 
-export default function BusCard({ bus }: Props) {
+const COMPANY_LOGOS: Record<string, string> = {
+    "Phương Trang": "🟡",
+    "Thanh Buổi": "🔵",
+    "Hoàng Long": "🟢",
+    "Kumho Samco": "🔴",
+};
+
+function formatTime(dateStr: string) {
+    return new Date(dateStr).toLocaleTimeString("vi-VN", {
+        hour: "2-digit", minute: "2-digit", hour12: false,
+    });
+}
+
+function formatDate(dateStr: string) {
+    return new Date(dateStr).toLocaleDateString("vi-VN", {
+        day: "2-digit", month: "2-digit",
+    });
+}
+
+function formatDuration(minutes: number) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${h}g${m > 0 ? ` ${m}p` : ""}`;
+}
+
+const CLASS_LABELS: Record<string, { label: string; color: string }> = {
+    standard: { label: "Ghế thường", color: "#6b8cbf" },
+    vip: { label: "Ghế VIP", color: "#0052cc" },
+    sleeper: { label: "Giường nằm", color: "#00875a" },
+};
+
+export default function BusCard({ bus, passengers = 1 }: Props) {
+    const duration = bus.duration_minutes ?? 0;
+    const totalPrice = bus.price * passengers;
+    const logo = COMPANY_LOGOS[bus.company] ?? "🚌";
+    const isLowSeat = (bus.available_seats ?? 99) <= 5;
+    const isOvernight = new Date(bus.arrive_time).getDate() !== new Date(bus.depart_time).getDate();
+
     return (
-        <div className="border rounded-lg p-5 shadow hover:shadow-md transition-shadow duration-200 bg-white">
-
-            {/* Nhà xe và Giá vé */}
-            <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold text-teal-600">
-                    {bus.company}
-                </h3>
-                <span className="text-lg font-semibold text-orange-500">
-                    {formatPrice(bus.price)}
-                </span>
+        <div className="bcard">
+            {/* Company */}
+            <div className="bcard-company">
+                <span className="bcard-company-logo">{logo}</span>
+                <div>
+                    <div className="bcard-company-name">{bus.company}</div>
+                    <div className="bcard-company-sub">
+                        {bus.available_seats ?? "?"} chỗ trống
+                    </div>
+                </div>
+                {isLowSeat && (
+                    <span className="bcard-low-seat">🔥 Sắp hết chỗ</span>
+                )}
             </div>
 
-            {/* Thông tin chuyến xe */}
-            <div className="flex justify-between items-center bg-gray-50 p-3 rounded-md mb-4">
-                <div className="text-center w-1/3">
-                    <p className="text-sm text-gray-500">Khởi hành</p>
-                    <p className="font-bold text-lg">{bus.from_city}</p>
-                    <p className="text-sm">{formatTime(bus.depart_time)}</p>
+            {/* Route */}
+            <div className="bcard-route">
+                <div className="bcard-city">
+                    <div className="bcard-time">{formatTime(bus.depart_time)}</div>
+                    <div className="bcard-date">{formatDate(bus.depart_time)}</div>
+                    <div className="bcard-city-name">{bus.from_city}</div>
                 </div>
 
-                <div className="text-teal-500 font-bold text-2xl w-1/3 text-center">
-                    {' 🚌 '}
+                <div className="bcard-middle">
+                    <div className="bcard-duration">{formatDuration(duration)}</div>
+                    <div className="bcard-line">
+                        <div className="bcard-dot" />
+                        <div className="bcard-dashes" />
+                        <span className="bcard-bus-icon">🚌</span>
+                        <div className="bcard-dashes" />
+                        <div className="bcard-dot" />
+                    </div>
+                    {isOvernight && (
+                        <div className="bcard-overnight">🌙 Xe đêm</div>
+                    )}
                 </div>
 
-                <div className="text-center w-1/3">
-                    <p className="text-sm text-gray-500">Đến nơi</p>
-                    <p className="font-bold text-lg">{bus.to_city}</p>
-                    <p className="text-sm">{formatTime(bus.arrive_time)}</p>
+                <div className="bcard-city" style={{ textAlign: "right" }}>
+                    <div className="bcard-time">{formatTime(bus.arrive_time)}</div>
+                    <div className="bcard-date">{formatDate(bus.arrive_time)}</div>
+                    <div className="bcard-city-name">{bus.to_city}</div>
                 </div>
             </div>
 
-            {/* Nút thao tác */}
-            <div className="flex justify-end">
+            {/* Footer */}
+            <div className="bcard-footer">
+                <div className="bcard-price-wrap">
+                    {passengers > 1 && (
+                        <div className="bcard-price-per">
+                            {bus.price.toLocaleString("vi-VN")}₫/khách
+                        </div>
+                    )}
+                    <div className="bcard-price">
+                        <span className="bcard-price-from">Từ</span>
+                        <span className="bcard-price-value">
+                            {totalPrice.toLocaleString("vi-VN")}₫
+                        </span>
+                    </div>
+                    {passengers > 1 && (
+                        <div className="bcard-price-total">Tổng {passengers} khách</div>
+                    )}
+                </div>
                 <Link
-                    href={`/buses/${bus.bus_id}`}
-                    className="bg-teal-500 text-white px-4 py-2 rounded hover:bg-teal-600 transition-colors"
+                    href={`/buses/${bus.bus_id}?passengers=${passengers}`}
+                    className="bcard-btn"
                 >
-                    Xem chi tiết
+                    Chọn chuyến
                 </Link>
             </div>
         </div>
