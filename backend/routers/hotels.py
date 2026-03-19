@@ -108,11 +108,55 @@ def get_hotel_by_id(hotel_id: int):
         ).fetchall()
 
         rooms = conn.execute(
-            text("SELECT * FROM room_types WHERE hotel_id = :id"),
+            text("SELECT * FROM room_types WHERE hotel_id = :id ORDER BY price_per_night ASC"),
+            {"id": hotel_id}
+        ).fetchall()
+
+        reviews = conn.execute(
+            text("""
+                SELECT r.*, u.full_name
+                FROM reviews r
+                LEFT JOIN users u ON u.user_id = r.user_id
+                WHERE r.entity_type = 'hotel' AND r.entity_id = :id
+                ORDER BY r.created_at DESC
+                LIMIT 10
+            """),
             {"id": hotel_id}
         ).fetchall()
 
         hotel = dict(result._mapping)
-        hotel["images"] = [r.image_url for r in images]
+        hotel["images"]     = [r.image_url for r in images]
         hotel["room_types"] = [dict(r._mapping) for r in rooms]
+        hotel["reviews"]    = [dict(r._mapping) for r in reviews]
         return hotel
+
+
+# Kiểm tra phòng trống theo ngày
+@router.get("/{hotel_id}/availability")
+def check_availability(
+    hotel_id: int,
+    check_in: str,
+    check_out: str,
+):
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("""
+                SELECT
+                    rt.room_type_id,
+                    rt.name,
+                    rt.price_per_night,
+                    rt.max_guests,
+                    MIN(ra.available_rooms) AS available_rooms
+                FROM room_types rt
+                LEFT JOIN room_availability ra
+                    ON ra.room_type_id = rt.room_type_id
+                    AND ra.date >= :check_in
+                    AND ra.date < :check_out
+                WHERE rt.hotel_id = :hotel_id
+                GROUP BY rt.room_type_id, rt.name, rt.price_per_night, rt.max_guests
+                HAVING available_rooms IS NULL OR available_rooms > 0
+                ORDER BY rt.price_per_night ASC
+            """),
+            {"hotel_id": hotel_id, "check_in": check_in, "check_out": check_out}
+        ).fetchall()
+        return [dict(r._mapping) for r in result]

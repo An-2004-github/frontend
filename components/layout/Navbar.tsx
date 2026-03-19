@@ -269,6 +269,9 @@ export default function Navbar() {
                                         <Link href="/promotions" className="navbar-dropdown-item" onClick={() => setDropdownOpen(false)}>
                                             🎁 Ưu đãi của tôi
                                         </Link>
+                                        <Link href="/wallet" className="navbar-dropdown-item">
+                                            💰 Ví của tôi
+                                        </Link>
                                         <div className="navbar-dropdown-divider" />
                                         <button
                                             className="navbar-dropdown-item danger"

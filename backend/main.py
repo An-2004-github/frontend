@@ -12,6 +12,7 @@ from routers.auth import router as auth_router
 from routers.promotions import router as promotions_router
 from routers.destinations import router as destinations_router
 from routers.buses import router as buses_router
+from routers.wallet import router as wallet_router
 
 # Câu lệnh chạy backend: uvicorn main:app --reload
 app = FastAPI()
@@ -58,3 +59,4 @@ app.include_router(reviews_router)
 app.include_router(auth_router)
 app.include_router(destinations_router)
 app.include_router(buses_router)
+app.include_router(wallet_router)

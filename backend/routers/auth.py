@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from sqlalchemy import text
 from database import engine
 from auth import hash_password, verify_password, create_access_token
@@ -6,6 +6,7 @@ from pydantic import BaseModel, EmailStr
 from auth import get_current_user
 from google.oauth2 import id_token
 from google.auth.transport import requests
+from email_service import send_welcome_email
 
 GOOGLE_CLIENT_ID = "432427620604-dk7u0doioej55b63neos8rhm2uu4oe0i.apps.googleusercontent.com"
 
@@ -23,12 +24,9 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 # REGISTER
 @router.post("/register")
-def register(data: RegisterRequest):
+async def register(data: RegisterRequest, background_tasks: BackgroundTasks):
     try:
-        print("DATA:", data)
-
         hashed = hash_password(data.password)
-        print("HASH:", hashed)
 
         with engine.begin() as conn:
             conn.execute(
@@ -42,6 +40,9 @@ def register(data: RegisterRequest):
                     "password": hashed
                 }
             )
+
+        # ✅ Gửi email nền — không block response trả về client
+        background_tasks.add_task(send_welcome_email, data.email, data.name)
 
         return {"message": "Đăng ký thành công"}
 
@@ -97,10 +98,9 @@ def get_me(user_id: int = Depends(get_current_user)):
 
 # GOOGLE LOGIN
 @router.post("/google")
-def google_login(data: dict):
+async def google_login(data: dict, background_tasks: BackgroundTasks):
     token = data.get("token")
 
-    # ✅ Verify token riêng — lỗi thật sự là token thì mới 400
     try:
         idinfo = id_token.verify_oauth2_token(
             token, requests.Request(), GOOGLE_CLIENT_ID
@@ -111,8 +111,8 @@ def google_login(data: dict):
 
     email = idinfo["email"]
     name = idinfo.get("name", "Google User")
+    is_new_user = False
 
-    # ✅ Xử lý DB riêng — lỗi DB sẽ trả về 500, không bị che thành 400
     with engine.begin() as conn:
         user = conn.execute(
             text("SELECT * FROM users WHERE email = :email"),
@@ -120,22 +120,22 @@ def google_login(data: dict):
         ).fetchone()
 
         if not user:
-            # ✅ Dùng lastrowid thay vì RETURNING (tương thích MySQL)
             result = conn.execute(
                 text("""
                     INSERT INTO users (full_name, email, password_hash, role, wallet, provider)
                     VALUES (:name, :email, '', 'USER', 0, 'google')
                 """),
-                {
-                    "name": name,
-                    "email": email
-                }
+                {"name": name, "email": email}
             )
             user_id = result.lastrowid
+            is_new_user = True
         else:
             user_id = dict(user._mapping)["user_id"]
 
-    # ✅ Tạo JWT và trả về
+    # ✅ Chỉ gửi email nếu là tài khoản mới
+    if is_new_user:
+        background_tasks.add_task(send_welcome_email, email, name)
+
     access_token = create_access_token({
         "user_id": user_id,
         "email": email
