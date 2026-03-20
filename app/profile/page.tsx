@@ -322,7 +322,7 @@ export default function ProfilePage() {
                             </select>
                         ) : (
                             <div className={`pp-field-value${!user?.gender ? " empty" : ""}`}>
-                                {{ male: "Nam", female: "Nữ", other: "Khác" }[user?.gender ?? ""] || "Chưa cập nhật"}
+                                {{ male: "Nam", female: "Nữ", other: "Khác" }[user?.gender as "male" | "female" | "other"] || "Chưa cập nhật"}
                             </div>
                         )}
                     </Field>
