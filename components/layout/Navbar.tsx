@@ -263,13 +263,10 @@ export default function Navbar() {
                                         <Link href="/profile" className="navbar-dropdown-item" onClick={() => setDropdownOpen(false)}>
                                             👤 Tài khoản của tôi
                                         </Link>
-                                        <Link href="/bookings" className="navbar-dropdown-item" onClick={() => setDropdownOpen(false)}>
-                                            📋 Lịch sử đặt phòng
+                                        <Link href="/profile/bookings" className="navbar-dropdown-item" onClick={() => setDropdownOpen(false)}>
+                                            📋 Đặt chỗ của tôi
                                         </Link>
-                                        <Link href="/promotions" className="navbar-dropdown-item" onClick={() => setDropdownOpen(false)}>
-                                            🎁 Ưu đãi của tôi
-                                        </Link>
-                                        <Link href="/wallet" className="navbar-dropdown-item">
+                                        <Link href="/profile/wallet" className="navbar-dropdown-item" onClick={() => setDropdownOpen(false)}>
                                             💰 Ví của tôi
                                         </Link>
                                         <div className="navbar-dropdown-divider" />

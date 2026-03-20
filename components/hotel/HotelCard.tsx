@@ -89,6 +89,7 @@ export default function HotelCard({ hotel }: Props) {
                     <Link href={`/hotels/${hotel.hotel_id}`} className="hcard-btn">
                         Xem chi tiết
                     </Link>
+
                 </div>
             </div>
         </div>

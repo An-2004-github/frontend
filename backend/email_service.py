@@ -5,7 +5,7 @@ from pydantic import EmailStr
 # CẤU HÌNH EMAIL — thay bằng thông tin thật của bạn
 # ================================================================
 conf = ConnectionConfig(
-    MAIL_USERNAME   = "leanzxj@gmail.com",       # ← Gmail của bạn
+   MAIL_USERNAME   = "leanzxj@gmail.com",       # ← Gmail của bạn
     MAIL_PASSWORD   = "xsphlfhdjetytobo",           # ← App Password (không phải mật khẩu Gmail)
     MAIL_FROM       = "leanzxj@gmail.com",
     MAIL_FROM_NAME  = "VIVU Travel",
@@ -16,10 +16,54 @@ conf = ConnectionConfig(
     USE_CREDENTIALS = True,
 )
 
+
 fm = FastMail(conf)
 
 
-async def send_welcome_email(email: EmailStr, name: str):
+async def send_otp_email(email: str, otp: str):
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="UTF-8">
+    <style>
+        body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4ff; margin: 0; padding: 0; }}
+        .wrapper {{ max-width: 480px; margin: 40px auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,82,204,0.1); }}
+        .header {{ background: linear-gradient(135deg, #003580, #0065ff); padding: 2rem; text-align: center; }}
+        .header h1 {{ color: #fff; font-size: 1.4rem; margin: 0; }}
+        .body {{ padding: 2rem 2.5rem; text-align: center; }}
+        .otp-box {{ background: #f0f4ff; border: 2px dashed #c8d8ff; border-radius: 12px; padding: 1.5rem; margin: 1.5rem 0; }}
+        .otp-code {{ font-family: 'Courier New', monospace; font-size: 2.5rem; font-weight: 800; color: #0052cc; letter-spacing: 8px; }}
+        .expire {{ font-size: 0.82rem; color: #6b8cbf; margin-top: 0.5rem; }}
+        .footer {{ background: #f8faff; padding: 1rem 2rem; text-align: center; color: #6b8cbf; font-size: 0.78rem; border-top: 1px solid #e8f0fe; }}
+    </style>
+    </head>
+    <body>
+        <div class="wrapper">
+            <div class="header"><h1>✈️ VIVU Travel — Xác nhận thay đổi</h1></div>
+            <div class="body">
+                <p style="color:#4a5568;font-size:0.95rem;">Mã xác nhận của bạn là:</p>
+                <div class="otp-box">
+                    <div class="otp-code">{otp}</div>
+                    <div class="expire">Mã có hiệu lực trong 10 phút</div>
+                </div>
+                <p style="color:#6b8cbf;font-size:0.82rem;">Nếu bạn không yêu cầu thay đổi này, hãy bỏ qua email này.</p>
+            </div>
+            <div class="footer">© 2026 VIVU Travel</div>
+        </div>
+    </body>
+    </html>
+    """
+    message = MessageSchema(
+        subject="🔐 Mã xác nhận thay đổi thông tin VIVU",
+        recipients=[email],
+        body=html,
+        subtype=MessageType.html,
+    )
+    try:
+        await fm.send_message(message)
+        print(f"✅ OTP email sent to {email}")
+    except Exception as e:
+        print(f"❌ OTP email error: {e}")
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -81,3 +125,4 @@ async def send_welcome_email(email: EmailStr, name: str):
     )
 
     await fm.send_message(message)
+        

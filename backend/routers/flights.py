@@ -122,7 +122,6 @@ def get_flight(flight_id: int):
             """),
             {"id": flight_id}
         ).fetchall()
-
         result = dict(flight._mapping)
         result["seats"] = [dict(s._mapping) for s in seats]
         return result
