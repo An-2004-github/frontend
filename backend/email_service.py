@@ -64,6 +64,9 @@ async def send_otp_email(email: str, otp: str):
         print(f"✅ OTP email sent to {email}")
     except Exception as e:
         print(f"❌ OTP email error: {e}")
+
+
+async def send_welcome_email(email: str, name: str):
     html = f"""
     <!DOCTYPE html>
     <html>

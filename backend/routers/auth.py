@@ -130,7 +130,6 @@ def update_profile(data: UpdateProfileRequest, user_id: int = Depends(get_curren
             ).fetchone()
             if existing:
                 raise HTTPException(400, "Số điện thoại này đã được sử dụng")
-        return {"require_otp": True, "type": "phone", "new_value": data.phone}
 
     # Cập nhật thông thường
     fields = {}

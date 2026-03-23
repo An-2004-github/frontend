@@ -31,6 +31,7 @@ export default function LoginPage() {
             headers: { Authorization: `Bearer ${token}` },
         });
         login(me.data, token);
+        return me.data;
     };
 
     const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -41,8 +42,8 @@ export default function LoginPage() {
         try {
             const res = await api.post<LoginResponse>("/api/auth/login", formData);
             const token = res.data.access_token;
-            await fetchAndStoreUser(token);
-            router.push("/");
+            const user = await fetchAndStoreUser(token);
+            router.push(user?.role === "ADMIN" ? "/admin" : "/");
         } catch (err) {
             const error = err as AxiosError<ErrorResponse>;
             setError(
@@ -388,8 +389,8 @@ export default function LoginPage() {
                                         const res = await api.post("/api/auth/google", {
                                             token: credentialResponse.credential,
                                         });
-                                        await fetchAndStoreUser(res.data.access_token);
-                                        router.push("/");
+                                        const user = await fetchAndStoreUser(res.data.access_token);
+                                        router.push(user?.role === "ADMIN" ? "/admin" : "/");
                                     } catch (err) {
                                         console.error(err);
                                         setError("Đăng nhập Google thất bại");

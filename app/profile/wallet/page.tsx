@@ -111,6 +111,7 @@ function TransactionHistory() {
     useEffect(() => {
         api.get("/api/wallet/transactions")
             .then(res => setTxs(res.data))
+            .catch(() => setTxs([]))
             .finally(() => setLoading(false));
     }, []);
 
@@ -182,7 +183,7 @@ function TransactionHistory() {
                                     </div>
                                 </div>
                                 <div className="th-amount" style={{ color: type.color }}>
-                                    {type.sign}{Number(tx.amount).toLocaleString("vi-VN")}₫
+                                    {type.sign}{Math.abs(Number(tx.amount)).toLocaleString("vi-VN")}₫
                                 </div>
                             </div>
                         );

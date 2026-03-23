@@ -28,6 +28,14 @@ interface OTPState {
     newValue: string;
 }
 
+const Field = ({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) => (
+    <div className="pp-field">
+        <label className="pp-field-label">{label}</label>
+        {children}
+        {error && <span className="pp-field-error">{error}</span>}
+    </div>
+);
+
 export default function ProfilePage() {
     const { user, login } = useAuthStore();
     const [editing, setEditing] = useState(false);
@@ -140,14 +148,6 @@ export default function ProfilePage() {
 
     const initials = (user?.full_name ?? user?.email ?? "U")
         .split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2);
-
-    const Field = ({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) => (
-        <div className="pp-field">
-            <label className="pp-field-label">{label}</label>
-            {children}
-            {error && <span className="pp-field-error">{error}</span>}
-        </div>
-    );
 
     return (
         <>
@@ -322,7 +322,7 @@ export default function ProfilePage() {
                             </select>
                         ) : (
                             <div className={`pp-field-value${!user?.gender ? " empty" : ""}`}>
-                                {{ male: "Nam", female: "Nữ", other: "Khác" }[user?.gender ?? ""] || "Chưa cập nhật"}
+                                {{ male: "Nam", female: "Nữ", other: "Khác" }[user?.gender as "male" | "female" | "other"] || "Chưa cập nhật"}
                             </div>
                         )}
                     </Field>

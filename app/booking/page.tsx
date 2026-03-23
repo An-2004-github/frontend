@@ -1,71 +1,201 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import BookingForm from "@/components/booking/BookingForm";
+import { useAuthStore } from "@/store/authStore";
+import { useBookingStore } from "@/store/bookingStore";
+import { usePaymentStore } from "@/store/paymentStore";
+import BookingForm, { ContactForm } from "@/components/booking/BookingForm";
 import BookingCard from "@/components/booking/BookingCard";
-import { Booking } from "@/types/booking";
-import { BookingFormData } from "@/types/bookingForm";
+import api from "@/lib/axios";
 
 export default function BookingPage() {
     const router = useRouter();
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const { user } = useAuthStore();
+    const { booking, clearBooking } = useBookingStore();
+    const { setPayment } = usePaymentStore();
+    const [submitting, setSubmitting] = useState(false);
+    const [errors, setErrors] = useState<Record<string, string>>({});
 
-    // Trong thực tế, dữ liệu này sẽ được lấy từ Global Store (Zustand) 
-    // khi người dùng bấm "Đặt phòng" từ trang chi tiết
-    const mockOrderSummary = {
-        serviceName: "InterContinental Hanoi Westlake",
-        type: "Khách sạn" as const,
-        details: "1 phòng x 2 đêm (15/12 - 17/12/2023)",
-        totalPrice: 5000000,
+    const [form, setForm] = useState<ContactForm>({
+        contactName: "",
+        contactPhone: "",
+        contactEmail: "",
+        bookingForSelf: true,
+        guestName: "",
+        specialRequests: [],
+        passengerGender: "",
+        passengerLastName: "",
+        passengerFirstName: "",
+        passengerBirthDay: "",
+        passengerBirthMonth: "",
+        passengerBirthYear: "",
+        passengerNationality: "",
+        passportNumber: "",
+        passportExpDay: "",
+        passportExpMonth: "",
+        passportExpYear: "",
+    });
+
+    // Pre-fill from user
+    useEffect(() => {
+        if (user) {
+            setForm(f => ({
+                ...f,
+                contactName: user.full_name ?? "",
+                contactPhone: user.phone ?? "",
+                contactEmail: user.email ?? "",
+            }));
+        }
+    }, [user]);
+
+    // Redirect if no booking data (only on mount)
+    useEffect(() => {
+        if (!booking) router.replace("/");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const handleChange = <K extends keyof ContactForm>(field: K, value: ContactForm[K]) => {
+        setForm(f => ({ ...f, [field]: value }));
+        setErrors(e => ({ ...e, [field]: "" }));
     };
 
-    const handleCheckout = async (formData: BookingFormData) => {
-        setIsSubmitting(true);
+    const validate = (): boolean => {
+        const e: Record<string, string> = {};
+        if (!form.contactName.trim())
+            e.contactName = "Họ tên không được để trống";
+        else if (!/^[\p{L}\s]+$/u.test(form.contactName.trim()))
+            e.contactName = "Rất tiếc, vui lòng chỉ nhập chữ (a-z)";
 
-        // Cấu trúc dữ liệu sẽ gửi xuống API
-        const bookingPayload = {
-            ...formData,
-            entity_type: "hotel", // Tương tự polymorphic như review
-            entity_id: 1,
-            total_amount: mockOrderSummary.totalPrice
-        };
+        if (!form.contactPhone.trim())
+            e.contactPhone = "Điện thoại di động là phần bắt buộc";
+        else if (!/^[0-9]{8,12}$/.test(form.contactPhone.replace(/\s/g, "")))
+            e.contactPhone = "Số điện thoại không hợp lệ";
 
+        if (!form.contactEmail.trim())
+            e.contactEmail = "Email không được để trống";
+        else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.contactEmail))
+            e.contactEmail = "Email không hợp lệ";
+
+        if (!form.bookingForSelf && !form.guestName.trim())
+            e.guestName = "Vui lòng nhập tên người được đặt";
+
+        if (booking?.type === "flight") {
+            if (!form.passengerGender) e.passengerGender = "Vui lòng chọn giới tính";
+            if (!form.passengerLastName.trim()) e.passengerLastName = "Vui lòng nhập họ";
+            if (!form.passengerFirstName.trim()) e.passengerFirstName = "Vui lòng nhập tên";
+            if (!form.passengerNationality) e.passengerNationality = "Vui lòng chọn quốc tịch";
+            if (!form.passportNumber.trim()) e.passportNumber = "Vui lòng nhập số hộ chiếu";
+        }
+
+        setErrors(e);
+        return Object.keys(e).length === 0;
+    };
+
+    const handleContinue = async () => {
+        if (!validate() || !booking) return;
+        setSubmitting(true);
         try {
-            console.log("Gửi yêu cầu đặt chỗ:", bookingPayload);
-            // Giả lập call API: const res = await bookingService.createBooking(bookingPayload);
+            let payload: Record<string, unknown> = {
+                guest_name: form.bookingForSelf
+                    ? (user?.full_name || form.contactName)
+                    : form.guestName,
+                contact_name: form.contactName,
+                contact_phone: form.contactPhone,
+                contact_email: form.contactEmail,
+                special_requests: form.specialRequests.join(","),
+                total_price: booking.totalPrice,
+            };
 
-            setTimeout(() => {
-                setIsSubmitting(false);
-                // Giả sử API trả về ID của hóa đơn là "INV-12345"
-                const invoiceId = "INV-12345";
+            if (booking.type === "hotel") {
+                payload = {
+                    ...payload,
+                    entity_type: "room",
+                    entity_id: booking.roomTypeId,
+                    check_in_date: booking.checkIn,
+                    check_out_date: booking.checkOut,
+                    guests: booking.guests,
+                };
+            } else if (booking.type === "flight") {
+                payload = {
+                    ...payload,
+                    entity_type: "flight",
+                    entity_id: booking.flightId,
+                    passengers: booking.passengers,
+                    seat_class: booking.seatClass,
+                };
+            } else if (booking.type === "bus") {
+                payload = {
+                    ...payload,
+                    entity_type: "bus",
+                    entity_id: booking.busId,
+                    passengers: booking.passengers,
+                };
+            }
 
-                // Chuyển hướng sang trang hóa đơn/thành công
-                router.push(`/invoice/${invoiceId}`);
-            }, 1500);
+            const res = await api.post("/api/bookings", payload);
+            const bookingId = res.data?.booking_id ?? res.data?.id;
 
-        } catch (error) {
-            console.error("Lỗi thanh toán", error);
-            setIsSubmitting(false);
-            alert("Có lỗi xảy ra, vui lòng thử lại!");
+            let description = "";
+            if (booking.type === "hotel") description = `${booking.hotelName} - ${booking.roomName}`;
+            else if (booking.type === "flight") description = `${booking.airline}: ${booking.fromCity} → ${booking.toCity}`;
+            else if (booking.type === "bus") description = `${booking.company}: ${booking.fromCity} → ${booking.toCity}`;
+
+            setPayment({
+                bookingId,
+                totalAmount: booking.totalPrice,
+                description,
+                entityType: booking.type,
+            });
+
+            router.push(`/payment/${bookingId}`);
+            clearBooking();
+        } catch (err: unknown) {
+            const detail = (err as { response?: { data?: { detail?: string } } })
+                ?.response?.data?.detail;
+            alert(`❌ ${detail || "Đặt chỗ thất bại, vui lòng thử lại"}`);
+        } finally {
+            setSubmitting(false);
         }
     };
 
+    if (!booking) return null;
+
     return (
-        <div className="max-w-6xl mx-auto py-8">
-            <h1 className="text-3xl font-extrabold text-gray-900 mb-8">Hoàn tất đặt chỗ</h1>
+        <>
+            <style>{`
+                .bk-root { min-height: 100vh; background: #f0f4ff; font-family: 'DM Sans', sans-serif; }
+                .bk-content { max-width: 1100px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+                .bk-title { font-size: 1.3rem; font-weight: 800; color: #1a3c6b; margin-bottom: 1.25rem; font-family: 'Nunito', sans-serif; }
+                .bk-layout { display: grid; grid-template-columns: 1fr 380px; gap: 1.5rem; align-items: start; }
+                @media (max-width: 860px) {
+                    .bk-layout { grid-template-columns: 1fr; }
+                }
+            `}</style>
 
-            <div className="flex flex-col lg:flex-row gap-8">
-                {/* Cột trái: Form thông tin */}
-                <div className="flex-1 order-2 lg:order-1">
-                    <BookingForm onSubmit={handleCheckout} isSubmitting={isSubmitting} />
-                </div>
-
-                {/* Cột phải: Tóm tắt đơn hàng */}
-                <div className="w-full lg:w-[400px] flex-shrink-0 order-1 lg:order-2">
-                    <BookingCard summary={mockOrderSummary} />
+            <div className="bk-root">
+                <div className="bk-content">
+                    <div className="bk-title">Hoàn tất đặt chỗ</div>
+                    <div className="bk-layout">
+                        <div>
+                            <BookingForm
+                                form={form}
+                                errors={errors}
+                                bookingType={booking.type}
+                                flightRoute={booking.type === "flight" ? { fromCity: booking.fromCity, toCity: booking.toCity } : undefined}
+                                onChange={handleChange}
+                            />
+                        </div>
+                        <div>
+                            <BookingCard
+                                booking={booking}
+                                onContinue={handleContinue}
+                                submitting={submitting}
+                            />
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
+        </>
     );
 }

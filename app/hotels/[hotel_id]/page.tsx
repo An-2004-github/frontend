@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import api from "@/lib/axios";
 import { useAuthStore } from "@/store/authStore";
+import { useBookingStore } from "@/store/bookingStore";
 import { Hotel, RoomType } from "@/types/hotel";
 
 interface Review {
@@ -34,6 +35,7 @@ export default function HotelDetailPage() {
     const { hotel_id } = useParams<{ hotel_id: string }>();
     const router = useRouter();
     const { user } = useAuthStore();
+    const { setBooking } = useBookingStore();
 
     const [hotel, setHotel] = useState<(Hotel & { reviews: Review[] }) | null>(null);
     const [loading, setLoading] = useState(true);
@@ -45,8 +47,6 @@ export default function HotelDetailPage() {
     const [availRooms, setAvailRooms] = useState<AvailableRoom[]>([]);
     const [checkLoading, setCheckLoading] = useState(false);
     const [selectedRoom, setSelectedRoom] = useState<AvailableRoom | null>(null);
-    const [booking, setBooking] = useState(false);
-    const [bookMsg, setBookMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
     useEffect(() => {
         api.get(`/api/hotels/${hotel_id}`)
@@ -78,29 +78,32 @@ export default function HotelDetailPage() {
         (new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86400000
     ));
 
-    const handleBook = async () => {
-        if (!selectedRoom) return;
+    const handleBook = () => {
+        if (!selectedRoom || !hotel) return;
         if (!user) { router.push("/login"); return; }
-        setBooking(true);
-        setBookMsg(null);
-        try {
-            await api.post("/api/bookings", {
-                entity_type: "room",
-                entity_id: selectedRoom.room_type_id,
-                check_in_date: checkIn,
-                check_out_date: checkOut,
-                guests,
-                total_price: selectedRoom.price_per_night * nights,
-            });
-            setBookMsg({ type: "success", text: `✅ Đặt phòng thành công! ${selectedRoom.name} · ${nights} đêm` });
-            setSelectedRoom(null);
-        } catch (err: unknown) {
-            const msg = (err as { response?: { data?: { detail?: string } } })
-                ?.response?.data?.detail || "Đặt phòng thất bại";
-            setBookMsg({ type: "error", text: `❌ ${msg}` });
-        } finally {
-            setBooking(false);
-        }
+
+        const basePrice = selectedRoom.price_per_night * nights;
+        const taxAndFees = Math.round(basePrice * 0.21);
+
+        setBooking({
+            type: "hotel",
+            hotelId: Number(hotel_id),
+            hotelName: hotel.name,
+            roomTypeId: selectedRoom.room_type_id,
+            roomName: selectedRoom.name,
+            quantity: 1,
+            checkIn,
+            checkOut,
+            nights,
+            guests,
+            basePrice,
+            taxAndFees,
+            totalPrice: basePrice + taxAndFees,
+            checkInTime: selectedRoom.check_in_time || hotel.check_in_time || "14:00",
+            checkOutTime: selectedRoom.check_out_time || hotel.check_out_time || "12:00",
+        });
+
+        router.push("/booking");
     };
 
     if (loading) return (
@@ -363,11 +366,9 @@ export default function HotelDetailPage() {
                                     </div>
                                 )}
 
-                                <button className="hdp-book-btn" onClick={handleBook} disabled={!selectedRoom || booking}>
-                                    {booking ? "⏳ Đang đặt..." : selectedRoom ? "🏨 Đặt phòng ngay" : "Chọn loại phòng"}
+                                <button className="hdp-book-btn" onClick={handleBook} disabled={!selectedRoom}>
+                                    {selectedRoom ? "🏨 Đặt phòng ngay" : "Chọn loại phòng"}
                                 </button>
-
-                                {bookMsg && <div className={`hdp-book-msg ${bookMsg.type}`}>{bookMsg.text}</div>}
 
                                 {!user && (
                                     <p style={{ fontSize: "0.78rem", color: "#6b8cbf", textAlign: "center", marginTop: "0.75rem" }}>

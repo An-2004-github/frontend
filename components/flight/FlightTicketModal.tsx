@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import api from "@/lib/axios";
 import { Flight } from "@/types/flight";
+import { useBookingStore } from "@/store/bookingStore";
 
 interface TicketOption {
     seat_id: number;
@@ -38,6 +39,7 @@ function formatDate(dateStr: string) {
 
 export default function FlightTicketModal({ flight, passengers, onClose }: Props) {
     const router = useRouter();
+    const { setBooking } = useBookingStore();
     const [tickets, setTickets] = useState<TicketOption[]>([]);
     const [loading, setLoading] = useState(true);
     const [selected, setSelected] = useState<TicketOption | null>(null);
@@ -62,10 +64,24 @@ export default function FlightTicketModal({ flight, passengers, onClose }: Props
 
     const handleSelect = () => {
         if (!selected) return;
-        router.push(
-            `/flights/${flight.flight_id}?passengers=${passengers}&seat_class=${selected.seat_class}&label=${encodeURIComponent(selected.label ?? "")}`
-        );
+        const basePrice = Math.round(flight.price * selected.price_modifier * passengers);
+        const taxAndFees = Math.round(basePrice * 0.1);
+        setBooking({
+            type: "flight",
+            flightId: flight.flight_id,
+            airline: flight.airline,
+            fromCity: flight.from_city,
+            toCity: flight.to_city,
+            departTime: flight.depart_time,
+            arriveTime: flight.arrive_time,
+            seatClass: selected.seat_class,
+            passengers,
+            basePrice,
+            taxAndFees,
+            totalPrice: basePrice + taxAndFees,
+        });
         onClose();
+        router.push("/booking");
     };
 
     const price = (t: TicketOption) =>

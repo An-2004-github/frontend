@@ -1,7 +1,8 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Bus } from "@/types/bus";
+import { useBookingStore } from "@/store/bookingStore";
 
 interface Props {
     bus: Bus;
@@ -40,11 +41,32 @@ const CLASS_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 export default function BusCard({ bus, passengers = 1 }: Props) {
+    const router = useRouter();
+    const { setBooking } = useBookingStore();
     const duration = bus.duration_minutes ?? 0;
     const totalPrice = bus.price * passengers;
     const logo = COMPANY_LOGOS[bus.company] ?? "🚌";
     const isLowSeat = (bus.available_seats ?? 99) <= 5;
     const isOvernight = new Date(bus.arrive_time).getDate() !== new Date(bus.depart_time).getDate();
+
+    const handleBook = () => {
+        const basePrice = bus.price * passengers;
+        const taxAndFees = Math.round(basePrice * 0.05);
+        setBooking({
+            type: "bus",
+            busId: bus.bus_id,
+            company: bus.company,
+            fromCity: bus.from_city,
+            toCity: bus.to_city,
+            departTime: bus.depart_time,
+            arriveTime: bus.arrive_time,
+            passengers,
+            basePrice,
+            taxAndFees,
+            totalPrice: basePrice + taxAndFees,
+        });
+        router.push("/booking");
+    };
 
     return (
         <div className="bcard">
@@ -109,12 +131,9 @@ export default function BusCard({ bus, passengers = 1 }: Props) {
                         <div className="bcard-price-total">Tổng {passengers} khách</div>
                     )}
                 </div>
-                <Link
-                    href={`/buses/${bus.bus_id}?passengers=${passengers}`}
-                    className="bcard-btn"
-                >
+                <button className="bcard-btn" onClick={handleBook}>
                     Chọn chuyến
-                </Link>
+                </button>
             </div>
         </div>
     );
