@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import BusList from "@/components/bus/BusList";
 import { Bus } from "@/types/bus";
@@ -39,7 +39,7 @@ const POPULAR_ROUTES = [
 
 const TODAY = new Date().toISOString().split("T")[0];
 
-export default function BusesPage() {
+function BusesContent() {
     const searchParams = useSearchParams();
 
     // Search form
@@ -499,5 +499,13 @@ export default function BusesPage() {
                 </div>
             </div>
         </>
+    );
+}
+
+export default function BusesPage() {
+    return (
+        <Suspense>
+            <BusesContent />
+        </Suspense>
     );
 }
