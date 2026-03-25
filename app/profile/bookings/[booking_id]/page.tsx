@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import api from "@/lib/axios";
+import BookingModifyModal from "@/components/BookingModifyModal";
 
 interface BookingItem {
     entity_type: string;
     entity_id: number;
+    entity_name?: string;
     quantity: number;
     price: number;
     check_in_date?: string;
@@ -21,6 +23,7 @@ interface BookingDetail {
     total_price: number;
     final_amount: number;
     items: BookingItem[];
+    user?: { full_name: string; email: string };
 }
 
 const STATUS_MAP: Record<string, { label: string; color: string; bg: string; icon: string }> = {
@@ -50,6 +53,7 @@ export default function BookingDetailPage() {
     const [booking, setBooking] = useState<BookingDetail | null>(null);
     const [loading, setLoading] = useState(true);
     const [notFound, setNotFound] = useState(false);
+    const [modifyMode, setModifyMode] = useState<"reschedule" | "cancel" | null>(null);
 
     useEffect(() => {
         api.get(`/api/bookings/${bookingId}`)
@@ -202,8 +206,41 @@ export default function BookingDetailPage() {
                             💳 Thanh toán ngay
                         </button>
                     )}
+                    {booking.status === "confirmed" && (
+                        <>
+                            <button
+                                className="bd-btn"
+                                style={{ background: "#fff3e0", color: "#e67e22", border: "1.5px solid #f39c12" }}
+                                onClick={() => setModifyMode("reschedule")}
+                            >
+                                🔄 Đổi lịch
+                            </button>
+                            <button
+                                className="bd-btn"
+                                style={{ background: "#fff0ee", color: "#c0392b", border: "1.5px solid #e74c3c" }}
+                                onClick={() => setModifyMode("cancel")}
+                            >
+                                ❌ Hủy {item?.entity_type === "room" ? "phòng" : "vé"}
+                            </button>
+                        </>
+                    )}
                 </div>
             </div>
+
+            {modifyMode && (
+                <BookingModifyModal
+                    booking={booking}
+                    mode={modifyMode}
+                    onClose={() => setModifyMode(null)}
+                    onDone={() => {
+                        setModifyMode(null);
+                        // Reload booking data
+                        api.get(`/api/bookings/${bookingId}`)
+                            .then(res => setBooking(res.data))
+                            .catch(() => {});
+                    }}
+                />
+            )}
         </>
     );
 }

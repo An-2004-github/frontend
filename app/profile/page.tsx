@@ -36,12 +36,20 @@ const Field = ({ label, error, children }: { label: string; error?: string; chil
     </div>
 );
 
+interface PwdForm { current: string; next: string; confirm: string; }
+
 export default function ProfilePage() {
     const { user, login } = useAuthStore();
     const [editing, setEditing] = useState(false);
     const [saving, setSaving] = useState(false);
     const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
     const [otp, setOtp] = useState<OTPState | null>(null);
+
+    // Đổi mật khẩu
+    const [pwdForm, setPwdForm] = useState<PwdForm>({ current: "", next: "", confirm: "" });
+    const [pwdMsg, setPwdMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+    const [pwdSaving, setPwdSaving] = useState(false);
+    const [showPwd, setShowPwd] = useState<Record<string, boolean>>({});
 
     const [form, setForm] = useState<FormData>({
         full_name: "",
@@ -137,6 +145,24 @@ export default function ProfilePage() {
             catch { return localStorage.getItem("token") ?? ""; }
         })();
         login(res.data, token);
+    };
+
+    const handleChangePassword = async () => {
+        setPwdMsg(null);
+        if (!pwdForm.current) { setPwdMsg({ type: "error", text: "Vui lòng nhập mật khẩu hiện tại" }); return; }
+        if (pwdForm.next.length < 6) { setPwdMsg({ type: "error", text: "Mật khẩu mới phải có ít nhất 6 ký tự" }); return; }
+        if (pwdForm.next !== pwdForm.confirm) { setPwdMsg({ type: "error", text: "Mật khẩu xác nhận không khớp" }); return; }
+        setPwdSaving(true);
+        try {
+            await api.put("/api/auth/change-password", { current_password: pwdForm.current, new_password: pwdForm.next });
+            setPwdMsg({ type: "success", text: "✅ Đổi mật khẩu thành công" });
+            setPwdForm({ current: "", next: "", confirm: "" });
+        } catch (err: unknown) {
+            const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+            setPwdMsg({ type: "error", text: `❌ ${detail || "Đổi mật khẩu thất bại"}` });
+        } finally {
+            setPwdSaving(false);
+        }
     };
 
     const handleOTPSuccess = async (message: string) => {
@@ -357,6 +383,87 @@ export default function ProfilePage() {
 
                 {msg && <div className={`pp-msg ${msg.type}`}>{msg.text}</div>}
             </div>
+
+            {/* Đổi mật khẩu */}
+            {user?.provider !== "google" && (
+                <div className="pp-card">
+                    <div className="pp-card-title">🔒 Đổi mật khẩu</div>
+                    <div className="pp-field-grid">
+                        <div style={{ gridColumn: "1 / -1" }}>
+                            <Field label="Mật khẩu hiện tại">
+                                <div style={{ position: "relative" }}>
+                                    <input
+                                        className="pp-input"
+                                        type={showPwd.current ? "text" : "password"}
+                                        value={pwdForm.current}
+                                        onChange={e => setPwdForm({ ...pwdForm, current: e.target.value })}
+                                        placeholder="Nhập mật khẩu hiện tại"
+                                        style={{ paddingRight: "2.5rem" }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPwd(s => ({ ...s, current: !s.current }))}
+                                        style={{ position: "absolute", right: "0.75rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#6b8cbf", fontSize: "1rem" }}
+                                    >
+                                        {showPwd.current ? "🙈" : "👁️"}
+                                    </button>
+                                </div>
+                            </Field>
+                        </div>
+                        <Field label="Mật khẩu mới">
+                            <div style={{ position: "relative" }}>
+                                <input
+                                    className="pp-input"
+                                    type={showPwd.next ? "text" : "password"}
+                                    value={pwdForm.next}
+                                    onChange={e => setPwdForm({ ...pwdForm, next: e.target.value })}
+                                    placeholder="Ít nhất 6 ký tự"
+                                    style={{ paddingRight: "2.5rem" }}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPwd(s => ({ ...s, next: !s.next }))}
+                                    style={{ position: "absolute", right: "0.75rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#6b8cbf", fontSize: "1rem" }}
+                                >
+                                    {showPwd.next ? "🙈" : "👁️"}
+                                </button>
+                            </div>
+                        </Field>
+                        <Field label="Xác nhận mật khẩu mới">
+                            <div style={{ position: "relative" }}>
+                                <input
+                                    className={`pp-input${pwdForm.confirm && pwdForm.confirm !== pwdForm.next ? " error" : ""}`}
+                                    type={showPwd.confirm ? "text" : "password"}
+                                    value={pwdForm.confirm}
+                                    onChange={e => setPwdForm({ ...pwdForm, confirm: e.target.value })}
+                                    placeholder="Nhập lại mật khẩu mới"
+                                    style={{ paddingRight: "2.5rem" }}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPwd(s => ({ ...s, confirm: !s.confirm }))}
+                                    style={{ position: "absolute", right: "0.75rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#6b8cbf", fontSize: "1rem" }}
+                                >
+                                    {showPwd.confirm ? "🙈" : "👁️"}
+                                </button>
+                            </div>
+                            {pwdForm.confirm && pwdForm.confirm !== pwdForm.next && (
+                                <span className="pp-field-error">Mật khẩu xác nhận không khớp</span>
+                            )}
+                        </Field>
+                    </div>
+                    <div className="pp-btn-row">
+                        <button
+                            className="pp-btn-primary"
+                            onClick={handleChangePassword}
+                            disabled={pwdSaving || !pwdForm.current || !pwdForm.next || !pwdForm.confirm}
+                        >
+                            {pwdSaving ? "⏳ Đang lưu..." : "🔒 Đổi mật khẩu"}
+                        </button>
+                    </div>
+                    {pwdMsg && <div className={`pp-msg ${pwdMsg.type}`}>{pwdMsg.text}</div>}
+                </div>
+            )}
 
             {/* OTP Modal */}
             {otp?.show && (

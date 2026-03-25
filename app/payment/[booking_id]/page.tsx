@@ -28,6 +28,8 @@ export default function PaymentPage() {
     const [useWallet, setUseWallet] = useState(false);
     const [localPayment, setLocalPayment] = useState<{ totalAmount: number; description: string } | null>(null);
     const [loadingBooking, setLoadingBooking] = useState(false);
+    const [qrTimeLeft, setQrTimeLeft] = useState(15 * 60);
+    const qrExpired = qrTimeLeft <= 0;
 
     const amount = (payment?.totalAmount ?? localPayment?.totalAmount) ?? 0;
     const description = (payment?.description ?? localPayment?.description) ?? `Đặt chỗ #${bookingId}`;
@@ -122,6 +124,26 @@ export default function PaymentPage() {
             }
         }
         // Không dùng ví: polling kiểm tra booking được xác nhận qua webhook
+    };
+
+    // Reset + bắt đầu timer khi chuyển sang tab QR
+    useEffect(() => {
+        if (tab === "qr") setQrTimeLeft(15 * 60);
+    }, [tab]);
+
+    // Đếm ngược timer QR
+    useEffect(() => {
+        if (tab !== "qr" || qrExpired) return;
+        const interval = setInterval(() => {
+            setQrTimeLeft(t => Math.max(0, t - 1));
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [tab, qrExpired]);
+
+    const formatQrTime = (s: number) => {
+        const m = Math.floor(s / 60).toString().padStart(2, "0");
+        const sec = (s % 60).toString().padStart(2, "0");
+        return `${m}:${sec}`;
     };
 
     // QR polling (chỉ khi không dùng ví)
@@ -451,7 +473,20 @@ export default function PaymentPage() {
                     {/* QR tab */}
                     {tab === "qr" && (
                         <div className="pay-card">
-                            <div className="pay-card-title">📱 Quét QR để thanh toán</div>
+                            <div className="pay-card-title">
+                                📱 Quét QR để thanh toán
+                                {!qrExpired && (
+                                    <span style={{
+                                        marginLeft: "auto", fontSize: "0.78rem", fontWeight: 700,
+                                        color: qrTimeLeft <= 60 ? "#c0392b" : qrTimeLeft <= 180 ? "#b8860b" : "#00875a",
+                                        background: qrTimeLeft <= 60 ? "#fff0f0" : qrTimeLeft <= 180 ? "#fffbe6" : "#e6f9f0",
+                                        padding: "0.2rem 0.65rem", borderRadius: 99,
+                                        border: `1px solid ${qrTimeLeft <= 60 ? "#ffcdd2" : qrTimeLeft <= 180 ? "#ffe082" : "#b7dfbb"}`,
+                                    }}>
+                                        ⏱ {formatQrTime(qrTimeLeft)}
+                                    </span>
+                                )}
+                            </div>
 
                             {/* Checkbox dùng ví */}
                             <label
@@ -494,6 +529,28 @@ export default function PaymentPage() {
                                 <div className="pay-qr-zero">
                                     <div className="pay-qr-zero-icon">🎉</div>
                                     <div className="pay-qr-zero-text">Ví đủ để thanh toán toàn bộ!<br />Không cần chuyển khoản thêm.</div>
+                                </div>
+                            ) : qrExpired ? (
+                                <div style={{
+                                    background: "#fff0f0", border: "1px solid #ffcdd2",
+                                    borderRadius: 12, padding: "2rem", textAlign: "center",
+                                    marginBottom: "1rem",
+                                }}>
+                                    <div style={{ fontSize: "2.5rem", marginBottom: "0.5rem" }}>⏰</div>
+                                    <div style={{ fontWeight: 700, color: "#c0392b", marginBottom: "0.5rem" }}>Mã QR đã hết hạn (15 phút)</div>
+                                    <div style={{ fontSize: "0.82rem", color: "#7b5700", marginBottom: "1rem" }}>
+                                        Vui lòng tạo mã QR mới để tiếp tục thanh toán.
+                                    </div>
+                                    <button
+                                        onClick={() => setQrTimeLeft(15 * 60)}
+                                        style={{
+                                            padding: "0.55rem 1.4rem", background: "#0052cc", color: "#fff",
+                                            border: "none", borderRadius: 8, fontWeight: 700,
+                                            fontSize: "0.88rem", cursor: "pointer",
+                                        }}
+                                    >
+                                        🔄 Tạo mã QR mới
+                                    </button>
                                 </div>
                             ) : (
                                 <>
@@ -545,7 +602,7 @@ export default function PaymentPage() {
 
                             <button
                                 className="pay-btn"
-                                disabled={checking}
+                                disabled={checking || qrExpired}
                                 onClick={handleQrConfirm}
                             >
                                 {checking ? (

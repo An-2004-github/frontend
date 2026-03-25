@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import SearchBar from "@/components/search/SearchBar";
+import BannerSlider from "@/components/BannerSlider";
 
 export default function Home() {
   return (
@@ -41,6 +42,9 @@ export default function Home() {
       <div className="h-16 md:h-24"></div>
 
       <div className="container mx-auto px-4 flex flex-col gap-16 pb-16">
+
+        {/* PROMOTIONAL BANNERS */}
+        <BannerSlider />
 
         {/* 2. CÁC DỊCH VỤ NỔI BẬT */}
         <section className="animate-fade-in" style={{ animationDelay: '0.2s' }}>

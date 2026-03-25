@@ -14,6 +14,8 @@ from routers.promotions import router as promotions_router
 from routers.buses import router as buses_router
 from routers.wallet import router as wallet_router
 from routers.admin import router as admin_router
+from routers.banners import router as banners_router
+from routers.chat import router as chat_router
 
 # Câu lệnh chạy backend: uvicorn main:app --reload
 app = FastAPI()
@@ -72,3 +74,5 @@ app.include_router(auth_router)
 app.include_router(buses_router)
 app.include_router(wallet_router)
 app.include_router(admin_router)
+app.include_router(banners_router)
+app.include_router(chat_router)

@@ -1,80 +1,306 @@
-import Link from "next/link";
-import Button from "@/components/ui/button";
-import { formatPrice } from "@/lib/utils";
+"use client";
 
-// Giả lập lấy dữ liệu hóa đơn từ API dựa vào ID
-const getInvoiceDetails = async (id: string) => {
-    // Thực tế: const res = await axiosInstance.get(`/invoices/${id}`); return res.data;
-    return {
-        invoiceId: id,
-        date: new Date().toLocaleDateString('vi-VN'),
-        customerName: "Nguyễn Văn A",
-        serviceName: "InterContinental Hanoi Westlake",
-        serviceType: "Khách sạn",
-        checkIn: "15/12/2023",
-        checkOut: "17/12/2023",
-        totalAmount: 5000000,
-        status: "PAID" // Đã thanh toán
-    };
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import api from "@/lib/axios";
+
+interface BookingItem {
+    entity_type: string;
+    entity_name: string;
+    price: number;
+    check_in_date?: string;
+    check_out_date?: string;
+    from_city?: string;
+    to_city?: string;
+    depart_time?: string;
+    arrive_time?: string;
+    quantity: number;
+}
+
+interface InvoiceData {
+    booking_id: number;
+    booking_date: string;
+    status: string;
+    total_price: number;
+    final_amount: number;
+    items: BookingItem[];
+    user: { full_name: string; email: string; phone?: string };
+}
+
+const TYPE_CONFIG: Record<string, { icon: string; label: string; color: string }> = {
+    room:   { icon: "🏨", label: "Khách sạn",  color: "#0052cc" },
+    flight: { icon: "✈️", label: "Chuyến bay", color: "#6f42c1" },
+    bus:    { icon: "🚌", label: "Xe khách",   color: "#fd7e14" },
 };
 
-export default async function InvoicePage({ params }: { params: { id: string } }) {
-    const invoice = await getInvoiceDetails(params.id);
+const fmt = (n: number) => n?.toLocaleString("vi-VN") + "₫";
+
+const fmtDate = (s?: string | null) => {
+    if (!s) return "—";
+    try { return new Date(s).toLocaleDateString("vi-VN"); } catch { return s; }
+};
+const fmtDateTime = (s?: string | null) => {
+    if (!s) return "—";
+    try { return new Date(s).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }); } catch { return s; }
+};
+
+export default function InvoicePage() {
+    const { id } = useParams<{ id: string }>();
+    const router = useRouter();
+    const [invoice, setInvoice] = useState<InvoiceData | null>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        api.get(`/api/bookings/${id}`)
+            .then(res => setInvoice(res.data))
+            .catch(() => router.replace("/profile/bookings"))
+            .finally(() => setLoading(false));
+    }, [id, router]);
+
+    if (loading) return (
+        <div style={{ minHeight: "100vh", background: "#f0f4ff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ width: 40, height: 40, border: "3px solid #c8d8ff", borderTopColor: "#0052cc", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+    );
+
+    if (!invoice) return null;
+
+    const item = invoice.items?.[0];
+    const cfg = TYPE_CONFIG[item?.entity_type] ?? { icon: "🎫", label: "Dịch vụ", color: "#0052cc" };
 
     return (
-        <div className="max-w-2xl mx-auto py-10 px-4">
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-                {/* Header hóa đơn */}
-                <div className="bg-green-500 p-6 text-center text-white">
-                    <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4">
-                        <span className="text-3xl">✓</span>
-                    </div>
-                    <h1 className="text-2xl font-bold">Thanh toán thành công!</h1>
-                    <p className="opacity-90 mt-1">Mã hóa đơn: {invoice.invoiceId}</p>
-                </div>
+        <>
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&family=DM+Sans:wght@300;400;500&display=swap');
+                * { box-sizing: border-box; }
+                body { margin: 0; background: #f0f4ff; }
+                .inv-root { min-height: 100vh; background: #f0f4ff; font-family: 'DM Sans', sans-serif; padding: 2rem 1rem 4rem; }
+                .inv-wrap { max-width: 600px; margin: 0 auto; }
 
-                {/* Chi tiết biên lai */}
-                <div className="p-8 space-y-6">
-                    <div className="flex justify-between border-b pb-4">
-                        <span className="text-gray-500">Ngày giao dịch</span>
-                        <span className="font-medium text-gray-900">{invoice.date}</span>
+                /* Success header */
+                .inv-hero {
+                    background: linear-gradient(135deg, #003580, #0052cc, #0065ff);
+                    border-radius: 20px 20px 0 0;
+                    padding: 2.5rem 2rem; text-align: center; position: relative; overflow: hidden;
+                }
+                .inv-hero-bg {
+                    position: absolute; inset: 0;
+                    background-image: radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px);
+                    background-size: 22px 22px;
+                }
+                .inv-check {
+                    width: 72px; height: 72px; border-radius: 50%;
+                    background: rgba(255,255,255,0.15); border: 3px solid rgba(255,255,255,0.4);
+                    display: flex; align-items: center; justify-content: center;
+                    font-size: 2rem; margin: 0 auto 1rem; position: relative;
+                    animation: popIn 0.4s ease;
+                }
+                @keyframes popIn { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+                .inv-hero-title { font-family: 'Nunito', sans-serif; font-size: 1.5rem; font-weight: 800; color: #fff; margin: 0 0 0.3rem; position: relative; }
+                .inv-hero-sub { color: rgba(255,255,255,0.75); font-size: 0.88rem; position: relative; }
+                .inv-booking-id {
+                    display: inline-block; margin-top: 0.9rem;
+                    background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
+                    color: #fff; border-radius: 99px; padding: 0.3rem 1.1rem;
+                    font-size: 0.85rem; font-weight: 600; position: relative;
+                }
+
+                /* Body card */
+                .inv-card { background: #fff; border-radius: 0 0 20px 20px; border: 1px solid #e8f0fe; border-top: none; }
+
+                /* Service banner */
+                .inv-service {
+                    padding: 1.5rem 2rem; border-bottom: 1px solid #f0f4ff;
+                    display: flex; align-items: center; gap: 1rem;
+                }
+                .inv-service-icon {
+                    width: 52px; height: 52px; border-radius: 14px;
+                    display: flex; align-items: center; justify-content: center;
+                    font-size: 1.6rem; flex-shrink: 0;
+                }
+                .inv-service-name { font-family: 'Nunito', sans-serif; font-size: 1rem; font-weight: 700; color: #1a3c6b; }
+                .inv-service-type { font-size: 0.78rem; font-weight: 600; margin-top: 0.2rem; }
+
+                /* Info rows */
+                .inv-section { padding: 1.25rem 2rem; border-bottom: 1px solid #f0f4ff; }
+                .inv-section-title { font-size: 0.72rem; font-weight: 700; color: #6b8cbf; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.85rem; }
+                .inv-row { display: flex; justify-content: space-between; align-items: center; padding: 0.45rem 0; }
+                .inv-row:not(:last-child) { border-bottom: 1px solid #f8faff; }
+                .inv-label { font-size: 0.84rem; color: #6b8cbf; }
+                .inv-value { font-size: 0.88rem; font-weight: 600; color: #1a3c6b; text-align: right; }
+
+                /* Total */
+                .inv-total {
+                    padding: 1.5rem 2rem; display: flex; justify-content: space-between; align-items: center;
+                }
+                .inv-total-label { font-family: 'Nunito', sans-serif; font-size: 1rem; font-weight: 700; color: #1a3c6b; }
+                .inv-total-value { font-family: 'Nunito', sans-serif; font-size: 1.6rem; font-weight: 800; color: #0052cc; }
+
+                /* Status badge */
+                .inv-status-paid { display: inline-flex; align-items: center; gap: 0.4rem; background: #d4edda; color: #00875a; border: 1px solid #b7dfbb; border-radius: 99px; padding: 0.25rem 0.85rem; font-size: 0.78rem; font-weight: 700; }
+
+                /* Actions */
+                .inv-actions { padding: 1.5rem 2rem; background: #f8faff; border-top: 1px solid #e8f0fe; border-radius: 0 0 20px 20px; display: flex; gap: 0.75rem; flex-wrap: wrap; }
+                .inv-btn-print {
+                    flex: 1; min-width: 140px; padding: 0.75rem; border: 1.5px solid #c8d8ff; border-radius: 10px;
+                    background: #fff; color: #0052cc; font-size: 0.88rem; font-weight: 600;
+                    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.4rem;
+                    transition: background 0.15s;
+                }
+                .inv-btn-print:hover { background: #f0f4ff; }
+                .inv-btn-primary {
+                    flex: 1; min-width: 140px; padding: 0.75rem; border: none; border-radius: 10px;
+                    background: linear-gradient(135deg, #0052cc, #0065ff); color: #fff; font-size: 0.88rem; font-weight: 600;
+                    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.4rem;
+                    text-decoration: none; transition: opacity 0.15s;
+                }
+                .inv-btn-primary:hover { opacity: 0.9; }
+
+                @media print {
+                    .inv-actions { display: none; }
+                    .inv-root { padding: 0; background: #fff; }
+                    .inv-hero { border-radius: 0; }
+                    .inv-card { border-radius: 0; border: none; }
+                }
+            `}</style>
+
+            <div className="inv-root">
+                <div className="inv-wrap">
+                    {/* Header */}
+                    <div className="inv-hero">
+                        <div className="inv-hero-bg" />
+                        <div className="inv-check">✓</div>
+                        <div className="inv-hero-title">Thanh toán thành công!</div>
+                        <div className="inv-hero-sub">Cảm ơn bạn đã sử dụng dịch vụ VIVU Travel</div>
+                        <div className="inv-booking-id">Mã đặt chỗ: #{invoice.booking_id}</div>
                     </div>
 
-                    <div className="flex justify-between border-b pb-4">
-                        <span className="text-gray-500">Khách hàng</span>
-                        <span className="font-medium text-gray-900">{invoice.customerName}</span>
-                    </div>
+                    <div className="inv-card">
+                        {/* Service info */}
+                        {item && (
+                            <div className="inv-service">
+                                <div className="inv-service-icon" style={{ background: `${cfg.color}15` }}>
+                                    {cfg.icon}
+                                </div>
+                                <div>
+                                    <div className="inv-service-name">{item.entity_name}</div>
+                                    <div className="inv-service-type" style={{ color: cfg.color }}>
+                                        {cfg.label}
+                                    </div>
+                                </div>
+                                <div style={{ marginLeft: "auto" }}>
+                                    <div className="inv-status-paid">✓ Đã thanh toán</div>
+                                </div>
+                            </div>
+                        )}
 
-                    <div className="border-b pb-4">
-                        <span className="text-gray-500 block mb-2">Chi tiết dịch vụ</span>
-                        <div className="bg-gray-50 p-4 rounded-lg">
-                            <p className="font-bold text-gray-900">{invoice.serviceName}</p>
-                            <p className="text-sm text-gray-600 mt-1">
-                                {invoice.serviceType} • Nhận phòng: {invoice.checkIn} - Trả phòng: {invoice.checkOut}
-                            </p>
+                        {/* Thông tin khách hàng */}
+                        <div className="inv-section">
+                            <div className="inv-section-title">👤 Thông tin khách hàng</div>
+                            <div className="inv-row">
+                                <span className="inv-label">Họ tên</span>
+                                <span className="inv-value">{invoice.user?.full_name || "—"}</span>
+                            </div>
+                            <div className="inv-row">
+                                <span className="inv-label">Email</span>
+                                <span className="inv-value" style={{ fontSize: "0.82rem" }}>{invoice.user?.email || "—"}</span>
+                            </div>
+                            {invoice.user?.phone && (
+                                <div className="inv-row">
+                                    <span className="inv-label">Số điện thoại</span>
+                                    <span className="inv-value">{invoice.user.phone}</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Chi tiết dịch vụ */}
+                        {item && (
+                            <div className="inv-section">
+                                <div className="inv-section-title">📋 Chi tiết dịch vụ</div>
+
+                                {/* Khách sạn */}
+                                {item.entity_type === "room" && (
+                                    <>
+                                        {item.check_in_date && (
+                                            <div className="inv-row">
+                                                <span className="inv-label">📅 Nhận phòng</span>
+                                                <span className="inv-value">{fmtDate(item.check_in_date)}</span>
+                                            </div>
+                                        )}
+                                        {item.check_out_date && (
+                                            <div className="inv-row">
+                                                <span className="inv-label">📅 Trả phòng</span>
+                                                <span className="inv-value">{fmtDate(item.check_out_date)}</span>
+                                            </div>
+                                        )}
+                                        {item.check_in_date && item.check_out_date && (
+                                            <div className="inv-row">
+                                                <span className="inv-label">🌙 Số đêm</span>
+                                                <span className="inv-value">
+                                                    {Math.max(1, Math.round((new Date(item.check_out_date).getTime() - new Date(item.check_in_date).getTime()) / 86400000))} đêm
+                                                </span>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+
+                                {/* Chuyến bay / Xe khách */}
+                                {(item.entity_type === "flight" || item.entity_type === "bus") && (
+                                    <>
+                                        {item.from_city && item.to_city && (
+                                            <div className="inv-row">
+                                                <span className="inv-label">🗺 Tuyến đường</span>
+                                                <span className="inv-value">{item.from_city} → {item.to_city}</span>
+                                            </div>
+                                        )}
+                                        {item.depart_time && (
+                                            <div className="inv-row">
+                                                <span className="inv-label">🛫 Khởi hành</span>
+                                                <span className="inv-value">{fmtDateTime(item.depart_time)}</span>
+                                            </div>
+                                        )}
+                                        {item.arrive_time && (
+                                            <div className="inv-row">
+                                                <span className="inv-label">🛬 Đến nơi</span>
+                                                <span className="inv-value">{fmtDateTime(item.arrive_time)}</span>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+
+                                <div className="inv-row">
+                                    <span className="inv-label">📆 Ngày đặt</span>
+                                    <span className="inv-value">{fmtDate(invoice.booking_date)}</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Tổng tiền */}
+                        <div className="inv-total" style={{ borderTop: "2px dashed #e8f0fe" }}>
+                            <div>
+                                <div className="inv-total-label">Tổng thanh toán</div>
+                                <div style={{ fontSize: "0.78rem", color: "#6b8cbf", marginTop: "0.2rem" }}>Đã bao gồm tất cả phí dịch vụ</div>
+                            </div>
+                            <div className="inv-total-value">{fmt(invoice.final_amount ?? invoice.total_price)}</div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="inv-actions">
+                            <button className="inv-btn-print" onClick={() => window.print()}>
+                                🖨️ In hóa đơn
+                            </button>
+                            <Link href="/profile/bookings" className="inv-btn-primary">
+                                📋 Xem lịch sử đặt chỗ
+                            </Link>
+                            <Link href="/" className="inv-btn-primary" style={{ background: "linear-gradient(135deg, #00875a, #00a86b)" }}>
+                                🏠 Về trang chủ
+                            </Link>
                         </div>
                     </div>
-
-                    <div className="flex justify-between items-center pt-2">
-                        <span className="text-lg font-bold text-gray-900">Tổng cộng</span>
-                        <span className="text-2xl font-bold text-orange-500">
-                            {formatPrice(invoice.totalAmount)}
-                        </span>
-                    </div>
-                </div>
-
-                {/* Các nút hành động */}
-                <div className="p-6 bg-gray-50 flex flex-col sm:flex-row gap-4 justify-center">
-                    <Button variant="outline" className="w-full sm:w-auto" >
-                        🖨️ In hóa đơn
-                    </Button>
-                    <Link href="/profile/bookings" className="w-full sm:w-auto">
-                        <Button variant="primary" className="w-full">
-                            📋 Xem lịch sử đặt chỗ
-                        </Button>
-                    </Link>
                 </div>
             </div>
-        </div>
+        </>
     );
 }

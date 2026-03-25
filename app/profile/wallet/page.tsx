@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import WalletDeposit from "@/components/wallet/WalletDeposit";
+import WalletWithdraw from "@/components/wallet/WalletWithdraw";
 
 const TABS = [
     { key: "deposit", label: "💳 Nạp tiền" },
+    { key: "withdraw", label: "💸 Rút tiền" },
     { key: "transactions", label: "📋 Lịch sử" },
 ];
 
@@ -83,6 +85,7 @@ export default function WalletPage() {
 
                     {/* Content */}
                     {activeTab === "deposit" && <WalletDeposit />}
+                    {activeTab === "withdraw" && <WalletWithdraw />}
                     {activeTab === "transactions" && <TransactionHistory />}
                 </div>
             </div>

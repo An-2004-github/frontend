@@ -36,6 +36,10 @@ class VerifyOTPRequest(BaseModel):
     otp:  str
     type: str  # "email" | "phone"
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -149,6 +153,35 @@ def update_profile(data: UpdateProfileRequest, user_id: int = Depends(get_curren
         conn.execute(text(f"UPDATE users SET {set_clause} WHERE user_id = :id"), fields)
 
     return {"message": "Cập nhật thông tin thành công"}
+
+
+# ── CHANGE PASSWORD ────────────────────────────────────────────
+@router.put("/change-password")
+def change_password(data: ChangePasswordRequest, user_id: int = Depends(get_current_user)):
+    with engine.connect() as conn:
+        user = conn.execute(
+            text("SELECT password_hash, provider FROM users WHERE user_id = :id"),
+            {"id": user_id}
+        ).fetchone()
+        if not user:
+            raise HTTPException(404, "Người dùng không tồn tại")
+        user = dict(user._mapping)
+
+    if user["provider"] != "local":
+        raise HTTPException(400, "Tài khoản Google không thể đổi mật khẩu tại đây")
+
+    if not verify_password(data.current_password, user["password_hash"]):
+        raise HTTPException(400, "Mật khẩu hiện tại không đúng")
+
+    if len(data.new_password) < 6:
+        raise HTTPException(400, "Mật khẩu mới phải có ít nhất 6 ký tự")
+
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE users SET password_hash = :hash WHERE user_id = :id"),
+            {"hash": hash_password(data.new_password), "id": user_id}
+        )
+    return {"message": "Đổi mật khẩu thành công"}
 
 
 # ── SEND OTP ───────────────────────────────────────────────────

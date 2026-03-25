@@ -4,6 +4,7 @@ import "./globals.css";
 
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
+import ChatBot from "@/components/ChatBot";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import { useAuthInit } from "@/hooks/useAuthInit";
 import { usePathname } from "next/navigation";
@@ -31,6 +32,7 @@ export default function RootLayout({
           </main>
 
           {!isAdmin && <Footer />}
+          {!isAdmin && <ChatBot />}
 
         </GoogleOAuthProvider>
       </body>

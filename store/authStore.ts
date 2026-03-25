@@ -6,17 +6,19 @@ interface AuthState {
     user: User | null;
     token: string | null;
     isAuthenticated: boolean;
+    hasHydrated: boolean;
     login: (user: User, token: string) => void;
     logout: () => void;
+    setHasHydrated: (v: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
-    // ✅ persist giúp store không bị reset khi reload trang
     persist(
         (set) => ({
             user: null,
             token: null,
             isAuthenticated: false,
+            hasHydrated: false,
 
             login: (user, token) => {
                 set({ user, token, isAuthenticated: true });
@@ -25,9 +27,14 @@ export const useAuthStore = create<AuthState>()(
             logout: () => {
                 set({ user: null, token: null, isAuthenticated: false });
             },
+
+            setHasHydrated: (v) => set({ hasHydrated: v }),
         }),
         {
-            name: 'auth-storage', // key trong localStorage
+            name: 'auth-storage',
+            onRehydrateStorage: () => (state) => {
+                state?.setHasHydrated(true);
+            },
         }
     )
 );

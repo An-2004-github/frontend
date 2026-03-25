@@ -66,6 +66,191 @@ async def send_otp_email(email: str, otp: str):
         print(f"❌ OTP email error: {e}")
 
 
+async def send_booking_confirmation_email(
+    email: str,
+    name: str,
+    booking_id: int,
+    service_name: str,
+    amount: float,
+    entity_type: str,
+    check_in: str | None = None,
+    check_out: str | None = None,
+    booking_date: str | None = None,
+):
+    type_icons = {"room": "🏨", "flight": "✈️", "bus": "🚌"}
+    type_labels = {"room": "Khách sạn", "flight": "Chuyến bay", "bus": "Xe khách"}
+    icon  = type_icons.get(entity_type, "🎫")
+    label = type_labels.get(entity_type, "Dịch vụ")
+
+    # Build extra rows
+    extra_rows = ""
+    if check_in:
+        extra_rows += f"""
+        <tr>
+            <td style="padding:0.6rem 0;color:#6b8cbf;font-size:0.88rem;border-bottom:1px solid #f0f4ff;">📅 Nhận phòng</td>
+            <td style="padding:0.6rem 0;font-weight:600;color:#1a3c6b;text-align:right;border-bottom:1px solid #f0f4ff;">{check_in}</td>
+        </tr>"""
+    if check_out:
+        extra_rows += f"""
+        <tr>
+            <td style="padding:0.6rem 0;color:#6b8cbf;font-size:0.88rem;border-bottom:1px solid #f0f4ff;">📅 Trả phòng</td>
+            <td style="padding:0.6rem 0;font-weight:600;color:#1a3c6b;text-align:right;border-bottom:1px solid #f0f4ff;">{check_out}</td>
+        </tr>"""
+
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4ff; margin: 0; padding: 0; }}
+            .wrapper {{ max-width: 560px; margin: 40px auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,82,204,0.1); }}
+            .header {{ background: linear-gradient(135deg, #003580, #0065ff); padding: 2.5rem 2rem; text-align: center; }}
+            .header h1 {{ color: #fff; font-size: 1.5rem; margin: 0 0 0.4rem; }}
+            .header p {{ color: rgba(255,255,255,0.75); margin: 0; font-size: 0.9rem; }}
+            .success-badge {{ display:inline-block; background:rgba(255,255,255,0.15); border:1.5px solid rgba(255,255,255,0.4); color:#fff; border-radius:99px; padding:0.3rem 1rem; font-size:0.85rem; font-weight:600; margin-bottom:1rem; }}
+            .body {{ padding: 2rem 2.5rem; }}
+            .greeting {{ font-size: 1.05rem; color: #1a3c6b; font-weight: 600; margin-bottom: 0.5rem; }}
+            .service-card {{ background:#f8faff; border:1px solid #e8f0fe; border-radius:12px; padding:1.25rem 1.5rem; margin:1.5rem 0; }}
+            .service-icon {{ font-size:2rem; text-align:center; margin-bottom:0.75rem; }}
+            .service-name {{ font-size:1rem; font-weight:700; color:#1a3c6b; text-align:center; margin-bottom:1.25rem; }}
+            table {{ width:100%; border-collapse:collapse; }}
+            .amount-row td {{ padding:0.75rem 0; font-size:1.1rem !important; }}
+            .amount-val {{ font-size:1.15rem !important; color:#0052cc !important; font-weight:800 !important; }}
+            .footer {{ background: #f8faff; padding: 1.25rem 2rem; text-align: center; color: #6b8cbf; font-size: 0.78rem; border-top: 1px solid #e8f0fe; line-height:1.6; }}
+        </style>
+    </head>
+    <body>
+        <div class="wrapper">
+            <div class="header">
+                <div class="success-badge">✅ Đặt chỗ thành công</div>
+                <h1>✈️ VIVU Travel</h1>
+                <p>Cảm ơn bạn đã tin tưởng đặt dịch vụ tại VIVU</p>
+            </div>
+            <div class="body">
+                <div class="greeting">Xin chào {name}! 👋</div>
+                <p style="color:#4a5568;font-size:0.92rem;line-height:1.7;margin-bottom:0;">
+                    Đặt chỗ của bạn đã được <strong style="color:#00875a;">xác nhận thành công</strong>.
+                    Dưới đây là thông tin chi tiết:
+                </p>
+
+                <div class="service-card">
+                    <div class="service-icon">{icon}</div>
+                    <div class="service-name">{service_name}</div>
+                    <table>
+                        <tr>
+                            <td style="padding:0.6rem 0;color:#6b8cbf;font-size:0.88rem;border-bottom:1px solid #f0f4ff;">📋 Mã đặt chỗ</td>
+                            <td style="padding:0.6rem 0;font-weight:700;color:#0052cc;text-align:right;border-bottom:1px solid #f0f4ff;">#{booking_id}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding:0.6rem 0;color:#6b8cbf;font-size:0.88rem;border-bottom:1px solid #f0f4ff;">🏷 Loại dịch vụ</td>
+                            <td style="padding:0.6rem 0;font-weight:600;color:#1a3c6b;text-align:right;border-bottom:1px solid #f0f4ff;">{label}</td>
+                        </tr>
+                        {extra_rows}
+                        <tr>
+                            <td style="padding:0.6rem 0;color:#6b8cbf;font-size:0.88rem;border-bottom:1px solid #f0f4ff;">📆 Ngày đặt</td>
+                            <td style="padding:0.6rem 0;font-weight:600;color:#1a3c6b;text-align:right;border-bottom:1px solid #f0f4ff;">{booking_date or "—"}</td>
+                        </tr>
+                        <tr class="amount-row">
+                            <td style="padding:0.75rem 0;color:#6b8cbf;font-size:0.88rem;">💰 Số tiền</td>
+                            <td class="amount-val" style="text-align:right;">{amount:,.0f}₫</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <p style="color:#6b8cbf;font-size:0.82rem;line-height:1.6;margin-top:0;">
+                    Bạn có thể xem lại thông tin đặt chỗ trong mục <strong>Lịch sử đặt chỗ</strong> trên ứng dụng.
+                    Nếu có bất kỳ thắc mắc nào, hãy liên hệ bộ phận hỗ trợ của chúng tôi.
+                </p>
+            </div>
+            <div class="footer">
+                © 2026 VIVU Travel · Email này được gửi tự động, vui lòng không trả lời.<br/>
+                Cảm ơn bạn đã sử dụng dịch vụ của VIVU Travel! 🙏
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    message = MessageSchema(
+        subject=f"✅ Xác nhận đặt chỗ #{booking_id} — VIVU Travel",
+        recipients=[email],
+        body=html,
+        subtype=MessageType.html,
+    )
+    try:
+        await fm.send_message(message)
+        print(f"✅ Booking confirmation email sent to {email} (booking #{booking_id})")
+    except Exception as e:
+        print(f"❌ Booking confirmation email error: {e}")
+
+
+async def send_withdrawal_success_email(email: str, name: str, amount: float, bank_info: str):
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4ff; margin: 0; padding: 0; }}
+            .wrapper {{ max-width: 520px; margin: 40px auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,82,204,0.1); }}
+            .header {{ background: linear-gradient(135deg, #003580, #0052cc); padding: 2rem; text-align: center; }}
+            .header h1 {{ color: #fff; font-size: 1.4rem; margin: 0 0 0.4rem; }}
+            .success-badge {{ display:inline-block; background:rgba(255,255,255,0.15); border:1.5px solid rgba(255,255,255,0.4); color:#fff; border-radius:99px; padding:0.3rem 1rem; font-size:0.85rem; font-weight:600; margin-bottom:0.75rem; }}
+            .body {{ padding: 2rem 2.5rem; }}
+            .info-card {{ background:#f0f4ff; border:1px solid #e8f0fe; border-radius:12px; padding:1.25rem 1.5rem; margin:1.5rem 0; }}
+            table {{ width:100%; border-collapse:collapse; }}
+            td {{ padding:0.6rem 0; border-bottom:1px solid #e8f0fe; font-size:0.88rem; }}
+            tr:last-child td {{ border-bottom:none; }}
+            .footer {{ background: #f8faff; padding: 1rem 2rem; text-align: center; color: #6b8cbf; font-size: 0.78rem; border-top: 1px solid #e8f0fe; }}
+        </style>
+    </head>
+    <body>
+        <div class="wrapper">
+            <div class="header">
+                <div class="success-badge">✅ Rút tiền thành công</div>
+                <h1>💸 VIVU Travel — Thông báo ví</h1>
+            </div>
+            <div class="body">
+                <p style="color:#1a3c6b;font-size:1rem;font-weight:600;">Xin chào {name}! 👋</p>
+                <p style="color:#4a5568;font-size:0.92rem;line-height:1.7;">
+                    Yêu cầu rút tiền của bạn đã được <strong style="color:#00875a;">xử lý thành công</strong>.
+                    Tiền đã được chuyển tới tài khoản của bạn.
+                </p>
+                <div class="info-card">
+                    <table>
+                        <tr>
+                            <td style="color:#6b8cbf;">💰 Số tiền rút</td>
+                            <td style="text-align:right;font-weight:800;color:#0052cc;font-size:1.05rem;">{amount:,.0f}₫</td>
+                        </tr>
+                        <tr>
+                            <td style="color:#6b8cbf;">🏦 Tài khoản nhận</td>
+                            <td style="text-align:right;font-weight:600;color:#1a3c6b;">{bank_info}</td>
+                        </tr>
+                    </table>
+                </div>
+                <p style="color:#6b8cbf;font-size:0.82rem;line-height:1.6;">
+                    Nếu bạn không thực hiện giao dịch này, vui lòng liên hệ ngay bộ phận hỗ trợ.
+                </p>
+            </div>
+            <div class="footer">© 2026 VIVU Travel · Email tự động, vui lòng không trả lời.</div>
+        </div>
+    </body>
+    </html>
+    """
+    message = MessageSchema(
+        subject="💸 Rút tiền thành công — VIVU Travel",
+        recipients=[email],
+        body=html,
+        subtype=MessageType.html,
+    )
+    try:
+        await fm.send_message(message)
+        print(f"✅ Withdrawal email sent to {email}")
+    except Exception as e:
+        print(f"❌ Withdrawal email error: {e}")
+
+
 async def send_welcome_email(email: str, name: str):
     html = f"""
     <!DOCTYPE html>
@@ -128,4 +313,68 @@ async def send_welcome_email(email: str, name: str):
     )
 
     await fm.send_message(message)
-        
+
+
+async def send_cancel_confirmation_email(email: str, name: str, booking_id: int,
+                                         service_name: str, refund_amount: float,
+                                         cancel_fee: float, refund_method: str):
+    fmt = lambda n: f"{n:,.0f}₫"
+    refund_label = "Ví VIVU" if refund_method == "wallet" else "Tài khoản ngân hàng"
+    html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <style>
+        body{{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4ff;margin:0;padding:0}}
+        .w{{max-width:520px;margin:40px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,82,204,.1)}}
+        .hd{{background:linear-gradient(135deg,#003580,#c0392b);padding:2rem;text-align:center;color:#fff}}
+        .hd h1{{margin:0;font-size:1.4rem}} .hd p{{margin:.4rem 0 0;opacity:.8;font-size:.9rem}}
+        .bd{{padding:2rem}} .row{{display:flex;justify-content:space-between;padding:.6rem 0;border-bottom:1px solid #f0f4ff;font-size:.9rem}}
+        .row:last-child{{border:none}} .lbl{{color:#6b8cbf}} .val{{font-weight:600;color:#1a3c6b}}
+        .note{{background:#fff8e1;border-left:4px solid #f39c12;padding:1rem;margin:1rem 0;border-radius:0 8px 8px 0;font-size:.85rem;color:#7b5700}}
+        .ft{{background:#f8faff;padding:1rem 2rem;text-align:center;font-size:.8rem;color:#6b8cbf}}
+    </style></head><body>
+    <div class="w">
+        <div class="hd"><h1>❌ Hủy đặt chỗ thành công</h1><p>Mã đặt chỗ #{booking_id}</p></div>
+        <div class="bd">
+            <p>Xin chào <strong>{name}</strong>,</p>
+            <p>Đặt chỗ của bạn đã được hủy. Dưới đây là thông tin chi tiết:</p>
+            <div class="row"><span class="lbl">Dịch vụ</span><span class="val">{service_name}</span></div>
+            <div class="row"><span class="lbl">Phí hủy</span><span class="val" style="color:#c0392b">{fmt(cancel_fee)}</span></div>
+            <div class="row"><span class="lbl">Số tiền hoàn</span><span class="val" style="color:#00875a">{fmt(refund_amount)}</span></div>
+            <div class="row"><span class="lbl">Phương thức hoàn tiền</span><span class="val">{refund_label}</span></div>
+            <div class="note">⏱ Yêu cầu hoàn tiền sẽ được xử lý trong vòng <strong>2–5 ngày làm việc</strong>.</div>
+        </div>
+        <div class="ft">VIVU Travel — Cảm ơn bạn đã sử dụng dịch vụ</div>
+    </div></body></html>"""
+
+    await fm.send_message(MessageSchema(
+        subject=f"❌ Hủy đặt chỗ #{booking_id} — VIVU Travel",
+        recipients=[email], body=html, subtype=MessageType.html,
+    ))
+
+
+async def send_reschedule_confirmation_email(email: str, name: str, booking_id: int,
+                                              service_name: str, note: str = ""):
+    html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <style>
+        body{{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4ff;margin:0;padding:0}}
+        .w{{max-width:520px;margin:40px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,82,204,.1)}}
+        .hd{{background:linear-gradient(135deg,#003580,#0052cc);padding:2rem;text-align:center;color:#fff}}
+        .hd h1{{margin:0;font-size:1.4rem}} .hd p{{margin:.4rem 0 0;opacity:.8;font-size:.9rem}}
+        .bd{{padding:2rem;font-size:.92rem;color:#1a3c6b}}
+        .note{{background:#e8f5e9;border-left:4px solid #00875a;padding:1rem;margin:1rem 0;border-radius:0 8px 8px 0;color:#00875a;font-weight:600}}
+        .ft{{background:#f8faff;padding:1rem 2rem;text-align:center;font-size:.8rem;color:#6b8cbf}}
+    </style></head><body>
+    <div class="w">
+        <div class="hd"><h1>🔄 Đổi lịch thành công</h1><p>Mã đặt chỗ #{booking_id}</p></div>
+        <div class="bd">
+            <p>Xin chào <strong>{name}</strong>,</p>
+            <p>Lịch đặt chỗ <strong>{service_name}</strong> của bạn đã được cập nhật thành công.</p>
+            {'<div class="note">' + note + '</div>' if note else ''}
+            <p>Vui lòng kiểm tra lại chi tiết đặt chỗ trên ứng dụng VIVU Travel.</p>
+        </div>
+        <div class="ft">VIVU Travel — Chúc bạn có chuyến đi vui vẻ!</div>
+    </div></body></html>"""
+
+    await fm.send_message(MessageSchema(
+        subject=f"🔄 Đổi lịch đặt chỗ #{booking_id} — VIVU Travel",
+        recipients=[email], body=html, subtype=MessageType.html,
+    ))
