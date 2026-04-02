@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from rank_utils import get_cancel_fee_rate, get_rank, get_cashback_rate
 from sqlalchemy import text
 from database import engine
 from auth import get_current_user
@@ -7,6 +8,31 @@ from email_service import send_booking_confirmation_email
 from datetime import date as ddate
 
 router = APIRouter(prefix="/api/bookings", tags=["bookings"])
+
+
+def _apply_cashback(conn, user_id: int, booking_id: int, amount: float):
+    """Tính rank mới + cộng cashback vào ví sau khi booking confirmed."""
+    total_spent = conn.execute(
+        text("SELECT COALESCE(SUM(final_amount), 0) FROM bookings WHERE user_id = :uid AND status = 'confirmed'"),
+        {"uid": user_id}
+    ).scalar()
+    new_rank = get_rank(float(total_spent))
+    conn.execute(
+        text("UPDATE users SET user_rank = :rank WHERE user_id = :uid"),
+        {"rank": new_rank, "uid": user_id}
+    )
+    cashback = round(amount * get_cashback_rate(new_rank))
+    if cashback > 0:
+        conn.execute(
+            text("UPDATE users SET wallet = wallet + :amt WHERE user_id = :uid"),
+            {"amt": cashback, "uid": user_id}
+        )
+        conn.execute(text("""
+            INSERT INTO wallet_transactions (user_id, amount, type, description, status)
+            VALUES (:uid, :amt, 'cashback', :desc, 'success')
+        """), {"uid": user_id, "amt": cashback,
+               "desc": f"Cashback {round(get_cashback_rate(new_rank)*100, 1)}% đơn #{booking_id}"})
+    return cashback
 
 # ── Auto-create booking_modifications table ─────────────────────
 with engine.begin() as _conn:
@@ -39,6 +65,8 @@ class BookingRequest(BaseModel):
     check_in_date:  str | None = None
     check_out_date: str | None = None
     guests:         int = 1
+    passengers:     int = 1
+    seat_class:     str | None = None
     total_price:    float
 
 
@@ -83,7 +111,24 @@ def get_my_bookings(user_id: int = Depends(get_current_user)):
 # Tạo booking mới
 @router.post("/")
 def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user)):
+    quantity = data.passengers if data.entity_type == "flight" else data.guests
+
     with engine.begin() as conn:
+        # Kiểm tra đủ ghế trước khi đặt (chỉ cho flight)
+        if data.entity_type == "flight" and data.seat_class:
+            avail = conn.execute(
+                text("""
+                    SELECT COUNT(*) FROM flight_seats
+                    WHERE flight_id = :fid AND seat_class = :cls AND is_booked = 0
+                """),
+                {"fid": data.entity_id, "cls": data.seat_class}
+            ).scalar()
+            if avail < quantity:
+                raise HTTPException(
+                    400,
+                    f"Không đủ ghế {data.seat_class}. Chỉ còn {avail} ghế trống."
+                )
+
         # Tạo booking
         result = conn.execute(
             text("""
@@ -100,18 +145,34 @@ def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user
                 INSERT INTO booking_items
                     (booking_id, entity_type, entity_id, quantity, price, check_in_date, check_out_date)
                 VALUES
-                    (:booking_id, :entity_type, :entity_id, :guests, :price, :check_in, :check_out)
+                    (:booking_id, :entity_type, :entity_id, :quantity, :price, :check_in, :check_out)
             """),
             {
                 "booking_id":  booking_id,
                 "entity_type": data.entity_type,
                 "entity_id":   data.entity_id,
-                "guests":      data.guests,
+                "quantity":    quantity,
                 "price":       data.total_price,
                 "check_in":    data.check_in_date,
                 "check_out":   data.check_out_date,
             }
         )
+
+        # Trừ ghế trong flight_seats
+        if data.entity_type == "flight" and data.seat_class:
+            seat_rows = conn.execute(
+                text("""
+                    SELECT seat_id FROM flight_seats
+                    WHERE flight_id = :fid AND seat_class = :cls AND is_booked = 0
+                    LIMIT :n
+                """),
+                {"fid": data.entity_id, "cls": data.seat_class, "n": quantity}
+            ).fetchall()
+            seat_ids = [str(r.seat_id) for r in seat_rows]
+            if seat_ids:
+                conn.execute(
+                    text(f"UPDATE flight_seats SET is_booked = 1 WHERE seat_id IN ({','.join(seat_ids)})")
+                )
 
     return {"booking_id": booking_id, "message": "Đặt chỗ thành công"}
 
@@ -200,6 +261,7 @@ def pay_with_wallet(booking_id: int, background_tasks: BackgroundTasks, user_id:
             }
         )
 
+        cashback = _apply_cashback(conn, user_id, booking_id, amount)
         email_info = _get_booking_email_info(conn, booking_id, user_id)
 
     # Gửi email xác nhận (ngoài transaction)
@@ -218,7 +280,10 @@ def pay_with_wallet(booking_id: int, background_tasks: BackgroundTasks, user_id:
         )
 
     new_balance = balance - amount
-    return {"message": "Thanh toán thành công", "new_balance": new_balance}
+    msg = f"Thanh toán thành công"
+    if cashback > 0:
+        msg += f". Bạn nhận được {cashback:,.0f}₫ cashback vào ví!"
+    return {"message": msg, "new_balance": new_balance}
 
 
 # Thanh toán kết hợp ví + chuyển khoản
@@ -271,6 +336,8 @@ def pay_combined(booking_id: int, data: PayCombinedRequest, background_tasks: Ba
             {"id": booking_id}
         )
 
+        final_amount = float(booking_dict["final_amount"])
+        cashback = _apply_cashback(conn, user_id, booking_id, final_amount)
         email_info = _get_booking_email_info(conn, booking_id, user_id)
 
     # Gửi email xác nhận (ngoài transaction)
@@ -288,7 +355,10 @@ def pay_combined(booking_id: int, data: PayCombinedRequest, background_tasks: Ba
             booking_date=str(email_info["booking_date"])[:10] if email_info["booking_date"] else None,
         )
 
-    return {"message": "Thanh toán thành công"}
+    msg = "Thanh toán thành công"
+    if cashback > 0:
+        msg += f". Bạn nhận được {cashback:,.0f}₫ cashback vào ví!"
+    return {"message": msg}
 
 
 # Chi tiết 1 booking (dùng cho invoice)
@@ -397,7 +467,7 @@ def get_reschedule_options(
 
             rows = conn.execute(text("""
                 SELECT rt.room_type_id, rt.name, rt.price_per_night, h.name AS hotel_name,
-                       (rt.price_per_night * :nights) AS total_price,
+                       ROUND(rt.price_per_night * :nights * 1.21) AS total_price,
                        (SELECT image_url FROM images
                         WHERE entity_type='hotel' AND entity_id=h.hotel_id LIMIT 1) AS image_url
                 FROM room_types rt
@@ -655,21 +725,22 @@ def cancel_booking(booking_id: int, data: CancelRequest, user_id: int = Depends(
         item_d = dict(item._mapping)
         entity_type = item_d["entity_type"]
 
-        # Calculate cancel fee
+        # Lấy rank của user
+        user_row = conn.execute(
+            text("SELECT COALESCE(user_rank, 'bronze') AS user_rank FROM users WHERE user_id = :uid"),
+            {"uid": user_id}
+        ).fetchone()
+        user_rank = dict(user_row._mapping)["user_rank"] if user_row else "bronze"
+
+        # Calculate cancel fee theo rank
         cancel_fee = 0.0
         check_in_raw = item_d.get("check_in_date")
         if check_in_raw:
             try:
                 svc_date = check_in_raw if isinstance(check_in_raw, ddate) else ddate.fromisoformat(str(check_in_raw))
                 days_until = (svc_date - ddate.today()).days
-                if entity_type == "room":
-                    if days_until < 3:
-                        cancel_fee = round(total_price * 0.3, 2)
-                elif entity_type in ("flight", "bus"):
-                    if days_until < 1:
-                        cancel_fee = round(total_price * 0.3, 2)
-                    elif days_until < 3:
-                        cancel_fee = round(total_price * 0.1, 2)
+                rate = get_cancel_fee_rate(user_rank, days_until, entity_type)
+                cancel_fee = round(total_price * rate, 2)
             except Exception:
                 pass
 
@@ -715,6 +786,23 @@ def cancel_booking(booking_id: int, data: CancelRequest, user_id: int = Depends(
         "refund_amount": refund_amount,
         "message": message,
     }
+
+
+# ── CANCEL PENDING (hết thời gian thanh toán, chưa trả tiền) ────
+@router.post("/{booking_id}/cancel-pending")
+def cancel_pending_booking(booking_id: int, user_id: int = Depends(get_current_user)):
+    with engine.begin() as conn:
+        booking = conn.execute(
+            text("SELECT booking_id FROM bookings WHERE booking_id = :id AND user_id = :uid AND status = 'pending'"),
+            {"id": booking_id, "uid": user_id},
+        ).fetchone()
+        if not booking:
+            raise HTTPException(404, "Booking không tồn tại hoặc đã được xử lý")
+        conn.execute(
+            text("UPDATE bookings SET status = 'cancelled' WHERE booking_id = :id"),
+            {"id": booking_id}
+        )
+    return {"message": "Đặt chỗ đã bị hủy do hết thời gian thanh toán"}
 
 
 # ── USER MODIFICATION HISTORY ───────────────────────────────────

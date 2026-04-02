@@ -11,7 +11,7 @@ import api from "@/lib/axios";
 
 export default function BookingPage() {
     const router = useRouter();
-    const { user } = useAuthStore();
+    const { user, login } = useAuthStore();
     const { booking, clearBooking } = useBookingStore();
     const { setPayment } = usePaymentStore();
     const [submitting, setSubmitting] = useState(false);
@@ -96,9 +96,23 @@ export default function BookingPage() {
         if (!validate() || !booking) return;
         setSubmitting(true);
         try {
+            // Nếu chưa đăng nhập → tạo guest account rồi lấy token
+            if (!user) {
+                const guestRes = await api.post("/api/auth/guest", {
+                    email: form.contactEmail,
+                    full_name: form.contactName,
+                    phone: form.contactPhone,
+                });
+                const token = guestRes.data.access_token;
+                const meRes = await api.get("/api/auth/me", {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                login(meRes.data, token);
+            }
+
             let payload: Record<string, unknown> = {
                 guest_name: form.bookingForSelf
-                    ? (user?.full_name || form.contactName)
+                    ? form.contactName
                     : form.guestName,
                 contact_name: form.contactName,
                 contact_phone: form.contactPhone,

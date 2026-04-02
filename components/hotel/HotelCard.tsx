@@ -3,19 +3,22 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Hotel } from "@/types/hotel";
+import { logInteraction } from "@/lib/logInteraction";
 
 interface Props {
     hotel: Hotel;
 }
 
 export default function HotelCard({ hotel }: Props) {
-    // ✅ Không dùng "as any" vì hotel.ts đã có đủ các field này
     const stars = hotel.star_rating ?? hotel.stars ?? 0;
     const price = hotel.min_price ?? hotel.price_per_night ?? null;
     const imageUrl = hotel.image_url ?? null;
-    const rating = hotel.avg_rating ?? 0;          // ✅ fallback 0, không còn undefined
+    const rating = hotel.avg_rating ?? 0;
     const reviews = hotel.review_count ?? 0;
     const city = hotel.destination_city ?? hotel.address ?? "Đang cập nhật";
+    const availRooms = hotel.available_rooms ?? null;
+    const isLowRoom = availRooms !== null && availRooms <= 3;
+    const isFull = availRooms !== null && availRooms === 0;
 
     return (
         <div className="hcard">
@@ -73,6 +76,20 @@ export default function HotelCard({ hotel }: Props) {
                     </div>
                 )}
 
+                {/* Room availability */}
+                {availRooms !== null && (
+                    <div style={{
+                        display: "inline-flex", alignItems: "center", gap: "0.3rem",
+                        fontSize: "0.72rem", fontWeight: 700,
+                        padding: "0.2rem 0.6rem", borderRadius: 99, marginTop: "0.2rem",
+                        background: isFull ? "#fff0f0" : isLowRoom ? "#fff8e1" : "#e6f9f0",
+                        color: isFull ? "#c0392b" : isLowRoom ? "#b8860b" : "#00875a",
+                        border: `1px solid ${isFull ? "#ffcdd2" : isLowRoom ? "#ffe082" : "#b7dfbb"}`,
+                    }}>
+                        {isFull ? "🚫 Hết phòng" : isLowRoom ? `🔥 Còn ${availRooms} phòng` : `✅ Còn ${availRooms} phòng trống`}
+                    </div>
+                )}
+
                 {/* Footer */}
                 <div className="hcard-footer">
                     {price ? (
@@ -86,7 +103,11 @@ export default function HotelCard({ hotel }: Props) {
                     ) : (
                         <span className="hcard-price-contact">Liên hệ báo giá</span>
                     )}
-                    <Link href={`/hotels/${hotel.hotel_id}`} className="hcard-btn">
+                    <Link
+                        href={`/hotels/${hotel.hotel_id}`}
+                        className="hcard-btn"
+                        onClick={() => logInteraction("hotel", hotel.hotel_id, "click")}
+                    >
                         Xem chi tiết
                     </Link>
 

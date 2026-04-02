@@ -1,0 +1,1 @@
+{"num_users": 14, "num_items": 10, "embed_dim": 32, "mlp_layers": [64, 32, 16], "dropout": 0.2}

@@ -56,7 +56,13 @@ def search_flights(
             f.*,
             TIMESTAMPDIFF(MINUTE, f.depart_time, f.arrive_time) AS duration_minutes,
             (SELECT COUNT(*) FROM flight_seats fs
-             WHERE fs.flight_id = f.flight_id AND fs.is_booked = 0) AS available_seats
+             WHERE fs.flight_id = f.flight_id AND fs.is_booked = 0) AS available_seats,
+            (SELECT COUNT(*) FROM flight_seats fs
+             WHERE fs.flight_id = f.flight_id AND fs.is_booked = 0 AND fs.seat_class = 'economy') AS economy_seats,
+            (SELECT COUNT(*) FROM flight_seats fs
+             WHERE fs.flight_id = f.flight_id AND fs.is_booked = 0 AND fs.seat_class = 'business') AS business_seats,
+            (SELECT COUNT(*) FROM flight_seats fs
+             WHERE fs.flight_id = f.flight_id AND fs.is_booked = 0 AND fs.seat_class = 'first') AS first_seats
         FROM flights f
         WHERE {' AND '.join(conditions)}
         ORDER BY {order}

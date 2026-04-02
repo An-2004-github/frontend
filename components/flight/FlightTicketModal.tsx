@@ -17,6 +17,7 @@ interface TicketOption {
     is_refundable: boolean;
     is_changeable: boolean;
     is_booked: boolean;
+    available_count: number;
 }
 
 interface Props {
@@ -48,15 +49,26 @@ export default function FlightTicketModal({ flight, passengers, onClose }: Props
         api.get(`/api/flights/${flight.flight_id}`)
             .then(res => {
                 const seats: TicketOption[] = res.data.seats ?? [];
-                // Lấy 1 đại diện mỗi label (không hiển thị từng ghế riêng lẻ)
-                const unique = Object.values(
-                    seats.reduce((acc: Record<string, TicketOption>, s) => {
-                        if (!s.is_booked && !acc[s.label ?? s.seat_class]) {
-                            acc[s.label ?? s.seat_class] = s;
-                        }
-                        return acc;
-                    }, {})
-                ) as TicketOption[];
+                // Đếm số ghế còn trống theo từng label/class
+                const countMap: Record<string, number> = {};
+                seats.forEach(s => {
+                    if (!s.is_booked) {
+                        const key = s.label ?? s.seat_class;
+                        countMap[key] = (countMap[key] || 0) + 1;
+                    }
+                });
+                // Lấy 1 đại diện mỗi label, gắn available_count
+                const repMap: Record<string, TicketOption> = {};
+                seats.forEach(s => {
+                    if (!s.is_booked) {
+                        const key = s.label ?? s.seat_class;
+                        if (!repMap[key]) repMap[key] = s;
+                    }
+                });
+                const unique = Object.keys(repMap).map(key => ({
+                    ...repMap[key],
+                    available_count: countMap[key] ?? 0,
+                }));
                 setTickets(unique);
             })
             .finally(() => setLoading(false));
@@ -238,48 +250,65 @@ export default function FlightTicketModal({ flight, passengers, onClose }: Props
                         <div className="ftm-loading"><div className="ftm-spinner" /></div>
                     ) : (
                         <div className="ftm-tickets">
-                            {tickets.map((t) => (
-                                <div
-                                    key={t.seat_id}
-                                    className={`ftm-ticket${selected?.seat_id === t.seat_id ? " selected" : ""}`}
-                                    onClick={() => setSelected(t)}
-                                >
-                                    <div className="ftm-ticket-class">{t.seat_class}</div>
-                                    <div className="ftm-ticket-price">
-                                        {price(t).toLocaleString("vi-VN")} VND
-                                        <span>/khách</span>
-                                    </div>
-                                    <div className="ftm-ticket-label">{t.label}</div>
-
-                                    <div className="ftm-features">
-                                        <div className="ftm-feature">
-                                            <span className="ftm-feature-icon">🎒</span>
-                                            Hành lý xách tay {t.carry_on_kg} kg
-                                        </div>
-                                        <div className={`ftm-feature${t.checked_bag_kg === 0 ? " no" : ""}`}>
-                                            <span className="ftm-feature-icon">🧳</span>
-                                            {t.checked_bag_kg > 0
-                                                ? `Hành lý ký gửi ${t.checked_bag_kg} kg`
-                                                : "Không có hành lý ký gửi"}
-                                        </div>
-                                        <div className={`ftm-feature${!t.is_changeable ? " no" : ""}`}>
-                                            <span className="ftm-feature-icon">🔄</span>
-                                            {t.is_changeable ? "Cho phép đổi vé" : "Không áp dụng đổi vé"}
-                                        </div>
-                                        <div className={`ftm-feature${!t.is_refundable ? " no" : ""}`}>
-                                            <span className="ftm-feature-icon">💳</span>
-                                            {t.is_refundable ? "Cho phép hoàn vé" : "Không áp dụng hoàn vé"}
-                                        </div>
-                                    </div>
-
-                                    <button
-                                        className="ftm-select-btn"
-                                        onClick={(e) => { e.stopPropagation(); setSelected(t); }}
+                            {tickets.map((t) => {
+                                const notEnough = t.available_count < passengers;
+                                const isSelected = selected?.seat_id === t.seat_id;
+                                return (
+                                    <div
+                                        key={t.seat_id}
+                                        className={`ftm-ticket${isSelected ? " selected" : ""}${notEnough ? " disabled" : ""}`}
+                                        onClick={() => !notEnough && setSelected(t)}
+                                        style={notEnough ? { opacity: 0.5, cursor: "not-allowed" } : {}}
                                     >
-                                        {selected?.seat_id === t.seat_id ? "✓ Đã chọn" : "Chọn"}
-                                    </button>
-                                </div>
-                            ))}
+                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                            <div className="ftm-ticket-class">{t.seat_class}</div>
+                                            <span style={{
+                                                fontSize: "0.72rem", fontWeight: 700,
+                                                padding: "0.15rem 0.55rem", borderRadius: 99,
+                                                background: notEnough ? "#fff0f0" : t.available_count <= 5 ? "#fff8e1" : "#e6f9f0",
+                                                color: notEnough ? "#c0392b" : t.available_count <= 5 ? "#b8860b" : "#00875a",
+                                                border: `1px solid ${notEnough ? "#ffcdd2" : t.available_count <= 5 ? "#ffe082" : "#b7dfbb"}`,
+                                            }}>
+                                                {notEnough ? "Hết chỗ" : `${t.available_count} ghế trống`}
+                                            </span>
+                                        </div>
+                                        <div className="ftm-ticket-price">
+                                            {price(t).toLocaleString("vi-VN")} VND
+                                            <span>/khách</span>
+                                        </div>
+                                        <div className="ftm-ticket-label">{t.label}</div>
+
+                                        <div className="ftm-features">
+                                            <div className="ftm-feature">
+                                                <span className="ftm-feature-icon">🎒</span>
+                                                Hành lý xách tay {t.carry_on_kg} kg
+                                            </div>
+                                            <div className={`ftm-feature${t.checked_bag_kg === 0 ? " no" : ""}`}>
+                                                <span className="ftm-feature-icon">🧳</span>
+                                                {t.checked_bag_kg > 0
+                                                    ? `Hành lý ký gửi ${t.checked_bag_kg} kg`
+                                                    : "Không có hành lý ký gửi"}
+                                            </div>
+                                            <div className={`ftm-feature${!t.is_changeable ? " no" : ""}`}>
+                                                <span className="ftm-feature-icon">🔄</span>
+                                                {t.is_changeable ? "Cho phép đổi vé" : "Không áp dụng đổi vé"}
+                                            </div>
+                                            <div className={`ftm-feature${!t.is_refundable ? " no" : ""}`}>
+                                                <span className="ftm-feature-icon">💳</span>
+                                                {t.is_refundable ? "Cho phép hoàn vé" : "Không áp dụng hoàn vé"}
+                                            </div>
+                                        </div>
+
+                                        <button
+                                            className="ftm-select-btn"
+                                            disabled={notEnough}
+                                            onClick={(e) => { e.stopPropagation(); if (!notEnough) setSelected(t); }}
+                                        >
+                                            {notEnough ? "Hết chỗ" : isSelected ? "✓ Đã chọn" : "Chọn"}
+                                        </button>
+                                    </div>
+                                );
+                            })}
                         </div>
                     )}
 

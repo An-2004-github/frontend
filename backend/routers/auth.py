@@ -6,6 +6,7 @@ from pydantic import BaseModel, EmailStr
 from google.oauth2 import id_token
 from google.auth.transport import requests
 from email_service import send_welcome_email, send_otp_email
+from rank_utils import get_rank, get_cashback_rate, RANK_LABELS, RANK_THRESHOLDS
 import random, string
 from datetime import datetime, timedelta
 
@@ -14,6 +15,11 @@ GOOGLE_CLIENT_ID = "432427620604-dk7u0doioej55b63neos8rhm2uu4oe0i.apps.googleuse
 # OTP store tạm — production nên dùng Redis
 otp_store: dict = {}
 
+
+class GuestLoginRequest(BaseModel):
+    email: EmailStr
+    full_name: str
+    phone: str
 
 class RegisterRequest(BaseModel):
     name: str
@@ -44,12 +50,68 @@ class ChangePasswordRequest(BaseModel):
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+# ── GUEST LOGIN ────────────────────────────────────────────────
+@router.post("/guest")
+def guest_login(data: GuestLoginRequest):
+    with engine.begin() as conn:
+        user = conn.execute(
+            text("SELECT user_id, provider FROM users WHERE email = :email"),
+            {"email": data.email}
+        ).fetchone()
+
+        if user:
+            user_dict = dict(user._mapping)
+            if user_dict["provider"] != "guest":
+                raise HTTPException(400, "Email này đã có tài khoản, vui lòng đăng nhập để đặt chỗ")
+            # Cập nhật thông tin guest nếu đã tồn tại
+            conn.execute(
+                text("UPDATE users SET full_name = :name, phone = :phone WHERE user_id = :id"),
+                {"name": data.full_name, "phone": data.phone, "id": user_dict["user_id"]}
+            )
+            user_id = user_dict["user_id"]
+        else:
+            # Tạo tài khoản guest mới
+            result = conn.execute(
+                text("""
+                    INSERT INTO users (full_name, email, phone, password_hash, role, wallet, provider)
+                    VALUES (:name, :email, :phone, '', 'USER', 0, 'guest')
+                """),
+                {"name": data.full_name, "email": data.email, "phone": data.phone}
+            )
+            user_id = result.lastrowid
+
+    token = create_access_token({"user_id": user_id, "email": data.email})
+    return {"access_token": token}
+
+
 # ── REGISTER ───────────────────────────────────────────────────
 @router.post("/register")
 async def register(data: RegisterRequest, background_tasks: BackgroundTasks):
     try:
         hashed = hash_password(data.password)
         with engine.begin() as conn:
+            existing = conn.execute(
+                text("SELECT user_id, provider FROM users WHERE email = :email"),
+                {"email": data.email}
+            ).fetchone()
+
+            if existing:
+                existing = dict(existing._mapping)
+                if existing["provider"] == "guest":
+                    # Nâng cấp tài khoản guest → local
+                    conn.execute(
+                        text("""
+                            UPDATE users
+                            SET full_name = :name, password_hash = :password, provider = 'local'
+                            WHERE user_id = :id
+                        """),
+                        {"name": data.name, "password": hashed, "id": existing["user_id"]}
+                    )
+                    background_tasks.add_task(send_welcome_email, data.email, data.name)
+                    return {"message": "Đăng ký thành công"}
+                else:
+                    raise HTTPException(400, "Email này đã được sử dụng")
+
             conn.execute(
                 text("""
                     INSERT INTO users (full_name, email, password_hash, role, wallet, provider)
@@ -59,6 +121,8 @@ async def register(data: RegisterRequest, background_tasks: BackgroundTasks):
             )
         background_tasks.add_task(send_welcome_email, data.email, data.name)
         return {"message": "Đăng ký thành công"}
+    except HTTPException:
+        raise
     except Exception as e:
         print("❌ ERROR:", e)
         raise HTTPException(500, str(e))
@@ -91,7 +155,8 @@ def get_me(user_id: int = Depends(get_current_user)):
         user = conn.execute(
             text("""
                 SELECT user_id, email, full_name, phone, wallet,
-                       date_of_birth, gender, address, provider, role
+                       date_of_birth, gender, address, provider, role,
+                       COALESCE(user_rank, 'bronze') AS user_rank
                 FROM users WHERE user_id = :id
             """),
             {"id": user_id}
@@ -244,6 +309,37 @@ def verify_otp(data: VerifyOTPRequest, user_id: int = Depends(get_current_user))
 
 
 # ── GOOGLE LOGIN ───────────────────────────────────────────────
+@router.get("/rank")
+def get_my_rank(user_id: int = Depends(get_current_user)):
+    with engine.connect() as conn:
+        total_spent = conn.execute(
+            text("SELECT COALESCE(SUM(final_amount), 0) FROM bookings WHERE user_id = :uid AND status = 'confirmed'"),
+            {"uid": user_id}
+        ).scalar()
+        total_spent = float(total_spent)
+        rank = get_rank(total_spent)
+
+        # Tìm ngưỡng rank tiếp theo
+        next_rank = None
+        next_threshold = None
+        for i, (r, _) in enumerate(RANK_THRESHOLDS):
+            if r == rank and i + 1 < len(RANK_THRESHOLDS):
+                next_rank = RANK_THRESHOLDS[i + 1][0]
+                next_threshold = RANK_THRESHOLDS[i + 1][1]
+                break
+
+        return {
+            "rank": rank,
+            "rank_label": RANK_LABELS[rank],
+            "total_spent": total_spent,
+            "cashback_rate": get_cashback_rate(rank),
+            "next_rank": next_rank,
+            "next_rank_label": RANK_LABELS[next_rank] if next_rank else None,
+            "next_threshold": next_threshold,
+            "progress_pct": round(min(total_spent / next_threshold * 100, 100), 1) if next_threshold else 100,
+        }
+
+
 @router.post("/google")
 async def google_login(data: dict, background_tasks: BackgroundTasks):
     token = data.get("token")

@@ -7,15 +7,14 @@ export interface Flight {
     arrive_time: string;
     price: number;
     available_seats?: number;
+    economy_seats?: number;
+    business_seats?: number;
+    first_seats?: number;
     status?: "active" | "cancelled" | "delayed" | "completed";
 
     // Tính toán
     duration_minutes?: number;
     min_price?: number;
-
-    // Seat classes
-    economy_price?: number;
-    business_price?: number;
 }
 
 export interface FlightSeat {

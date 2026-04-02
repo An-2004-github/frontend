@@ -19,7 +19,7 @@ export default function PaymentPage() {
     const { user, login } = useAuthStore();
     const { payment, clearPayment } = usePaymentStore();
 
-    const [tab, setTab] = useState<"wallet" | "qr">("wallet");
+    const [tab, setTab] = useState<"wallet" | "qr">(user ? "wallet" : "qr");
     const [balance, setBalance] = useState<number>(user?.wallet ?? 0);
     const [paying, setPaying] = useState(false);
     const [checking, setChecking] = useState(false);
@@ -28,11 +28,20 @@ export default function PaymentPage() {
     const [useWallet, setUseWallet] = useState(false);
     const [localPayment, setLocalPayment] = useState<{ totalAmount: number; description: string } | null>(null);
     const [loadingBooking, setLoadingBooking] = useState(false);
-    const [qrTimeLeft, setQrTimeLeft] = useState(15 * 60);
-    const qrExpired = qrTimeLeft <= 0;
+    const [timeLeft, setTimeLeft] = useState(15 * 60);
+    const [expired, setExpired] = useState(false);
+    const qrTimeLeft = timeLeft;
+    const qrExpired = expired;
 
     const amount = (payment?.totalAmount ?? localPayment?.totalAmount) ?? 0;
     const description = (payment?.description ?? localPayment?.description) ?? `Đặt chỗ #${bookingId}`;
+
+    const CASHBACK_RATES: Record<string, number> = {
+        bronze: 0.005, silver: 0.01, gold: 0.015, diamond: 0.02,
+    };
+    const userRank = (user as { user_rank?: string })?.user_rank ?? "bronze";
+    const cashbackRate = CASHBACK_RATES[userRank] ?? 0.005;
+    const cashbackAmount = Math.round(amount * cashbackRate);
 
     const walletDeduction = useWallet ? Math.min(balance, amount) : 0;
     const qrAmount = Math.max(0, amount - walletDeduction);
@@ -126,21 +135,26 @@ export default function PaymentPage() {
         // Không dùng ví: polling kiểm tra booking được xác nhận qua webhook
     };
 
-    // Reset + bắt đầu timer khi chuyển sang tab QR
+    // Đếm ngược timer chung cho toàn trang thanh toán
     useEffect(() => {
-        if (tab === "qr") setQrTimeLeft(15 * 60);
-    }, [tab]);
-
-    // Đếm ngược timer QR
-    useEffect(() => {
-        if (tab !== "qr" || qrExpired) return;
+        if (expired || paid) return;
+        if (timeLeft <= 0) {
+            setExpired(true);
+            // Tự động hủy booking khi hết thời gian
+            api.post(`/api/bookings/${bookingId}/cancel-pending`).catch(() => {});
+            return;
+        }
         const interval = setInterval(() => {
-            setQrTimeLeft(t => Math.max(0, t - 1));
+            setTimeLeft(t => {
+                if (t <= 1) { clearInterval(interval); return 0; }
+                return t - 1;
+            });
         }, 1000);
         return () => clearInterval(interval);
-    }, [tab, qrExpired]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [expired, paid, timeLeft]);
 
-    const formatQrTime = (s: number) => {
+    const formatTime = (s: number) => {
         const m = Math.floor(s / 60).toString().padStart(2, "0");
         const sec = (s % 60).toString().padStart(2, "0");
         return `${m}:${sec}`;
@@ -403,12 +417,14 @@ export default function PaymentPage() {
                 <div className="pay-content">
                     {/* Tabs */}
                     <div className="pay-tabs">
-                        <button
-                            className={`pay-tab${tab === "wallet" ? " active" : ""}`}
-                            onClick={() => setTab("wallet")}
-                        >
-                            💰 Ví VIVU
-                        </button>
+                        {user && (
+                            <button
+                                className={`pay-tab${tab === "wallet" ? " active" : ""}`}
+                                onClick={() => setTab("wallet")}
+                            >
+                                💰 Ví VIVU
+                            </button>
+                        )}
                         <button
                             className={`pay-tab${tab === "qr" ? " active" : ""}`}
                             onClick={() => setTab("qr")}
@@ -420,53 +436,101 @@ export default function PaymentPage() {
                     {/* Wallet tab */}
                     {tab === "wallet" && (
                         <div className="pay-card">
-                            <div className="pay-card-title">💰 Thanh toán bằng Ví VIVU</div>
-
-                            <div className="pay-balance-row">
-                                <span className="pay-balance-label">Số dư ví hiện tại</span>
-                                <span className="pay-balance-value">
-                                    {balance.toLocaleString("vi-VN")}₫
-                                </span>
-                            </div>
-
-                            <div className="pay-summary-row">
-                                <span className="pay-summary-label">Tổng thanh toán</span>
-                                <span className="pay-summary-value total">
-                                    -{amount.toLocaleString("vi-VN")}₫
-                                </span>
-                            </div>
-                            <div className="pay-summary-row">
-                                <span className="pay-summary-label">Số dư sau thanh toán</span>
-                                <span className="pay-summary-value after">
-                                    {(balance - amount).toLocaleString("vi-VN")}₫
-                                </span>
-                            </div>
-
-                            {!sufficient && (
-                                <div className="pay-insufficient" style={{ marginTop: "1rem" }}>
-                                    ⚠️ Số dư ví không đủ. Bạn cần nạp thêm{" "}
-                                    <strong>{(amount - balance).toLocaleString("vi-VN")}₫</strong> để thanh toán.{" "}
-                                    <span
-                                        style={{ color: "#0052cc", cursor: "pointer", textDecoration: "underline" }}
-                                        onClick={() => router.push("/profile/wallet")}
-                                    >
-                                        Nạp tiền ngay
+                            <div className="pay-card-title">
+                                💰 Thanh toán bằng Ví VIVU
+                                {!expired && (
+                                    <span style={{
+                                        marginLeft: "auto", fontSize: "0.78rem", fontWeight: 700,
+                                        color: timeLeft <= 60 ? "#c0392b" : timeLeft <= 180 ? "#b8860b" : "#00875a",
+                                        background: timeLeft <= 60 ? "#fff0f0" : timeLeft <= 180 ? "#fffbe6" : "#e6f9f0",
+                                        padding: "0.2rem 0.65rem", borderRadius: 99,
+                                        border: `1px solid ${timeLeft <= 60 ? "#ffcdd2" : timeLeft <= 180 ? "#ffe082" : "#b7dfbb"}`,
+                                    }}>
+                                        ⏱ {formatTime(timeLeft)}
                                     </span>
-                                </div>
-                            )}
-
-                            <button
-                                className="pay-btn"
-                                style={{ marginTop: "1.25rem" }}
-                                disabled={!sufficient || paying}
-                                onClick={handlePayWallet}
-                            >
-                                {paying ? (
-                                    <><div className="pay-spinner" /> Đang xử lý...</>
-                                ) : (
-                                    "✅ Xác nhận thanh toán"
                                 )}
-                            </button>
+                            </div>
+
+                            {expired ? (
+                                <div style={{
+                                    background: "#fff0f0", border: "1px solid #ffcdd2",
+                                    borderRadius: 12, padding: "2rem", textAlign: "center",
+                                }}>
+                                    <div style={{ fontSize: "2.5rem", marginBottom: "0.5rem" }}>⏰</div>
+                                    <div style={{ fontWeight: 700, color: "#c0392b", marginBottom: "0.5rem" }}>
+                                        Hết thời gian thanh toán (15 phút)
+                                    </div>
+                                    <div style={{ fontSize: "0.82rem", color: "#7b5700", marginBottom: "1.25rem" }}>
+                                        Đơn đặt chỗ đã bị hủy tự động. Vui lòng đặt lại.
+                                    </div>
+                                    <button
+                                        onClick={() => router.push("/")}
+                                        style={{
+                                            padding: "0.55rem 1.4rem", background: "#0052cc", color: "#fff",
+                                            border: "none", borderRadius: 8, fontWeight: 700,
+                                            fontSize: "0.88rem", cursor: "pointer",
+                                        }}
+                                    >
+                                        🏠 Về trang chủ
+                                    </button>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="pay-balance-row">
+                                        <span className="pay-balance-label">Số dư ví hiện tại</span>
+                                        <span className="pay-balance-value">
+                                            {balance.toLocaleString("vi-VN")}₫
+                                        </span>
+                                    </div>
+
+                                    <div className="pay-summary-row">
+                                        <span className="pay-summary-label">Tổng thanh toán</span>
+                                        <span className="pay-summary-value total">
+                                            -{amount.toLocaleString("vi-VN")}₫
+                                        </span>
+                                    </div>
+                                    <div className="pay-summary-row">
+                                        <span className="pay-summary-label">Số dư sau thanh toán</span>
+                                        <span className="pay-summary-value after">
+                                            {(balance - amount).toLocaleString("vi-VN")}₫
+                                        </span>
+                                    </div>
+                                    <div className="pay-summary-row" style={{ marginTop: "0.5rem", padding: "0.5rem 0.75rem", background: "#e6f9f0", borderRadius: 8 }}>
+                                        <span style={{ fontSize: "0.82rem", color: "#00875a", fontWeight: 600 }}>
+                                            🎁 Cashback ({(cashbackRate * 100).toFixed(1)}% · hạng {userRank})
+                                        </span>
+                                        <span style={{ fontSize: "0.88rem", color: "#00875a", fontWeight: 700 }}>
+                                            +{cashbackAmount.toLocaleString("vi-VN")}₫
+                                        </span>
+                                    </div>
+
+                                    {!sufficient && (
+                                        <div className="pay-insufficient" style={{ marginTop: "1rem" }}>
+                                            ⚠️ Số dư ví không đủ. Bạn cần nạp thêm{" "}
+                                            <strong>{(amount - balance).toLocaleString("vi-VN")}₫</strong> để thanh toán.{" "}
+                                            <span
+                                                style={{ color: "#0052cc", cursor: "pointer", textDecoration: "underline" }}
+                                                onClick={() => router.push("/profile/wallet")}
+                                            >
+                                                Nạp tiền ngay
+                                            </span>
+                                        </div>
+                                    )}
+
+                                    <button
+                                        className="pay-btn"
+                                        style={{ marginTop: "1.25rem" }}
+                                        disabled={!sufficient || paying}
+                                        onClick={handlePayWallet}
+                                    >
+                                        {paying ? (
+                                            <><div className="pay-spinner" /> Đang xử lý...</>
+                                        ) : (
+                                            "✅ Xác nhận thanh toán"
+                                        )}
+                                    </button>
+                                </>
+                            )}
                         </div>
                     )}
 
@@ -483,7 +547,7 @@ export default function PaymentPage() {
                                         padding: "0.2rem 0.65rem", borderRadius: 99,
                                         border: `1px solid ${qrTimeLeft <= 60 ? "#ffcdd2" : qrTimeLeft <= 180 ? "#ffe082" : "#b7dfbb"}`,
                                     }}>
-                                        ⏱ {formatQrTime(qrTimeLeft)}
+                                        ⏱ {formatTime(qrTimeLeft)}
                                     </span>
                                 )}
                             </div>
@@ -524,6 +588,16 @@ export default function PaymentPage() {
                                 </div>
                             )}
 
+                            {/* Cashback info */}
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#e6f9f0", borderRadius: 8, padding: "0.5rem 0.75rem", marginBottom: "0.75rem" }}>
+                                <span style={{ fontSize: "0.82rem", color: "#00875a", fontWeight: 600 }}>
+                                    🎁 Cashback ({(cashbackRate * 100).toFixed(1)}% · hạng {userRank})
+                                </span>
+                                <span style={{ fontSize: "0.88rem", color: "#00875a", fontWeight: 700 }}>
+                                    +{cashbackAmount.toLocaleString("vi-VN")}₫
+                                </span>
+                            </div>
+
                             {/* QR hoặc thông báo đủ tiền */}
                             {qrAmount === 0 ? (
                                 <div className="pay-qr-zero">
@@ -537,19 +611,21 @@ export default function PaymentPage() {
                                     marginBottom: "1rem",
                                 }}>
                                     <div style={{ fontSize: "2.5rem", marginBottom: "0.5rem" }}>⏰</div>
-                                    <div style={{ fontWeight: 700, color: "#c0392b", marginBottom: "0.5rem" }}>Mã QR đã hết hạn (15 phút)</div>
-                                    <div style={{ fontSize: "0.82rem", color: "#7b5700", marginBottom: "1rem" }}>
-                                        Vui lòng tạo mã QR mới để tiếp tục thanh toán.
+                                    <div style={{ fontWeight: 700, color: "#c0392b", marginBottom: "0.5rem" }}>
+                                        Hết thời gian thanh toán (15 phút)
+                                    </div>
+                                    <div style={{ fontSize: "0.82rem", color: "#7b5700", marginBottom: "1.25rem" }}>
+                                        Đơn đặt chỗ đã bị hủy tự động. Vui lòng đặt lại.
                                     </div>
                                     <button
-                                        onClick={() => setQrTimeLeft(15 * 60)}
+                                        onClick={() => router.push("/")}
                                         style={{
                                             padding: "0.55rem 1.4rem", background: "#0052cc", color: "#fff",
                                             border: "none", borderRadius: 8, fontWeight: 700,
                                             fontSize: "0.88rem", cursor: "pointer",
                                         }}
                                     >
-                                        🔄 Tạo mã QR mới
+                                        🏠 Về trang chủ
                                     </button>
                                 </div>
                             ) : (

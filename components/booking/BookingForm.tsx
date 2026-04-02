@@ -433,11 +433,11 @@ export default function BookingForm({ form, errors, bookingType, flightRoute, on
                     <div className="bf-user-row">
                         <span className="bf-user-name">
                             {form.bookingForSelf
-                                ? (user?.full_name || user?.email || "—")
+                                ? (form.contactName || user?.full_name || user?.email || "—")
                                 : (form.guestName || "—")
                             }
                         </span>
-                        <Link href="/profile" className="bf-edit-link">Chỉnh sửa</Link>
+                        {user && <Link href="/profile" className="bf-edit-link">Chỉnh sửa</Link>}
                     </div>
                 </div>
             )}

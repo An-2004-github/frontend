@@ -7,6 +7,9 @@ export interface Bus {
     arrive_time: string;
     price: number;
     available_seats?: number;
+    standard_seats?: number;
+    vip_seats?: number;
+    sleeper_seats?: number;
     status?: "active" | "cancelled" | "completed";
     duration_minutes?: number;
 }

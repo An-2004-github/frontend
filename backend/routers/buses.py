@@ -56,7 +56,13 @@ def search_buses(
             b.*,
             TIMESTAMPDIFF(MINUTE, b.depart_time, b.arrive_time) AS duration_minutes,
             (SELECT COUNT(*) FROM bus_seats bs
-             WHERE bs.bus_id = b.bus_id AND bs.is_booked = 0) AS available_seats
+             WHERE bs.bus_id = b.bus_id AND bs.is_booked = 0) AS available_seats,
+            (SELECT COUNT(*) FROM bus_seats bs
+             WHERE bs.bus_id = b.bus_id AND bs.is_booked = 0 AND bs.seat_class = 'standard') AS standard_seats,
+            (SELECT COUNT(*) FROM bus_seats bs
+             WHERE bs.bus_id = b.bus_id AND bs.is_booked = 0 AND bs.seat_class = 'vip') AS vip_seats,
+            (SELECT COUNT(*) FROM bus_seats bs
+             WHERE bs.bus_id = b.bus_id AND bs.is_booked = 0 AND bs.seat_class = 'sleeper') AS sleeper_seats
         FROM buses b
         WHERE {' AND '.join(conditions)}
         ORDER BY {order}

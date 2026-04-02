@@ -7,10 +7,11 @@ import { useAuthStore } from "@/store/authStore";
 import { useState } from "react";
 
 const NAV_LINKS = [
-    { href: "/hotels", label: "Khách sạn", icon: "🏨" },
-    { href: "/flights", label: "Máy bay", icon: "✈️" },
-    { href: "/buses", label: "Xe khách", icon: "🚌" },
-    { href: "/promotion", label: "Khuyến mãi", icon: "🎁" },
+    { href: "/hotels",         label: "Khách sạn",   icon: "🏨" },
+    { href: "/flights",        label: "Máy bay",     icon: "✈️" },
+    { href: "/buses",          label: "Xe khách",    icon: "🚌" },
+    { href: "/promotion",      label: "Khuyến mãi",  icon: "🎁" },
+    { href: "/travel-planner", label: "Gợi ý",       icon: "🗺️" },
 ];
 
 export default function Navbar() {

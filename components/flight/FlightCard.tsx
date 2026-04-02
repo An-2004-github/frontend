@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Flight } from "@/types/flight";
 import FlightTicketModal from "./FlightTicketModal";
+import { logInteraction } from "@/lib/logInteraction";
 
 interface Props {
     flight: Flight;
@@ -48,8 +49,38 @@ export default function FlightCard({ flight, passengers = 1 }: Props) {
                     <span className="fcard-airline-logo">{logo}</span>
                     <div>
                         <div className="fcard-airline-name">{flight.airline}</div>
-                        <div className="fcard-airline-code">
-                            Bay thẳng · {flight.available_seats ?? "?"} ghế trống
+                        <div className="fcard-airline-code" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.2rem" }}>
+                            {flight.economy_seats !== undefined && (
+                                <span style={{
+                                    fontSize: "0.7rem", padding: "0.1rem 0.45rem", borderRadius: 99,
+                                    background: (flight.economy_seats ?? 0) <= 5 ? "#fff8e1" : "#f0f4ff",
+                                    color: (flight.economy_seats ?? 0) <= 5 ? "#b8860b" : "#3a5f9a",
+                                    border: `1px solid ${(flight.economy_seats ?? 0) <= 5 ? "#ffe082" : "#c8d8ff"}`,
+                                    fontWeight: 600,
+                                }}>
+                                    Phổ thông: {flight.economy_seats}
+                                </span>
+                            )}
+                            {(flight.business_seats ?? 0) > 0 && (
+                                <span style={{
+                                    fontSize: "0.7rem", padding: "0.1rem 0.45rem", borderRadius: 99,
+                                    background: (flight.business_seats ?? 0) <= 3 ? "#fff8e1" : "#f5f0ff",
+                                    color: (flight.business_seats ?? 0) <= 3 ? "#b8860b" : "#5a3fa0",
+                                    border: `1px solid ${(flight.business_seats ?? 0) <= 3 ? "#ffe082" : "#d4c8f5"}`,
+                                    fontWeight: 600,
+                                }}>
+                                    Thương gia: {flight.business_seats}
+                                </span>
+                            )}
+                            {(flight.first_seats ?? 0) > 0 && (
+                                <span style={{
+                                    fontSize: "0.7rem", padding: "0.1rem 0.45rem", borderRadius: 99,
+                                    background: "#fff8e1", color: "#b8860b",
+                                    border: "1px solid #ffe082", fontWeight: 600,
+                                }}>
+                                    Hạng nhất: {flight.first_seats}
+                                </span>
+                            )}
                         </div>
                     </div>
                     {isLowSeat && (
@@ -104,7 +135,7 @@ export default function FlightCard({ flight, passengers = 1 }: Props) {
                     {/* ✅ Mở modal thay vì chuyển trang */}
                     <button
                         className="fcard-btn"
-                        onClick={() => setShowModal(true)}
+                        onClick={() => { logInteraction("flight", flight.flight_id, "click"); setShowModal(true); }}
                     >
                         Chọn chuyến
                     </button>

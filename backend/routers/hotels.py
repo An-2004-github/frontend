@@ -55,7 +55,23 @@ def get_hotels(
              WHERE rt.hotel_id = h.hotel_id) AS min_price,
             (SELECT image_url FROM images
              WHERE entity_type = 'hotel' AND entity_id = h.hotel_id
-             LIMIT 1) AS image_url
+             LIMIT 1) AS image_url,
+            (SELECT COALESCE(SUM(rt.total_rooms), 0)
+             FROM room_types rt
+             WHERE rt.hotel_id = h.hotel_id) AS total_rooms,
+            (SELECT GREATEST(0,
+                COALESCE(SUM(rt.total_rooms), 0) - (
+                    SELECT COUNT(*)
+                    FROM booking_items bi2
+                    JOIN bookings b2 ON b2.booking_id = bi2.booking_id
+                    JOIN room_types rt2 ON rt2.room_type_id = bi2.entity_id
+                    WHERE bi2.entity_type = 'room'
+                    AND rt2.hotel_id = h.hotel_id
+                    AND b2.status IN ('pending','confirmed')
+                    AND bi2.check_out_date >= CURDATE()
+                ))
+             FROM room_types rt
+             WHERE rt.hotel_id = h.hotel_id) AS available_rooms
         FROM hotels h
         LEFT JOIN destinations d ON d.destination_id = h.destination_id
     """
@@ -108,7 +124,19 @@ def get_hotel_by_id(hotel_id: int):
         ).fetchall()
 
         rooms = conn.execute(
-            text("SELECT * FROM room_types WHERE hotel_id = :id ORDER BY price_per_night ASC"),
+            text("""
+                SELECT rt.*,
+                    GREATEST(0, rt.total_rooms - COALESCE((
+                        SELECT COUNT(*) FROM booking_items bi
+                        JOIN bookings b ON b.booking_id = bi.booking_id
+                        WHERE bi.entity_type = 'room' AND bi.entity_id = rt.room_type_id
+                        AND b.status IN ('pending','confirmed')
+                        AND bi.check_out_date >= CURDATE()
+                    ), 0)) AS available_rooms
+                FROM room_types rt
+                WHERE rt.hotel_id = :id
+                ORDER BY rt.price_per_night ASC
+            """),
             {"id": hotel_id}
         ).fetchall()
 
@@ -146,15 +174,22 @@ def check_availability(
                     rt.name,
                     rt.price_per_night,
                     rt.max_guests,
-                    MIN(ra.available_rooms) AS available_rooms
+                    rt.total_rooms,
+                    rt.check_in_time,
+                    rt.check_out_time,
+                    GREATEST(0, rt.total_rooms - COUNT(CASE
+                        WHEN b.status IN ('pending','confirmed')
+                            AND bi.check_in_date < :check_out
+                            AND bi.check_out_date > :check_in
+                        THEN 1 END)) AS available_rooms
                 FROM room_types rt
-                LEFT JOIN room_availability ra
-                    ON ra.room_type_id = rt.room_type_id
-                    AND ra.date >= :check_in
-                    AND ra.date < :check_out
+                LEFT JOIN booking_items bi
+                    ON bi.entity_type = 'room' AND bi.entity_id = rt.room_type_id
+                LEFT JOIN bookings b ON b.booking_id = bi.booking_id
                 WHERE rt.hotel_id = :hotel_id
-                GROUP BY rt.room_type_id, rt.name, rt.price_per_night, rt.max_guests
-                HAVING available_rooms IS NULL OR available_rooms > 0
+                GROUP BY rt.room_type_id, rt.name, rt.price_per_night, rt.max_guests,
+                         rt.total_rooms, rt.check_in_time, rt.check_out_time
+                HAVING available_rooms > 0
                 ORDER BY rt.price_per_night ASC
             """),
             {"hotel_id": hotel_id, "check_in": check_in, "check_out": check_out}

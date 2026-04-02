@@ -28,6 +28,17 @@ interface OTPState {
     newValue: string;
 }
 
+interface RankInfo {
+    rank: string;
+    rank_label: string;
+    total_spent: number;
+    cashback_rate: number;
+    next_rank: string | null;
+    next_rank_label: string | null;
+    next_threshold: number | null;
+    progress_pct: number;
+}
+
 const Field = ({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) => (
     <div className="pp-field">
         <label className="pp-field-label">{label}</label>
@@ -51,6 +62,8 @@ export default function ProfilePage() {
     const [pwdSaving, setPwdSaving] = useState(false);
     const [showPwd, setShowPwd] = useState<Record<string, boolean>>({});
 
+    const [rankInfo, setRankInfo] = useState<RankInfo | null>(null);
+
     const [form, setForm] = useState<FormData>({
         full_name: "",
         phone: "",
@@ -60,6 +73,11 @@ export default function ProfilePage() {
         new_email: "",
     });
     const [errors, setErrors] = useState<FormErrors>({});
+
+    // Load rank
+    useEffect(() => {
+        api.get("/api/auth/rank").then(res => setRankInfo(res.data)).catch(() => {});
+    }, [user?.user_id]);
 
     // Load user data
     useEffect(() => {
@@ -213,6 +231,17 @@ export default function ProfilePage() {
                 .pp-stat { background: #f0f4ff; border-radius: 12px; padding: 1rem; text-align: center; }
                 .pp-stat-value { font-family: 'Nunito',sans-serif; font-size: 1.4rem; font-weight: 800; color: #0052cc; }
                 .pp-stat-label { font-size: 0.78rem; color: #6b8cbf; margin-top: 0.2rem; }
+                /* Rank card */
+                .pp-rank-card { background: linear-gradient(135deg,#1a3c6b,#0052cc); border-radius: 16px; padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; color: #fff; }
+                .pp-rank-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+                .pp-rank-badge { font-family: 'Nunito',sans-serif; font-size: 1.3rem; font-weight: 800; }
+                .pp-rank-cashback { font-size: 0.82rem; background: rgba(255,255,255,0.15); padding: 0.3rem 0.75rem; border-radius: 99px; }
+                .pp-rank-spent { font-size: 0.82rem; opacity: 0.8; margin-bottom: 0.5rem; }
+                .pp-rank-bar-wrap { background: rgba(255,255,255,0.2); border-radius: 99px; height: 8px; overflow: hidden; margin-bottom: 0.4rem; }
+                .pp-rank-bar { height: 100%; border-radius: 99px; background: linear-gradient(90deg,#ffd700,#fff); transition: width 0.6s ease; }
+                .pp-rank-next { font-size: 0.75rem; opacity: 0.75; }
+                .pp-rank-benefits { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 1rem; }
+                .pp-rank-benefit { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; background: rgba(255,255,255,0.1); border-radius: 8px; padding: 0.4rem 0.65rem; }
                 .pp-email-note { font-size: 0.75rem; color: #b8762e; background: #fff8e1; padding: 0.4rem 0.75rem; border-radius: 6px; margin-top: 0.3rem; }
                 @media (max-width: 640px) {
                     .pp-field-grid { grid-template-columns: 1fr; }
@@ -237,8 +266,8 @@ export default function ProfilePage() {
                         <div className="pp-stat-label">Số dư ví</div>
                     </div>
                     <div className="pp-stat">
-                        <div className="pp-stat-value">🥉</div>
-                        <div className="pp-stat-label">Hạng Bronze</div>
+                        <div className="pp-stat-value">{rankInfo?.rank_label ?? "🥉 Đồng"}</div>
+                        <div className="pp-stat-label">Hạng thành viên</div>
                     </div>
                     <div className="pp-stat">
                         <div className="pp-stat-value">
@@ -250,6 +279,43 @@ export default function ProfilePage() {
                     </div>
                 </div>
             </div>
+
+            {/* Rank card */}
+            {rankInfo && (() => {
+                const BENEFITS: Record<string, string[]> = {
+                    bronze:  ["Tích 0.5% vào ví", "Phí hủy 30% (< 3 ngày)"],
+                    silver:  ["Tích 1% vào ví", "Phí hủy 20% (< 3 ngày)", "Hỗ trợ ưu tiên"],
+                    gold:    ["Tích 1.5% vào ví", "Phí hủy 10% (< 3 ngày)", "Đổi lịch ưu đãi"],
+                    diamond: ["Tích 2% vào ví", "Miễn phí hủy trước 1 ngày", "Hoàn tiền ngay", "Hỗ trợ 24/7"],
+                };
+                const benefits = BENEFITS[rankInfo.rank] ?? [];
+                return (
+                    <div className="pp-rank-card">
+                        <div className="pp-rank-top">
+                            <div className="pp-rank-badge">{rankInfo.rank_label}</div>
+                            <div className="pp-rank-cashback">Cashback {(rankInfo.cashback_rate * 100).toFixed(1)}%</div>
+                        </div>
+                        <div className="pp-rank-spent">
+                            Tổng chi tiêu: <strong>{rankInfo.total_spent.toLocaleString("vi-VN")}₫</strong>
+                        </div>
+                        {rankInfo.next_threshold && (
+                            <>
+                                <div className="pp-rank-bar-wrap">
+                                    <div className="pp-rank-bar" style={{ width: `${rankInfo.progress_pct}%` }} />
+                                </div>
+                                <div className="pp-rank-next">
+                                    Cần thêm {(rankInfo.next_threshold - rankInfo.total_spent).toLocaleString("vi-VN")}₫ để lên {rankInfo.next_rank_label}
+                                </div>
+                            </>
+                        )}
+                        <div className="pp-rank-benefits">
+                            {benefits.map(b => (
+                                <div key={b} className="pp-rank-benefit">✓ {b}</div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* Thông tin cá nhân */}
             <div className="pp-card">

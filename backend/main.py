@@ -1,4 +1,7 @@
 # main.py (Bên project FastAPI)
+from dotenv import load_dotenv
+load_dotenv()  # load .env trước tất cả import khác
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -16,9 +19,33 @@ from routers.wallet import router as wallet_router
 from routers.admin import router as admin_router
 from routers.banners import router as banners_router
 from routers.chat import router as chat_router
+from routers.interactions import router as interactions_router
+from routers.travel_planner import router as travel_planner_router
+from contextlib import asynccontextmanager
+
+try:
+    from routers.recommendations import router as recommendations_router
+    from ml.recommend import recommender
+    _ML_AVAILABLE = True
+except Exception as _e:
+    recommendations_router = None
+    recommender = None
+    _ML_AVAILABLE = False
+    print(f"[NCF] ML modules unavailable (torch not installed?): {_e}")
+    print("[NCF] Install: pip install torch pandas numpy scikit-learn")
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    if _ML_AVAILABLE and recommender is not None:
+        ok = recommender.load()
+        if not ok:
+            print("[NCF] Model not found — run 'python -m ml.train' to train first.")
+    yield
+
 
 # Câu lệnh chạy backend: uvicorn main:app --reload
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 # Danh sách các domain được phép gọi API
 origins = [
@@ -76,3 +103,7 @@ app.include_router(wallet_router)
 app.include_router(admin_router)
 app.include_router(banners_router)
 app.include_router(chat_router)
+if _ML_AVAILABLE and recommendations_router is not None:
+    app.include_router(recommendations_router)
+app.include_router(interactions_router)
+app.include_router(travel_planner_router)

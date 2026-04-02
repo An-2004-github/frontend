@@ -18,6 +18,8 @@ export interface Hotel {
     // JOIN từ room_types (tính trong query)
     price_per_night?: number;
     min_price?: number;
+    total_rooms?: number;
+    available_rooms?: number;
 
     // JOIN từ destinations
     destination_name?: string;
@@ -37,6 +39,8 @@ export interface RoomType {
     name: string;
     price_per_night: number;
     max_guests: number;
+    total_rooms?: number;
+    available_rooms?: number;
     check_in_time?: string;
     check_out_time?: string;
 }

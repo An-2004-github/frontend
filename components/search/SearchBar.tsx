@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
+import { logSearch } from "@/lib/logInteraction";
 
 type ServiceType = "hotel" | "flight" | "train" | "bus";
 
@@ -14,7 +15,7 @@ export default function SearchBar() {
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        // Dựa vào tab đang chọn để chuyển hướng người dùng đến trang tương ứng
+        logSearch(searchQuery);
         if (activeTab === "hotel") {
             router.push(`/hotels?search=${searchQuery}`);
         } else {

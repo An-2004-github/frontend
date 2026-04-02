@@ -16,6 +16,11 @@ export default function ProfileLayout({ children }: { children: React.ReactNode 
     const pathname = usePathname();
     const { user, logout } = useAuthStore();
 
+    const RANK_LABELS: Record<string, string> = {
+        bronze: "🥉 Đồng", silver: "🥈 Bạc", gold: "🥇 Vàng", diamond: "💎 Kim cương",
+    };
+    const rankLabel = RANK_LABELS[(user as { user_rank?: string })?.user_rank ?? "bronze"] ?? "🥉 Đồng";
+
     const initials = (user?.full_name ?? user?.email ?? "U")
         .split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2);
 
@@ -144,7 +149,7 @@ export default function ProfileLayout({ children }: { children: React.ReactNode 
                                 </div>
                             </div>
                             <Link href="/profile/membership" className="pl-member-badge">
-                                <span className="pl-member-text">🥉 Bạn là thành viên Bronze</span>
+                                <span className="pl-member-text">Bạn là thành viên {rankLabel}</span>
                                 <span className="pl-member-arrow">›</span>
                             </Link>
                         </div>

@@ -4,6 +4,8 @@ from database import engine
 from auth import get_current_user
 from pydantic import BaseModel
 from typing import Optional
+from email_service import send_booking_confirmation_email
+from rank_utils import get_rank, get_cashback_rate
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -214,7 +216,7 @@ def get_all_bookings(admin_id: int = Depends(get_admin_user)):
 
 
 @router.put("/bookings/{booking_id}/status")
-def update_booking_status(booking_id: int, status: str, admin_id: int = Depends(get_admin_user)):
+def update_booking_status(booking_id: int, status: str, background_tasks: BackgroundTasks, admin_id: int = Depends(get_admin_user)):
     if status not in ("pending", "confirmed", "cancelled"):
         raise HTTPException(400, "Status không hợp lệ")
     with engine.begin() as conn:
@@ -222,6 +224,73 @@ def update_booking_status(booking_id: int, status: str, admin_id: int = Depends(
             text("UPDATE bookings SET status = :status WHERE booking_id = :id"),
             {"status": status, "id": booking_id}
         )
+
+        # Gửi email xác nhận khi admin duyệt thanh toán QR
+        if status == "confirmed":
+            row = conn.execute(text("""
+                SELECT
+                    u.email, u.full_name,
+                    b.final_amount, b.booking_date,
+                    bi.entity_type, bi.check_in_date, bi.check_out_date,
+                    CASE bi.entity_type
+                        WHEN 'room'   THEN CONCAT(h.name, ' - ', rt.name)
+                        WHEN 'flight' THEN CONCAT(f.airline, ': ', f.from_city, ' → ', f.to_city)
+                        WHEN 'bus'    THEN CONCAT(bs.company, ': ', bs.from_city, ' → ', bs.to_city)
+                        ELSE CONCAT(bi.entity_type, ' #', bi.entity_id)
+                    END AS service_name
+                FROM bookings b
+                JOIN users u ON u.user_id = b.user_id
+                JOIN booking_items bi ON bi.booking_id = b.booking_id
+                LEFT JOIN room_types rt ON rt.room_type_id = bi.entity_id AND bi.entity_type = 'room'
+                LEFT JOIN hotels h ON h.hotel_id = rt.hotel_id
+                LEFT JOIN flights f ON f.flight_id = bi.entity_id AND bi.entity_type = 'flight'
+                LEFT JOIN buses bs ON bs.bus_id = bi.entity_id AND bi.entity_type = 'bus'
+                WHERE b.booking_id = :bid LIMIT 1
+            """), {"bid": booking_id}).fetchone()
+
+            if row:
+                info = dict(row._mapping)
+                background_tasks.add_task(
+                    send_booking_confirmation_email,
+                    email=info["email"],
+                    name=info["full_name"] or "Quý khách",
+                    booking_id=booking_id,
+                    service_name=info["service_name"] or f"Dịch vụ #{booking_id}",
+                    amount=float(info["final_amount"]),
+                    entity_type=info["entity_type"] or "",
+                    check_in=str(info["check_in_date"]) if info["check_in_date"] else None,
+                    check_out=str(info["check_out_date"]) if info["check_out_date"] else None,
+                    booking_date=str(info["booking_date"])[:10] if info["booking_date"] else None,
+                )
+
+                # Cập nhật rank + cộng cashback vào ví
+                booking_user = conn.execute(
+                    text("SELECT user_id FROM bookings WHERE booking_id = :bid"),
+                    {"bid": booking_id}
+                ).fetchone()
+                if booking_user:
+                    uid = booking_user.user_id
+                    total_spent = conn.execute(
+                        text("SELECT COALESCE(SUM(final_amount), 0) FROM bookings WHERE user_id = :uid AND status = 'confirmed'"),
+                        {"uid": uid}
+                    ).scalar()
+                    new_rank = get_rank(float(total_spent))
+                    conn.execute(
+                        text("UPDATE users SET user_rank = :rank WHERE user_id = :uid"),
+                        {"rank": new_rank, "uid": uid}
+                    )
+                    cashback = round(float(info["final_amount"]) * get_cashback_rate(new_rank))
+                    if cashback > 0:
+                        conn.execute(
+                            text("UPDATE users SET wallet = wallet + :amt WHERE user_id = :uid"),
+                            {"amt": cashback, "uid": uid}
+                        )
+                        conn.execute(text("""
+                            INSERT INTO wallet_transactions (user_id, amount, type, description, status)
+                            VALUES (:uid, :amt, 'cashback', :desc, 'success')
+                        """), {"uid": uid, "amt": cashback,
+                               "desc": f"Cashback {int(get_cashback_rate(new_rank)*100*10)/10}% đơn #{booking_id}"})
+
     return {"message": "Cập nhật trạng thái thành công"}
 
 

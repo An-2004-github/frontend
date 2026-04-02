@@ -5,7 +5,7 @@ import os
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyBIQXudvTZ5dIfnUo_8kRUB5aSAN4B29fA")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
 
 SYSTEM_PROMPT = """Bạn là trợ lý ảo của VIVU Travel — nền tảng đặt phòng khách sạn, vé máy bay và xe khách hàng đầu Việt Nam.

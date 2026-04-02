@@ -8,6 +8,7 @@ import api from "@/lib/axios";
 import { useAuthStore } from "@/store/authStore";
 import { useBookingStore } from "@/store/bookingStore";
 import { Hotel, RoomType } from "@/types/hotel";
+import { logInteraction } from "@/lib/logInteraction";
 
 interface Review {
     review_id: number;
@@ -52,23 +53,31 @@ export default function HotelDetailPage() {
         api.get(`/api/hotels/${hotel_id}`)
             .then(res => {
                 const data = res.data;
-                // ✅ Đảm bảo reviews luôn là array dù API không trả về
                 if (!data.reviews) data.reviews = [];
                 setHotel(data);
+                logInteraction("hotel", Number(hotel_id), "view_detail");
             })
             .catch(() => router.push("/hotels"))
             .finally(() => setLoading(false));
     }, [hotel_id, router]);
 
+    const [availError, setAvailError] = useState<string | null>(null);
+
     const handleCheckAvailability = async () => {
         if (!checkIn || !checkOut || checkIn >= checkOut) return;
         setCheckLoading(true);
         setSelectedRoom(null);
+        setAvailError(null);
         try {
             const res = await api.get(`/api/hotels/${hotel_id}/availability`, {
                 params: { check_in: checkIn, check_out: checkOut },
             });
             setAvailRooms(res.data);
+            if (res.data.length === 0) {
+                setAvailError("Không còn phòng trống trong khoảng thời gian này.");
+            }
+        } catch {
+            setAvailError("Không thể kiểm tra phòng trống. Vui lòng thử lại.");
         } finally {
             setCheckLoading(false);
         }
@@ -80,8 +89,6 @@ export default function HotelDetailPage() {
 
     const handleBook = () => {
         if (!selectedRoom || !hotel) return;
-        if (!user) { router.push("/login"); return; }
-
         const basePrice = selectedRoom.price_per_night * nights;
         const taxAndFees = Math.round(basePrice * 0.21);
 
@@ -353,7 +360,13 @@ export default function HotelDetailPage() {
                                     </>
                                 )}
 
-                                {availRooms.length === 0 && !checkLoading && (
+                                {availError && (
+                                    <div style={{ background: "#fff0ee", color: "#bf2600", border: "1px solid #ffbdad", borderRadius: 10, padding: "0.65rem 1rem", fontSize: "0.85rem", marginBottom: "0.75rem" }}>
+                                        {availError}
+                                    </div>
+                                )}
+
+                                {availRooms.length === 0 && !checkLoading && !availError && (
                                     <div style={{ textAlign: "center", color: "#6b8cbf", fontSize: "0.85rem", padding: "0.5rem 0" }}>
                                         Nhấn kiểm tra để xem phòng trống
                                     </div>

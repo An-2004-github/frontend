@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import SearchBar from "@/components/search/SearchBar";
 import BannerSlider from "@/components/BannerSlider";
+import DestinationRecommendations from "@/components/recommendation/DestinationRecommendations";
 
 export default function Home() {
   return (
@@ -73,61 +74,9 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 3. ĐIỂM ĐẾN THỊNH HÀNH (Giao diện Demo đẹp mắt) */}
+        {/* 3. GỢI Ý ĐỊA ĐIỂM (NCF Recommendation) */}
         <section className="animate-fade-in" style={{ animationDelay: '0.4s' }}>
-          <div className="flex justify-between items-end mb-8">
-            <div>
-              <h2 className="text-3xl font-bold text-gray-900 mb-2">Điểm đến thịnh hành</h2>
-              <p className="text-gray-500">Các địa điểm được yêu thích nhất tháng này</p>
-            </div>
-            <Link href="/hotels" className="hidden md:block text-blue-600 font-semibold hover:underline">
-              Xem tất cả &rarr;
-            </Link>
-          </div>
-
-          {/* CSS Grid tạo bố cục ảnh kiểu Masonry/Bento */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 h-[500px]">
-            {/* Cột 1: Ảnh dọc to */}
-            <div className="md:col-span-1 md:row-span-2 relative rounded-3xl overflow-hidden group cursor-pointer shadow-md">
-              <div className="absolute inset-0 bg-gray-800">
-                {/* Dùng CSS gradient tạm vì chưa có ảnh thật, bạn có thể thay bằng thẻ <Image> sau */}
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-400 to-emerald-400 opacity-80 group-hover:scale-105 transition-transform duration-500"></div>
-              </div>
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
-              <div className="absolute bottom-0 left-0 p-6 text-white">
-                <h3 className="text-2xl font-bold mb-1">Đà Nẵng</h3>
-                <p className="text-sm text-gray-200">1,240 khách sạn</p>
-              </div>
-            </div>
-
-            {/* Cột 2 & 3: Các ảnh nhỏ hơn */}
-            <div className="relative rounded-3xl overflow-hidden group cursor-pointer shadow-md">
-              <div className="absolute inset-0 bg-gradient-to-br from-orange-400 to-pink-500 opacity-80 group-hover:scale-105 transition-transform duration-500"></div>
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent"></div>
-              <div className="absolute bottom-0 left-0 p-6 text-white">
-                <h3 className="text-xl font-bold mb-1">Hà Nội</h3>
-                <p className="text-sm text-gray-200">850 khách sạn</p>
-              </div>
-            </div>
-
-            <div className="relative rounded-3xl overflow-hidden group cursor-pointer shadow-md">
-              <div className="absolute inset-0 bg-gradient-to-br from-purple-500 to-indigo-500 opacity-80 group-hover:scale-105 transition-transform duration-500"></div>
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent"></div>
-              <div className="absolute bottom-0 left-0 p-6 text-white">
-                <h3 className="text-xl font-bold mb-1">TP. Hồ Chí Minh</h3>
-                <p className="text-sm text-gray-200">2,100 khách sạn</p>
-              </div>
-            </div>
-
-            <div className="md:col-span-2 relative rounded-3xl overflow-hidden group cursor-pointer shadow-md">
-              <div className="absolute inset-0 bg-gradient-to-br from-cyan-500 to-blue-500 opacity-80 group-hover:scale-105 transition-transform duration-500"></div>
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent"></div>
-              <div className="absolute bottom-0 left-0 p-6 text-white">
-                <h3 className="text-xl font-bold mb-1">Nha Trang</h3>
-                <p className="text-sm text-gray-200">Bãi biển tuyệt đẹp & nghỉ dưỡng</p>
-              </div>
-            </div>
-          </div>
+          <DestinationRecommendations />
         </section>
 
       </div>
