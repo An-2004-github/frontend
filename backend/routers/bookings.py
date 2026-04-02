@@ -68,6 +68,7 @@ class BookingRequest(BaseModel):
     passengers:     int = 1
     seat_class:     str | None = None
     total_price:    float
+    promo_id:       int | None = None
 
 
 # Lấy danh sách booking của user
@@ -114,7 +115,7 @@ def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user
     quantity = data.passengers if data.entity_type == "flight" else data.guests
 
     with engine.begin() as conn:
-        # Kiểm tra đủ ghế trước khi đặt (chỉ cho flight)
+        # Kiểm tra đủ ghế trước khi đặt (cho flight)
         if data.entity_type == "flight" and data.seat_class:
             avail = conn.execute(
                 text("""
@@ -127,6 +128,21 @@ def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user
                 raise HTTPException(
                     400,
                     f"Không đủ ghế {data.seat_class}. Chỉ còn {avail} ghế trống."
+                )
+
+        # Kiểm tra đủ ghế trước khi đặt (cho bus)
+        if data.entity_type == "bus":
+            avail = conn.execute(
+                text("""
+                    SELECT COUNT(*) FROM bus_seats
+                    WHERE bus_id = :bid AND is_booked = 0
+                """),
+                {"bid": data.entity_id}
+            ).scalar()
+            if avail < quantity:
+                raise HTTPException(
+                    400,
+                    f"Không đủ ghế. Chỉ còn {avail} ghế trống."
                 )
 
         # Tạo booking
@@ -173,6 +189,29 @@ def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user
                 conn.execute(
                     text(f"UPDATE flight_seats SET is_booked = 1 WHERE seat_id IN ({','.join(seat_ids)})")
                 )
+
+        # Trừ ghế trong bus_seats
+        if data.entity_type == "bus":
+            seat_rows = conn.execute(
+                text("""
+                    SELECT seat_id FROM bus_seats
+                    WHERE bus_id = :bid AND is_booked = 0
+                    LIMIT :n
+                """),
+                {"bid": data.entity_id, "n": quantity}
+            ).fetchall()
+            seat_ids = [str(r.seat_id) for r in seat_rows]
+            if seat_ids:
+                conn.execute(
+                    text(f"UPDATE bus_seats SET is_booked = 1 WHERE seat_id IN ({','.join(seat_ids)})")
+                )
+
+        # Tăng used_count nếu có mã giảm giá
+        if data.promo_id:
+            conn.execute(
+                text("UPDATE promotions SET used_count = used_count + 1 WHERE promo_id = :pid"),
+                {"pid": data.promo_id}
+            )
 
     return {"booking_id": booking_id, "message": "Đặt chỗ thành công"}
 

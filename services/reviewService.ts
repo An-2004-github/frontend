@@ -8,7 +8,7 @@ export const reviewService = {
         entityId: number
     ): Promise<Review[]> {
 
-        const res = await api.get("/reviews", {
+        const res = await api.get("/api/reviews", {
             params: {
                 entity_type: entityType,
                 entity_id: entityId,
@@ -20,7 +20,7 @@ export const reviewService = {
 
     async createReview(data: Partial<Review>) {
 
-        const res = await api.post("/reviews", data)
+        const res = await api.post("/api/reviews", data)
 
         return res.data
     },

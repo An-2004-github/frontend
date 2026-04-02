@@ -9,6 +9,8 @@ import { useAuthStore } from "@/store/authStore";
 import { useBookingStore } from "@/store/bookingStore";
 import { Hotel, RoomType } from "@/types/hotel";
 import { logInteraction } from "@/lib/logInteraction";
+import ReviewForm from "@/components/review/ReviewForm";
+import ReviewList from "@/components/review/ReviewList";
 
 interface Review {
     review_id: number;
@@ -41,6 +43,7 @@ export default function HotelDetailPage() {
     const [hotel, setHotel] = useState<(Hotel & { reviews: Review[] }) | null>(null);
     const [loading, setLoading] = useState(true);
     const [activeImg, setActiveImg] = useState(0);
+    const [reviewRefreshKey, setReviewRefreshKey] = useState(0);
 
     const [checkIn, setCheckIn] = useState(TODAY);
     const [checkOut, setCheckOut] = useState(TOMORROW);
@@ -281,33 +284,19 @@ export default function HotelDetailPage() {
                                 </div>
                             )}
 
-                            {hotel.reviews && hotel.reviews.length > 0 && (
-                                <div className="hdp-section">
-                                    <div className="hdp-section-title">
-                                        ⭐ Đánh giá khách hàng
-                                        <span style={{ fontSize: "0.82rem", color: "#6b8cbf", fontWeight: 400 }}>
-                                            ({hotel.reviews.length} đánh giá gần nhất)
-                                        </span>
-                                    </div>
-                                    {hotel.reviews.map((r) => (
-                                        <div key={r.review_id} className="hdp-review">
-                                            <div className="hdp-review-header">
-                                                <div className="hdp-review-avatar">{r.full_name?.charAt(0)?.toUpperCase() ?? "U"}</div>
-                                                <div>
-                                                    <div className="hdp-review-name">{r.full_name ?? "Khách ẩn danh"}</div>
-                                                    <div className="hdp-review-date">{new Date(r.created_at).toLocaleDateString("vi-VN")}</div>
-                                                </div>
-                                                <div style={{ display: "flex", gap: 2, marginLeft: "auto" }}>
-                                                    {Array.from({ length: 5 }).map((_, i) => (
-                                                        <span key={i} style={{ color: i < r.rating ? "#ffb800" : "#dde3f0", fontSize: "0.82rem" }}>★</span>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                            <p className="hdp-review-comment">{r.comment}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                            <div className="hdp-section">
+                                <div className="hdp-section-title">⭐ Đánh giá khách hàng</div>
+                                <ReviewList
+                                    entityType="hotel"
+                                    entityId={Number(hotel_id)}
+                                    refreshKey={reviewRefreshKey}
+                                />
+                                <ReviewForm
+                                    entityType="hotel"
+                                    entityId={Number(hotel_id)}
+                                    onSuccess={() => setReviewRefreshKey(k => k + 1)}
+                                />
+                            </div>
                         </div>
 
                         {/* RIGHT */}

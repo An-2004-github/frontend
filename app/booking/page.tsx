@@ -92,7 +92,7 @@ export default function BookingPage() {
         return Object.keys(e).length === 0;
     };
 
-    const handleContinue = async () => {
+    const handleContinue = async (promoId?: number, discountAmount?: number) => {
         if (!validate() || !booking) return;
         setSubmitting(true);
         try {
@@ -110,6 +110,8 @@ export default function BookingPage() {
                 login(meRes.data, token);
             }
 
+            const finalTotal = booking.totalPrice - (discountAmount ?? 0);
+
             let payload: Record<string, unknown> = {
                 guest_name: form.bookingForSelf
                     ? form.contactName
@@ -118,7 +120,8 @@ export default function BookingPage() {
                 contact_phone: form.contactPhone,
                 contact_email: form.contactEmail,
                 special_requests: form.specialRequests.join(","),
-                total_price: booking.totalPrice,
+                total_price: finalTotal,
+                ...(promoId ? { promo_id: promoId } : {}),
             };
 
             if (booking.type === "hotel") {
@@ -157,7 +160,7 @@ export default function BookingPage() {
 
             setPayment({
                 bookingId,
-                totalAmount: booking.totalPrice,
+                totalAmount: finalTotal,
                 description,
                 entityType: booking.type,
             });

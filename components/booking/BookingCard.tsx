@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { BookingData } from "@/store/bookingStore";
+import api from "@/lib/axios";
 
 const fmt = (n: number) => n.toLocaleString("vi-VN") + " VND";
 
@@ -14,14 +15,64 @@ const fmtDate = (s: string) => {
     return `${wd}, ${day} tháng ${mon} ${d.getFullYear()}`;
 };
 
+interface PromoResult {
+    promo_id: number;
+    code: string;
+    discount_amount: number;
+    message: string;
+}
+
 interface Props {
     booking: BookingData;
-    onContinue: () => void;
+    onContinue: (promoId?: number, discountAmount?: number) => void;
     submitting: boolean;
 }
 
 export default function BookingCard({ booking, onContinue, submitting }: Props) {
     const [priceOpen, setPriceOpen] = useState(true);
+
+    // Promo code state
+    const [promoCode, setPromoCode] = useState("");
+    const [promoLoading, setPromoLoading] = useState(false);
+    const [promoResult, setPromoResult] = useState<PromoResult | null>(null);
+    const [promoError, setPromoError] = useState<string | null>(null);
+
+    const discountAmount = promoResult?.discount_amount ?? 0;
+    const finalTotal = Math.max(0, booking.totalPrice - discountAmount);
+
+    const handleApplyPromo = async () => {
+        const code = promoCode.trim().toUpperCase();
+        if (!code) return;
+        setPromoLoading(true);
+        setPromoError(null);
+        setPromoResult(null);
+
+        const appliesTo =
+            booking.type === "hotel" ? "hotel" :
+            booking.type === "flight" ? "flight" :
+            booking.type === "bus" ? "bus" : "all";
+
+        try {
+            const res = await api.post("/api/promotions/validate", {
+                code,
+                order_value: booking.totalPrice,
+                applies_to: appliesTo,
+            });
+            setPromoResult(res.data);
+        } catch (err: unknown) {
+            const detail = (err as { response?: { data?: { detail?: string } } })
+                ?.response?.data?.detail;
+            setPromoError(detail ?? "Mã không hợp lệ hoặc đã hết hạn");
+        } finally {
+            setPromoLoading(false);
+        }
+    };
+
+    const handleRemovePromo = () => {
+        setPromoResult(null);
+        setPromoError(null);
+        setPromoCode("");
+    };
 
     return (
         <>
@@ -60,6 +111,23 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                 .bc-btn:disabled { opacity: 0.55; cursor: not-allowed; }
                 .bc-terms { font-size: 0.72rem; color: #999; text-align: center; margin-top: 0.6rem; line-height: 1.4; }
                 .bc-terms a { color: #0052cc; text-decoration: none; }
+
+                /* Promo */
+                .bc-promo-wrap { margin-top: 0.85rem; }
+                .bc-promo-label { font-size: 0.75rem; font-weight: 600; color: #6b778c; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 0.4rem; }
+                .bc-promo-row { display: flex; gap: 0.5rem; }
+                .bc-promo-input { flex: 1; border: 1.5px solid #dde3f0; border-radius: 8px; padding: 0.55rem 0.75rem; font-size: 0.88rem; font-family: inherit; color: #1a3c6b; outline: none; text-transform: uppercase; transition: border-color 0.2s; }
+                .bc-promo-input:focus { border-color: #0052cc; }
+                .bc-promo-input:disabled { background: #f8f9fb; color: #aaa; }
+                .bc-promo-btn { padding: 0.55rem 0.9rem; background: #0052cc; color: #fff; border: none; border-radius: 8px; font-size: 0.82rem; font-weight: 700; cursor: pointer; white-space: nowrap; transition: opacity 0.15s; font-family: inherit; }
+                .bc-promo-btn:hover:not(:disabled) { opacity: 0.85; }
+                .bc-promo-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+                .bc-promo-btn.remove { background: #fff; color: #d32f2f; border: 1.5px solid #ffbdad; }
+                .bc-promo-success { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem; font-size: 0.8rem; color: #00875a; font-weight: 500; }
+                .bc-promo-error { margin-top: 0.4rem; font-size: 0.8rem; color: #bf2600; }
+                .bc-discount-row { display: flex; justify-content: space-between; margin-top: 0.75rem; }
+                .bc-discount-label { font-size: 0.84rem; color: #00875a; font-weight: 600; }
+                .bc-discount-val { font-size: 0.84rem; color: #00875a; font-weight: 700; }
             `}</style>
 
             <div className="bc-wrap">
@@ -78,7 +146,6 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                             </div>
                             <div className="bc-popular">Được nhiều người chọn!</div>
 
-                            {/* Ngày check-in / check-out */}
                             <div className="bc-dates">
                                 <div className="bc-date-col">
                                     <div className="bc-date-label">Nhận phòng</div>
@@ -96,14 +163,12 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                                 </div>
                             </div>
 
-                            {/* Khách */}
                             <div className="bc-info-row">
                                 <span>👥 {booking.guests} khách</span>
                                 <span className="bc-info-icon">🛏</span>
                                 <span className="bc-info-icon">📶</span>
                             </div>
 
-                            {/* Chính sách */}
                             <div className="bc-policy">
                                 <span className="bc-policy-icon">i</span>
                                 Đặt phòng này không được hoàn tiền.
@@ -136,6 +201,48 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
 
                     <hr className="bc-divider" />
 
+                    {/* Mã giảm giá */}
+                    <div className="bc-promo-wrap">
+                        <div className="bc-promo-label">🏷️ Mã giảm giá</div>
+                        <div className="bc-promo-row">
+                            <input
+                                className="bc-promo-input"
+                                type="text"
+                                placeholder="Nhập mã khuyến mãi..."
+                                value={promoCode}
+                                disabled={!!promoResult}
+                                onChange={e => {
+                                    setPromoCode(e.target.value);
+                                    setPromoError(null);
+                                }}
+                                onKeyDown={e => e.key === "Enter" && !promoResult && handleApplyPromo()}
+                            />
+                            {promoResult ? (
+                                <button className="bc-promo-btn remove" onClick={handleRemovePromo}>
+                                    Xóa
+                                </button>
+                            ) : (
+                                <button
+                                    className="bc-promo-btn"
+                                    onClick={handleApplyPromo}
+                                    disabled={promoLoading || !promoCode.trim()}
+                                >
+                                    {promoLoading ? "..." : "Áp dụng"}
+                                </button>
+                            )}
+                        </div>
+                        {promoResult && (
+                            <div className="bc-promo-success">
+                                ✅ {promoResult.message}
+                            </div>
+                        )}
+                        {promoError && (
+                            <div className="bc-promo-error">❌ {promoError}</div>
+                        )}
+                    </div>
+
+                    <hr className="bc-divider" />
+
                     {/* Chi tiết giá */}
                     <div className="bc-price-header" onClick={() => setPriceOpen(o => !o)}>
                         <span className="bc-price-title">Chi tiết giá</span>
@@ -158,6 +265,13 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                                 <div className="bc-price-val">{fmt(booking.taxAndFees)}</div>
                             </div>
 
+                            {discountAmount > 0 && (
+                                <div className="bc-discount-row">
+                                    <div className="bc-discount-label">🏷️ Giảm giá ({promoResult?.code})</div>
+                                    <div className="bc-discount-val">-{fmt(discountAmount)}</div>
+                                </div>
+                            )}
+
                             <hr className="bc-divider" />
 
                             <div className="bc-price-row">
@@ -166,23 +280,28 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                                     <div className="bc-total-sub">
                                         {booking.type === "hotel"
                                             ? `${booking.quantity} phòng, ${booking.nights} đêm`
-                                            : booking.type === "flight"
-                                            ? `${booking.passengers} hành khách`
                                             : `${booking.passengers} hành khách`
                                         }
                                     </div>
                                 </div>
                                 <div className="bc-total-val">
-                                    {booking.type === "hotel" && booking.originalPrice && booking.originalPrice > booking.totalPrice && (
+                                    {discountAmount > 0 && (
+                                        <div className="bc-total-original">{fmt(booking.totalPrice)}</div>
+                                    )}
+                                    {!discountAmount && booking.type === "hotel" && booking.originalPrice && booking.originalPrice > booking.totalPrice && (
                                         <div className="bc-total-original">{fmt(booking.originalPrice)}</div>
                                     )}
-                                    <div className="bc-total-final">{fmt(booking.totalPrice)}</div>
+                                    <div className="bc-total-final">{fmt(finalTotal)}</div>
                                 </div>
                             </div>
                         </>
                     )}
 
-                    <button className="bc-btn" onClick={onContinue} disabled={submitting}>
+                    <button
+                        className="bc-btn"
+                        onClick={() => onContinue(promoResult?.promo_id, discountAmount > 0 ? discountAmount : undefined)}
+                        disabled={submitting}
+                    >
                         {submitting ? "Đang xử lý..." : "Tiếp tục"}
                     </button>
 

@@ -175,8 +175,6 @@ def check_availability(
                     rt.price_per_night,
                     rt.max_guests,
                     rt.total_rooms,
-                    rt.check_in_time,
-                    rt.check_out_time,
                     GREATEST(0, rt.total_rooms - COUNT(CASE
                         WHEN b.status IN ('pending','confirmed')
                             AND bi.check_in_date < :check_out
@@ -188,7 +186,7 @@ def check_availability(
                 LEFT JOIN bookings b ON b.booking_id = bi.booking_id
                 WHERE rt.hotel_id = :hotel_id
                 GROUP BY rt.room_type_id, rt.name, rt.price_per_night, rt.max_guests,
-                         rt.total_rooms, rt.check_in_time, rt.check_out_time
+                         rt.total_rooms
                 HAVING available_rooms > 0
                 ORDER BY rt.price_per_night ASC
             """),

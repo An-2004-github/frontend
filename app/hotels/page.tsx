@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useSearchParams } from "next/navigation";
 import HotelList from "@/components/hotel/HotelList";
 import { Hotel } from "@/types/hotel";
 import { hotelService } from "@/services/hotelService";
@@ -55,6 +56,25 @@ export default function HotelsPage() {
     const [destTab, setDestTab] = useState<"domestic" | "international">("domestic");
 
     const listRef = useRef<HTMLDivElement>(null);
+    const searchParams = useSearchParams();
+
+    // ── Init from URL parameters ──────────────────────────────────
+    useEffect(() => {
+        const qSearch = searchParams?.get("search");
+        const qDestId = searchParams?.get("destination_id");
+
+        if (qSearch) {
+            setSearchInput(qSearch);
+            setSearch(qSearch);
+        }
+        if (qDestId) {
+            setSelectedDest({ 
+                destination_id: Number(qDestId), 
+                name: qSearch || "", 
+                city: qSearch || "" 
+            } as Destination);
+        }
+    }, [searchParams]);
 
     // ── Fetch top rated on mount ──────────────────────────────────
     useEffect(() => {
