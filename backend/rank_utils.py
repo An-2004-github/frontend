@@ -17,28 +17,30 @@ def get_cashback_rate(rank: str) -> float:
     }.get(rank, 0.005)
 
 
-def get_cancel_fee_rate(rank: str, days_until: int, entity_type: str) -> float:
-    """Trả về tỉ lệ phí hủy (0.0 – 1.0)."""
+from typing import Tuple
+
+def get_cancel_fee_rate(rank: str, days_until: int, entity_type: str) -> Tuple[float, str]:
+    """Trả về tuple (tỉ lệ phí hủy, chuỗi giải thích chính sách)."""
     if entity_type == "room":
-        if days_until < 1:          # hủy trong ngày → không hoàn
-            return 1.0
-        if rank == "diamond":       # miễn phí hủy trước 1 ngày
-            return 0.0
-        elif rank == "gold":        # phí 10% nếu < 3 ngày
-            return 0.1 if days_until < 3 else 0.0
-        elif rank == "silver":      # phí 20% nếu < 3 ngày
-            return 0.2 if days_until < 3 else 0.0
-        else:                       # bronze: phí 30% nếu < 3 ngày
-            return 0.3 if days_until < 3 else 0.0
+        if days_until < 1:
+            return 1.0, "Ngay tại ngày nhận phòng: Không hoàn tiền (phí 100%)."
+        if rank == "diamond":
+            return 0.0, "Hạng Ưu tú Kim Cương: Tuyệt đối miễn phí hủy phòng."
+        elif rank == "gold":
+            return (0.1, "Hạng Vàng (hủy < 3 ngày): Phí hủy 10%.") if days_until < 3 else (0.0, "Hủy sớm >= 3 ngày: Miễn phí hủy.")
+        elif rank == "silver":
+            return (0.2, "Hạng Bạc (hủy < 3 ngày): Phí hủy 20%.") if days_until < 3 else (0.0, "Hủy sớm >= 3 ngày: Miễn phí hủy.")
+        else:
+            return (0.3, "Khách thường (hủy < 3 ngày): Phí hủy 30%.") if days_until < 3 else (0.0, "Hủy sớm >= 3 ngày: Miễn phí hủy.")
 
     elif entity_type in ("flight", "bus"):
         if days_until < 1:
-            return 0.3
+            return 1.0, "Hủy ngay trong ngày khởi hành: Không hoàn tiền (phí 100%)."
         elif days_until < 3:
-            return 0.1
-        return 0.0
+            return 0.3, "Hủy trước 1-3 ngày: Phí hủy 30% (Hoàn 70%)."
+        return 0.1, "Hủy sớm >= 3 ngày: Phí hủy 10% (Hoàn 90%)."
 
-    return 0.0
+    return 0.0, "Không áp dụng phí hủy."
 
 
 RANK_LABELS = {

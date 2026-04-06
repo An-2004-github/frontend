@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import api from "@/lib/axios";
+import DestinationInput from "@/components/ui/DestinationInput";
 
 // ── Types ──────────────────────────────────────────────────────────
 type Budget        = "under5m" | "5to10m" | "10to20m" | "over20m";
@@ -312,11 +313,11 @@ export default function TravelPlannerPage() {
                         {/* Địa điểm */}
                         <div className="tp-card">
                             <div className="tp-card-title">📍 Địa điểm mong muốn</div>
-                            <input
-                                className="tp-input"
-                                placeholder="VD: Đà Nẵng, Phú Quốc... (để trống = AI tự chọn)"
+                            <DestinationInput
                                 value={destination}
-                                onChange={e => setDestination(e.target.value)}
+                                onChange={setDestination}
+                                placeholder="VD: Đà Nẵng, Phú Quốc... (để trống = AI tự chọn)"
+                                cityMode
                             />
                         </div>
 

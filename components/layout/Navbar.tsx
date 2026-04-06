@@ -4,7 +4,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import api from "@/lib/axios";
 
 const NAV_LINKS = [
     { href: "/hotels",         label: "Khách sạn",   icon: "🏨" },
@@ -15,10 +16,26 @@ const NAV_LINKS = [
 ];
 
 export default function Navbar() {
-    const { user, logout } = useAuthStore();
+    const { user, logout, updateUser } = useAuthStore();
     const pathname = usePathname();
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
+
+    useEffect(() => {
+        if (!user) return;
+        const fetchWallet = () => {
+            api.get("/api/auth/me").then(res => {
+                if (res.data?.wallet !== undefined) {
+                    updateUser({ wallet: res.data.wallet });
+                }
+            }).catch(() => {});
+        };
+        fetchWallet();
+        const onFocus = () => fetchWallet();
+        window.addEventListener("focus", onFocus);
+        return () => window.removeEventListener("focus", onFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.user_id]);
 
     return (
         <>

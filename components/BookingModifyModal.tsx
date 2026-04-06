@@ -68,6 +68,10 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
     const [submitting,   setSubmitting]   = useState(false);
     const [result,       setResult]       = useState<{ status: string; message: string; mod_id?: number; price_diff?: number } | null>(null);
     const [cancelInfo,   setCancelInfo]   = useState<{ cancel_fee: number; refund_amount: number } | null>(null);
+    
+    // Cancellation preview
+    const [cancelPreview, setCancelPreview] = useState<{ cancel_fee: number; refund_amount: number; policy_note?: string } | null>(null);
+    const [loadingPreview, setLoadingPreview] = useState(false);
 
     // For pay extra (wallet)
     const [walletBalance, setWalletBalance] = useState(0);
@@ -166,6 +170,21 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
         }
     };
 
+    /* ── fetch cancel preview ────────────────────────────────── */
+    const fetchCancelPreview = async () => {
+        setLoadingPreview(true);
+        try {
+            const res = await api.get(`/api/bookings/${booking.booking_id}/cancel-preview`);
+            setCancelPreview(res.data);
+            setStep(2);
+        } catch (e: unknown) {
+            alert("Không thể tính phí hủy lúc này.");
+            setStep(2); // Vẫn cho đi tiếp nhưng không hiện chi tiết
+        } finally {
+            setLoadingPreview(false);
+        }
+    };
+
     /* ── QR timer ───────────────────────────────────────────── */
     useEffect(() => {
         if (payTab !== "qr" || !result?.mod_id) return;
@@ -219,10 +238,12 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
 • Nếu vé mới đắt hơn, bạn cần thanh toán thêm phần chênh lệch.
 • Nếu vé mới rẻ hơn, phần chênh lệch sẽ được hoàn lại trong 2–5 ngày.`;
 
-    const POLICY_CANCEL_ROOM = `Chính sách hủy phòng:
-• Hủy trước 3 ngày so với ngày nhận phòng: hoàn 100%.
-• Hủy trong vòng 1–3 ngày: phí hủy 30%, hoàn 70%.
-• Hủy trong ngày: không hoàn tiền.`;
+    const POLICY_CANCEL_ROOM = `Chính sách hủy phòng (áp dụng theo Hạng):
+• Hủy tại ngày nhận phòng: Không hoàn tiền.
+• Hạng Đồng 🥉: Hủy < 3 ngày (phí 30%). Hủy sớm ≥ 3 ngày (miễn phí).
+• Hạng Bạc 🥈: Hủy < 3 ngày (phí 20%). Hủy sớm ≥ 3 ngày (miễn phí).
+• Hạng Vàng 🥇: Hủy < 3 ngày (phí 10%). Hủy sớm ≥ 3 ngày (miễn phí).
+• Hạng Kim Cương 💎: Miễn phí bất chấp thời gian (trừ khi hủy sát ngày nhận phòng).`;
 
     const POLICY_CANCEL_TRANSPORT = `Chính sách hủy vé:
 • Hủy trước 3 ngày so với ngày khởi hành: phí hủy 10%, hoàn 90%.
@@ -398,8 +419,8 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
                             <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} style={{ accentColor: "#0052cc" }} />
                             <span>Tôi đã đọc và đồng ý với chính sách hủy</span>
                         </label>
-                        <button disabled={!canStep2} onClick={() => setStep(2)} style={{ ...primaryBtn, opacity: canStep2 ? 1 : 0.5 }}>
-                            Tiếp tục →
+                        <button disabled={!canStep2 || loadingPreview} onClick={fetchCancelPreview} style={{ ...primaryBtn, opacity: canStep2 ? 1 : 0.5 }}>
+                            {loadingPreview ? "Đang tính..." : "Tiếp tục →"}
                         </button>
                     </>
                 )}
@@ -416,10 +437,23 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
                             {isTransport && item?.check_in_date && (
                                 <InfoRow label="Ngày khởi hành" value={fmtDate(item.check_in_date)} />
                             )}
+                            {cancelPreview && (
+                                <>
+                                    {cancelPreview.policy_note && (
+                                        <div style={{ background: "#eef4ff", border: "1px solid #c8d8ff", color: "#0052cc", padding: "0.75rem", borderRadius: "8px", margin: "0.5rem 0", fontSize: "0.85rem", fontWeight: 600 }}>
+                                            ℹ️ Chính sách áp dụng: {cancelPreview.policy_note}
+                                        </div>
+                                    )}
+                                    {cancelPreview.cancel_fee > 0 && (
+                                        <InfoRow label="Phí hủy" value={"-" + fmt(cancelPreview.cancel_fee)} valueColor="#c0392b" />
+                                    )}
+                                    <InfoRow label="Số tiền hoàn lại" value={fmt(cancelPreview.refund_amount)} valueColor="#00875a" />
+                                </>
+                            )}
                         </div>
 
                         <div style={{ background: "#fff8e1", border: "1px solid #ffe082", borderRadius: 10, padding: "1rem", margin: "0.75rem 0", fontSize: "0.85rem", color: "#7b5700", lineHeight: 1.6 }}>
-                            ⚠️ Phí hủy sẽ được tính tự động theo chính sách. Số tiền hoàn lại sẽ được xử lý trong 2–5 ngày.
+                            ⚠️ Số tiền hoàn lại sẽ được trả về ví hoặc ngân hàng trong 2–5 ngày tính từ lúc xác nhận.
                         </div>
 
                         <div style={{ display: "flex", gap: "0.5rem" }}>

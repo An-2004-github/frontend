@@ -142,7 +142,9 @@ export default function BookingsPage() {
                                     </div>
                                     {b.check_in_date && (
                                         <div className="bk-meta-item">
-                                            <span className="bk-meta-label">Nhận phòng</span>
+                                            <span className="bk-meta-label">
+                                                {b.entity_type === "room" ? "Nhận phòng" : "Khởi hành"}
+                                            </span>
                                             <span className="bk-meta-value">
                                                 {new Date(b.check_in_date).toLocaleDateString("vi-VN")}
                                             </span>
@@ -150,7 +152,9 @@ export default function BookingsPage() {
                                     )}
                                     {b.check_out_date && (
                                         <div className="bk-meta-item">
-                                            <span className="bk-meta-label">Trả phòng</span>
+                                            <span className="bk-meta-label">
+                                                {b.entity_type === "room" ? "Trả phòng" : "Đến nơi"}
+                                            </span>
                                             <span className="bk-meta-value">
                                                 {new Date(b.check_out_date).toLocaleDateString("vi-VN")}
                                             </span>

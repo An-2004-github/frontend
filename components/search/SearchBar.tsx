@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Button from "@/components/ui/button";
-import Input from "@/components/ui/input";
+import DestinationInput from "@/components/ui/DestinationInput";
 import { logSearch } from "@/lib/logInteraction";
 
 type ServiceType = "hotel" | "flight" | "train" | "bus";
@@ -49,15 +49,16 @@ export default function SearchBar() {
             {/* Form tìm kiếm */}
             <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-3 p-2">
                 <div className="flex-1">
-                    <Input
+                    <DestinationInput
+                        value={searchQuery}
+                        onChange={setSearchQuery}
                         placeholder={
                             activeTab === "hotel"
                                 ? "Nhập tên khách sạn, thành phố..."
                                 : "Nhập điểm đi, điểm đến..."
                         }
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="h-12 text-base"
+                        cityMode
+                        inputStyle={{ height: "3rem", fontSize: "1rem" }}
                     />
                 </div>
                 {/* Thêm ô chọn ngày tháng nếu cần (sau này bạn có thể dùng thư viện react-datepicker) */}

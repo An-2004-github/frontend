@@ -58,6 +58,14 @@ const MONTHS = [
     "Tháng 9", "Tháng 10", "Tháng 11", "Tháng 12",
 ];
 
+const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, "0"));
+
+const THIS_YEAR = new Date().getFullYear();
+// Năm sinh: từ 100 năm trước đến 12 năm trước (hành khách người lớn)
+const BIRTH_YEARS = Array.from({ length: 89 }, (_, i) => THIS_YEAR - 12 - i);
+// Năm hết hạn hộ chiếu: từ năm nay đến 20 năm tới
+const PASSPORT_EXP_YEARS = Array.from({ length: 21 }, (_, i) => THIS_YEAR + i);
+
 const NATIONALITIES = [
     "Việt Nam", "United States", "United Kingdom", "Japan",
     "South Korea", "China", "France", "Germany", "Australia", "Singapore",
@@ -292,32 +300,42 @@ export default function BookingForm({ form, errors, bookingType, flightRoute, on
                         <div>
                             <label className="bf-label">Ngày sinh</label>
                             <div className="bf-date-row">
-                                <input
-                                    className="bf-input"
-                                    placeholder="DD"
-                                    maxLength={2}
-                                    value={form.passengerBirthDay}
-                                    onChange={e => onChange("passengerBirthDay", e.target.value)}
-                                />
+                                <div className="bf-select-wrap">
+                                    <select
+                                        className="bf-select"
+                                        value={form.passengerBirthDay}
+                                        onChange={e => onChange("passengerBirthDay", e.target.value)}
+                                    >
+                                        <option value="">Ngày</option>
+                                        {DAYS.map(d => (
+                                            <option key={d} value={d}>{d}</option>
+                                        ))}
+                                    </select>
+                                </div>
                                 <div className="bf-select-wrap">
                                     <select
                                         className="bf-select"
                                         value={form.passengerBirthMonth}
                                         onChange={e => onChange("passengerBirthMonth", e.target.value)}
                                     >
-                                        <option value="">MMMM</option>
+                                        <option value="">Tháng</option>
                                         {MONTHS.map((m, i) => (
                                             <option key={i} value={String(i + 1).padStart(2, "0")}>{m}</option>
                                         ))}
                                     </select>
                                 </div>
-                                <input
-                                    className="bf-input"
-                                    placeholder="YYYY"
-                                    maxLength={4}
-                                    value={form.passengerBirthYear}
-                                    onChange={e => onChange("passengerBirthYear", e.target.value)}
-                                />
+                                <div className="bf-select-wrap">
+                                    <select
+                                        className="bf-select"
+                                        value={form.passengerBirthYear}
+                                        onChange={e => onChange("passengerBirthYear", e.target.value)}
+                                    >
+                                        <option value="">Năm</option>
+                                        {BIRTH_YEARS.map(y => (
+                                            <option key={y} value={String(y)}>{y}</option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
                             <div className="bf-hint">Hành khách người lớn (trên 12 tuổi)</div>
                         </div>
@@ -363,32 +381,42 @@ export default function BookingForm({ form, errors, bookingType, flightRoute, on
                         <div>
                             <label className="bf-label">Ngày hết hạn<em>*</em></label>
                             <div className="bf-date-row">
-                                <input
-                                    className="bf-input"
-                                    placeholder="DD"
-                                    maxLength={2}
-                                    value={form.passportExpDay}
-                                    onChange={e => onChange("passportExpDay", e.target.value)}
-                                />
+                                <div className="bf-select-wrap">
+                                    <select
+                                        className="bf-select"
+                                        value={form.passportExpDay}
+                                        onChange={e => onChange("passportExpDay", e.target.value)}
+                                    >
+                                        <option value="">Ngày</option>
+                                        {DAYS.map(d => (
+                                            <option key={d} value={d}>{d}</option>
+                                        ))}
+                                    </select>
+                                </div>
                                 <div className="bf-select-wrap">
                                     <select
                                         className="bf-select"
                                         value={form.passportExpMonth}
                                         onChange={e => onChange("passportExpMonth", e.target.value)}
                                     >
-                                        <option value="">MMMM</option>
+                                        <option value="">Tháng</option>
                                         {MONTHS.map((m, i) => (
                                             <option key={i} value={String(i + 1).padStart(2, "0")}>{m}</option>
                                         ))}
                                     </select>
                                 </div>
-                                <input
-                                    className="bf-input"
-                                    placeholder="YYYY"
-                                    maxLength={4}
-                                    value={form.passportExpYear}
-                                    onChange={e => onChange("passportExpYear", e.target.value)}
-                                />
+                                <div className="bf-select-wrap">
+                                    <select
+                                        className="bf-select"
+                                        value={form.passportExpYear}
+                                        onChange={e => onChange("passportExpYear", e.target.value)}
+                                    >
+                                        <option value="">Năm</option>
+                                        {PASSPORT_EXP_YEARS.map(y => (
+                                            <option key={y} value={String(y)}>{y}</option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
                         </div>
                     </div>

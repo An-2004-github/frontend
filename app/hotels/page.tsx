@@ -10,6 +10,7 @@ import { hotelService } from "@/services/hotelService";
 import { destinationService, Destination } from "@/services/detinationService";
 import { promotionService } from "@/services/promotionService";
 import { Promotion } from "@/types/promotion";
+import DestinationInput from "@/components/ui/DestinationInput";
 
 const PRICE_OPTIONS = [
     { label: "Tất cả", min: undefined, max: undefined },
@@ -104,12 +105,12 @@ export default function HotelsPage() {
     }, [destTab]);
 
     // ── Fetch filtered hotels ─────────────────────────────────────
-    const fetchHotels = useCallback(async () => {
+    const fetchHotels = useCallback(async (keyword?: string) => {
         setLoadingHotels(true);
         try {
             const price = PRICE_OPTIONS[priceIdx];
             const data = await hotelService.getHotels({
-                search: search || undefined,
+                search: (keyword ?? searchInput) || undefined,
                 destination_id: selectedDest?.destination_id,
                 min_price: price.min,
                 max_price: price.max,
@@ -120,27 +121,15 @@ export default function HotelsPage() {
         } finally {
             setLoadingHotels(false);
         }
-    }, [search, priceIdx, ratingIdx, sortVal, selectedDest]);
+    }, [searchInput, priceIdx, ratingIdx, sortVal, selectedDest]);
 
-    // Trigger fetch when filter changes
-    const hasFilter = !!(search || priceIdx || ratingIdx || selectedDest);
-    useEffect(() => {
-        if (hasFilter) {
-            fetchHotels();
-            setShowFilter(true);
-            setTimeout(() => listRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-        } else {
-            setShowFilter(false);
-            setHotels([]);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [search, priceIdx, ratingIdx, sortVal, selectedDest]);
-
-    // Debounce search
-    useEffect(() => {
-        const t = setTimeout(() => setSearch(searchInput), 400);
-        return () => clearTimeout(t);
-    }, [searchInput]);
+    // Chỉ fetch khi bấm nút tìm
+    const handleSearch = () => {
+        setSearch(searchInput);
+        setShowFilter(true);
+        fetchHotels(searchInput);
+        setTimeout(() => listRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    };
 
     const handleDestClick = (dest: Destination) => {
         if (selectedDest?.destination_id === dest.destination_id) {
@@ -151,10 +140,10 @@ export default function HotelsPage() {
     };
 
     const handleReset = () => {
-        setSearchInput(""); setSearch("");
+        setSearchInput("");
         setPriceIdx(0); setRatingIdx(0);
         setSortVal("rating"); setSelectedDest(null);
-        setShowFilter(false);
+        setShowFilter(false); setHotels([]);
     };
 
     return (
@@ -538,11 +527,11 @@ export default function HotelsPage() {
                     <div className="hp-search-box">
                         <div className="hp-search-field" style={{ flex: 2 }}>
                             <label className="hp-search-label">🔍 Tìm kiếm</label>
-                            <input
-                                className="hp-search-input"
-                                placeholder="Nhập tên khách sạn hoặc địa điểm..."
+                            <DestinationInput
                                 value={searchInput}
-                                onChange={(e) => setSearchInput(e.target.value)}
+                                onChange={setSearchInput}
+                                placeholder="Nhập tên khách sạn hoặc địa điểm..."
+                                cityMode
                             />
                         </div>
                         <div className="hp-search-field">
@@ -557,7 +546,7 @@ export default function HotelsPage() {
                             <label className="hp-search-label">👤 Khách</label>
                             <input className="hp-search-input" type="number" defaultValue={2} min={1} max={10} />
                         </div>
-                        <button className="hp-search-btn">Tìm ngay</button>
+                        <button className="hp-search-btn" onClick={handleSearch}>Tìm ngay</button>
                     </div>
                 </div>
 

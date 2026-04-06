@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import api from "@/lib/axios";
+import BookingSuggestions from "@/components/booking/BookingSuggestions";
 
 interface BookingItem {
     entity_type: string;
@@ -300,6 +301,12 @@ export default function InvoicePage() {
                         </div>
                     </div>
                 </div>
+
+                <BookingSuggestions
+                    entityType={item?.entity_type as "room" | "flight" | "bus"}
+                    toCity={item?.to_city}
+                    checkIn={item?.check_in_date}
+                />
             </div>
         </>
     );

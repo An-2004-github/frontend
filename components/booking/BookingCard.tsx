@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { BookingData } from "@/store/bookingStore";
 import api from "@/lib/axios";
 
@@ -22,6 +22,18 @@ interface PromoResult {
     message: string;
 }
 
+interface Promotion {
+    promo_id: number;
+    code: string;
+    description: string;
+    min_order_value: number;
+    max_discount: number;
+    discount_percent: number;
+    discount_type: string;
+    used_count: number;
+    usage_limit: number;
+}
+
 interface Props {
     booking: BookingData;
     onContinue: (promoId?: number, discountAmount?: number) => void;
@@ -36,21 +48,48 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
     const [promoLoading, setPromoLoading] = useState(false);
     const [promoResult, setPromoResult] = useState<PromoResult | null>(null);
     const [promoError, setPromoError] = useState<string | null>(null);
+    const [availablePromos, setAvailablePromos] = useState<Promotion[]>([]);
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+    const [showAll, setShowAll] = useState(false);
+    const promoWrapRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (promoWrapRef.current && !promoWrapRef.current.contains(e.target as Node)) {
+                setDropdownOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     const discountAmount = promoResult?.discount_amount ?? 0;
     const finalTotal = Math.max(0, booking.totalPrice - discountAmount);
+    
+    const appliesTo =
+        booking.type === "hotel" ? "hotel" :
+        booking.type === "flight" ? "flight" :
+        booking.type === "bus" ? "bus" : "all";
 
-    const handleApplyPromo = async () => {
-        const code = promoCode.trim().toUpperCase();
+    useEffect(() => {
+        const fetchPromos = async () => {
+            try {
+                const res = await api.get(`/api/promotions?applies_to=${appliesTo}`);
+                setAvailablePromos(res.data);
+            } catch (error) {
+                console.error("Failed to fetch promotions", error);
+            }
+        };
+        fetchPromos();
+    }, [appliesTo]);
+
+    const handleApplyPromo = async (codeToApply?: string) => {
+        const code = (codeToApply || promoCode).trim().toUpperCase();
         if (!code) return;
+        setPromoCode(code);
         setPromoLoading(true);
         setPromoError(null);
         setPromoResult(null);
-
-        const appliesTo =
-            booking.type === "hotel" ? "hotel" :
-            booking.type === "flight" ? "flight" :
-            booking.type === "bus" ? "bus" : "all";
 
         try {
             const res = await api.post("/api/promotions/validate", {
@@ -113,21 +152,44 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                 .bc-terms a { color: #0052cc; text-decoration: none; }
 
                 /* Promo */
-                .bc-promo-wrap { margin-top: 0.85rem; }
+                .bc-promo-wrap { margin-top: 0.85rem; position: relative; }
                 .bc-promo-label { font-size: 0.75rem; font-weight: 600; color: #6b778c; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 0.4rem; }
                 .bc-promo-row { display: flex; gap: 0.5rem; }
-                .bc-promo-input { flex: 1; border: 1.5px solid #dde3f0; border-radius: 8px; padding: 0.55rem 0.75rem; font-size: 0.88rem; font-family: inherit; color: #1a3c6b; outline: none; text-transform: uppercase; transition: border-color 0.2s; }
+                .bc-promo-input { flex: 1; border: 1.5px solid #dde3f0; border-radius: 8px; padding: 0.55rem 0.75rem; font-size: 0.88rem; font-family: inherit; color: #1a3c6b; outline: none; text-transform: uppercase; transition: border-color 0.2s; min-width: 0; }
                 .bc-promo-input:focus { border-color: #0052cc; }
                 .bc-promo-input:disabled { background: #f8f9fb; color: #aaa; }
-                .bc-promo-btn { padding: 0.55rem 0.9rem; background: #0052cc; color: #fff; border: none; border-radius: 8px; font-size: 0.82rem; font-weight: 700; cursor: pointer; white-space: nowrap; transition: opacity 0.15s; font-family: inherit; }
+                .bc-promo-btn { padding: 0.55rem 0.9rem; background: #0052cc; color: #fff; border: none; border-radius: 8px; font-size: 0.82rem; font-weight: 700; cursor: pointer; white-space: nowrap; transition: opacity 0.15s; font-family: inherit; flex-shrink: 0; }
                 .bc-promo-btn:hover:not(:disabled) { opacity: 0.85; }
                 .bc-promo-btn:disabled { opacity: 0.5; cursor: not-allowed; }
                 .bc-promo-btn.remove { background: #fff; color: #d32f2f; border: 1.5px solid #ffbdad; }
+                .bc-promo-dropdown-btn { padding: 0.55rem 0.65rem; background: #f0f4ff; color: #0052cc; border: 1.5px solid #c8d8ff; border-radius: 8px; font-size: 0.85rem; cursor: pointer; transition: background 0.15s; flex-shrink: 0; line-height: 1; }
+                .bc-promo-dropdown-btn:hover { background: #dde9ff; }
+                .bc-promo-dropdown-btn.open { background: #0052cc; color: #fff; border-color: #0052cc; }
                 .bc-promo-success { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem; font-size: 0.8rem; color: #00875a; font-weight: 500; }
                 .bc-promo-error { margin-top: 0.4rem; font-size: 0.8rem; color: #bf2600; }
                 .bc-discount-row { display: flex; justify-content: space-between; margin-top: 0.75rem; }
                 .bc-discount-label { font-size: 0.84rem; color: #00875a; font-weight: 600; }
                 .bc-discount-val { font-size: 0.84rem; color: #00875a; font-weight: 700; }
+
+                /* Promo dropdown */
+                .bc-promo-dropdown { position: absolute; top: calc(100% + 6px); left: 0; right: 0; background: #fff; border: 1.5px solid #c8d8ff; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,82,204,0.13); z-index: 100; overflow: hidden; }
+                .bc-promo-dropdown-header { padding: 0.55rem 0.85rem; background: #f0f4ff; font-size: 0.72rem; font-weight: 700; color: #0052cc; text-transform: uppercase; letter-spacing: 0.4px; border-bottom: 1px solid #dde9ff; }
+                .bc-promo-dropdown-list { max-height: 260px; overflow-y: auto; }
+                .bc-promo-dropdown-list::-webkit-scrollbar { width: 4px; }
+                .bc-promo-dropdown-list::-webkit-scrollbar-thumb { background: #c8d8ff; border-radius: 4px; }
+                .bc-promo-item { padding: 0.65rem 0.85rem; cursor: pointer; transition: background 0.15s; border-bottom: 1px solid #f0f4ff; position: relative; }
+                .bc-promo-item:last-child { border-bottom: none; }
+                .bc-promo-item:hover { background: #f4f8ff; }
+                .bc-promo-item.disabled { opacity: 0.55; cursor: not-allowed; }
+                .bc-promo-item.disabled:hover { background: transparent; }
+                .bc-promo-item-top { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.2rem; }
+                .bc-promo-item-code { font-weight: 700; color: #0052cc; font-size: 0.85rem; padding: 0.15rem 0.45rem; background: #e8f0ff; border-radius: 4px; border: 1px solid #cce0ff; letter-spacing: 0.5px; }
+                .bc-promo-item-badge { font-size: 0.72rem; font-weight: 700; color: #fff; background: #e05c00; padding: 0.1rem 0.4rem; border-radius: 99px; }
+                .bc-promo-item-desc { font-size: 0.8rem; color: #444; line-height: 1.3; }
+                .bc-promo-item-req { font-size: 0.72rem; color: #d32f2f; margin-top: 0.15rem; font-weight: 500; }
+                .bc-promo-showmore { padding: 0.55rem; text-align: center; font-size: 0.8rem; color: #0052cc; font-weight: 600; cursor: pointer; border-top: 1px solid #e8f0fe; background: #f8faff; }
+                .bc-promo-showmore:hover { background: #eef3ff; }
+                .bc-promo-item-applied { position: absolute; top: 0; right: 0; background: #00875a; color: #fff; font-size: 0.65rem; font-weight: 700; padding: 0.2rem 0.5rem; border-bottom-left-radius: 8px; }
             `}</style>
 
             <div className="bc-wrap">
@@ -202,7 +264,7 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                     <hr className="bc-divider" />
 
                     {/* Mã giảm giá */}
-                    <div className="bc-promo-wrap">
+                    <div className="bc-promo-wrap" ref={promoWrapRef}>
                         <div className="bc-promo-label">🏷️ Mã giảm giá</div>
                         <div className="bc-promo-row">
                             <input
@@ -224,21 +286,102 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                             ) : (
                                 <button
                                     className="bc-promo-btn"
-                                    onClick={handleApplyPromo}
+                                    onClick={() => handleApplyPromo()}
                                     disabled={promoLoading || !promoCode.trim()}
                                 >
                                     {promoLoading ? "..." : "Áp dụng"}
                                 </button>
                             )}
+                            {availablePromos.length > 0 && !promoResult && (
+                                <button
+                                    className={`bc-promo-dropdown-btn${dropdownOpen ? " open" : ""}`}
+                                    onClick={() => { setDropdownOpen(o => !o); setShowAll(false); }}
+                                    title="Xem mã khuyến mãi có thể áp dụng"
+                                >
+                                    🏷️{dropdownOpen ? " ▲" : " ▼"}
+                                </button>
+                            )}
                         </div>
+
                         {promoResult && (
-                            <div className="bc-promo-success">
-                                ✅ {promoResult.message}
-                            </div>
+                            <div className="bc-promo-success">✅ {promoResult.message}</div>
                         )}
                         {promoError && (
                             <div className="bc-promo-error">❌ {promoError}</div>
                         )}
+
+                        {/* Dropdown danh sách mã */}
+                        {dropdownOpen && !promoResult && (() => {
+                            // Sắp xếp: applicable trước, trong mỗi nhóm sort theo giảm nhiều nhất
+                            const calcDiscount = (p: Promotion) =>
+                                p.discount_type === "percent"
+                                    ? Math.min(booking.totalPrice * p.discount_percent / 100, p.max_discount)
+                                    : p.max_discount;
+
+                            const sorted = [...availablePromos].sort((a, b) => {
+                                const aOk = booking.totalPrice >= a.min_order_value ? 1 : 0;
+                                const bOk = booking.totalPrice >= b.min_order_value ? 1 : 0;
+                                if (aOk !== bOk) return bOk - aOk;
+                                return calcDiscount(b) - calcDiscount(a);
+                            });
+
+                            const visible = showAll ? sorted : sorted.slice(0, 3);
+                            const hasMore = sorted.length > 3;
+
+                            return (
+                                <div className="bc-promo-dropdown">
+                                    <div className="bc-promo-dropdown-header">
+                                        {availablePromos.length} mã có thể dùng cho đơn hàng này
+                                    </div>
+                                    <div className="bc-promo-dropdown-list">
+                                        {visible.map(promo => {
+                                            const isApplicable = booking.totalPrice >= promo.min_order_value;
+                                            const discount = calcDiscount(promo);
+                                            return (
+                                                <div
+                                                    key={promo.promo_id}
+                                                    className={`bc-promo-item${!isApplicable ? " disabled" : ""}`}
+                                                    onClick={() => {
+                                                        if (!isApplicable || promoLoading) return;
+                                                        setDropdownOpen(false);
+                                                        handleApplyPromo(promo.code);
+                                                    }}
+                                                >
+                                                    <div className="bc-promo-item-top">
+                                                        <span className="bc-promo-item-code">{promo.code}</span>
+                                                        <span className="bc-promo-item-badge">
+                                                            -{promo.discount_type === "percent" ? `${promo.discount_percent}%` : fmt(discount)}
+                                                        </span>
+                                                        {!isApplicable && (
+                                                            <span style={{ fontSize: "0.72rem", color: "#999", marginLeft: "auto" }}>
+                                                                Không đủ điều kiện
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {promo.description && (
+                                                        <div className="bc-promo-item-desc">{promo.description}</div>
+                                                    )}
+                                                    {isApplicable ? (
+                                                        <div style={{ fontSize: "0.75rem", color: "#00875a", marginTop: "0.15rem", fontWeight: 600 }}>
+                                                            Tiết kiệm {fmt(discount)}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="bc-promo-item-req">
+                                                            Cần thêm {fmt(promo.min_order_value - booking.totalPrice)} để áp dụng
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    {hasMore && !showAll && (
+                                        <div className="bc-promo-showmore" onClick={() => setShowAll(true)}>
+                                            Xem thêm {sorted.length - 3} mã khác ▼
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
                     </div>
 
                     <hr className="bc-divider" />

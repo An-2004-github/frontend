@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import BusList from "@/components/bus/BusList";
 import { Bus } from "@/types/bus";
 import { busService } from "@/services/busService";
+import DestinationInput from "@/components/ui/DestinationInput";
 
 const SORT_OPTIONS = [
     { label: "Giá thấp nhất", value: "price_asc" },
@@ -321,11 +322,11 @@ export default function BusesPage() {
                         <div className="bp-search-row">
                             <div className="bp-search-field" style={{ flex: 2 }}>
                                 <label className="bp-search-label">📍 Điểm đi</label>
-                                <input
-                                    className="bp-search-input"
-                                    placeholder="Hà Nội, Hồ Chí Minh..."
+                                <DestinationInput
                                     value={fromCity}
-                                    onChange={(e) => setFromCity(e.target.value)}
+                                    onChange={setFromCity}
+                                    placeholder="Hà Nội, Hồ Chí Minh..."
+                                    cityMode
                                 />
                             </div>
 
@@ -333,11 +334,11 @@ export default function BusesPage() {
 
                             <div className="bp-search-field" style={{ flex: 2 }}>
                                 <label className="bp-search-label">🏁 Điểm đến</label>
-                                <input
-                                    className="bp-search-input"
-                                    placeholder="Đà Lạt, Nha Trang..."
+                                <DestinationInput
                                     value={toCity}
-                                    onChange={(e) => setToCity(e.target.value)}
+                                    onChange={setToCity}
+                                    placeholder="Đà Lạt, Nha Trang..."
+                                    cityMode
                                 />
                             </div>
 

@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import FlightList from "@/components/flight/FlightList";
 import { Flight } from "@/types/flight";
 import { flightService } from "@/services/flightService";
+import DestinationInput from "@/components/ui/DestinationInput";
 
 const SORT_OPTIONS = [
     { label: "Giá thấp nhất", value: "price_asc" },
@@ -357,11 +358,11 @@ export default function FlightsPage() {
                         <div className="fp-search-row">
                             <div className="fp-search-field" style={{ flex: 2 }}>
                                 <label className="fp-search-label">✈ Điểm khởi hành</label>
-                                <input
-                                    className="fp-search-input"
-                                    placeholder="Hà Nội, Hồ Chí Minh..."
+                                <DestinationInput
                                     value={fromCity}
-                                    onChange={(e) => setFromCity(e.target.value)}
+                                    onChange={setFromCity}
+                                    placeholder="Hà Nội, Hồ Chí Minh..."
+                                    cityMode
                                 />
                             </div>
 
@@ -369,11 +370,11 @@ export default function FlightsPage() {
 
                             <div className="fp-search-field" style={{ flex: 2 }}>
                                 <label className="fp-search-label">🛬 Điểm đến</label>
-                                <input
-                                    className="fp-search-input"
-                                    placeholder="Đà Nẵng, Phú Quốc..."
+                                <DestinationInput
                                     value={toCity}
-                                    onChange={(e) => setToCity(e.target.value)}
+                                    onChange={setToCity}
+                                    placeholder="Đà Nẵng, Phú Quốc..."
+                                    cityMode
                                 />
                             </div>
 
