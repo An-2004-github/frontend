@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import api from "@/lib/axios";
 import { useAuthStore } from "@/store/authStore";
-import { User } from "@/types/auth";
+import { User } from "@/types/user";
 
 export const useAuthInit = () => {
     const login = useAuthStore((state) => state.login);

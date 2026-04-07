@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import FlightList from "@/components/flight/FlightList";
 import { Flight } from "@/types/flight";
@@ -40,7 +40,7 @@ const POPULAR_ROUTES = [
 
 const TODAY = new Date().toISOString().split("T")[0];
 
-export default function FlightsPage() {
+function FlightsContent() {
     const searchParams = useSearchParams();
 
     // Search form
@@ -549,5 +549,13 @@ export default function FlightsPage() {
                 </div>
             </div>
         </>
+    );
+}
+
+export default function FlightsPage() {
+    return (
+        <Suspense>
+            <FlightsContent />
+        </Suspense>
     );
 }
