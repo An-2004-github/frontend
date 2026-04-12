@@ -31,4 +31,11 @@ export const flightService = {
         const response = await axiosInstance.get("/api/flights/cities");
         return response.data;
     },
+
+    getDestinationCities: async (fromCity: string, departDate?: string): Promise<string[]> => {
+        const response = await axiosInstance.get("/api/flights/destinations", {
+            params: { from_city: fromCity, depart_date: departDate || undefined },
+        });
+        return response.data;
+    },
 };

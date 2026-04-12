@@ -8,6 +8,7 @@ interface GetHotelsParams {
     max_price?: number;
     sort?: "rating" | "price_asc" | "price_desc";
     limit?: number;
+    min_guests?: number;
 }
 
 export const hotelService = {

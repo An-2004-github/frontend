@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import BusList from "@/components/bus/BusList";
 import { Bus } from "@/types/bus";
@@ -49,6 +49,9 @@ export default function BusesPage() {
     const [departDate, setDepartDate] = useState(searchParams.get("date") || TODAY);
     const [passengers, setPassengers] = useState(1);
 
+    const [destinationCities, setDestinationCities] = useState<string[]>([]);
+    const isFirstFromCity = useRef(true);
+
     // Filter
     const [companies, setCompanies] = useState<string[]>([]);
     const [selectedCompany, setSelectedCompany] = useState("");
@@ -65,6 +68,16 @@ export default function BusesPage() {
     useEffect(() => {
         busService.getCompanies().then(setCompanies).catch(() => { });
     }, []);
+
+    const isSwapping = useRef(false);
+    useEffect(() => {
+        if (!fromCity.trim()) { setDestinationCities([]); return; }
+        busService.getDestinationCities(fromCity)
+            .then(cities => { setDestinationCities(cities); isSwapping.current = false; })
+            .catch(() => { setDestinationCities([]); isSwapping.current = false; });
+        if (isFirstFromCity.current) { isFirstFromCity.current = false; return; }
+        if (!isSwapping.current) setToCity("");
+    }, [fromCity]);
 
     const handleSearch = useCallback(async () => {
         if (!fromCity || !toCity) return;
@@ -102,6 +115,7 @@ export default function BusesPage() {
     }, [selectedCompany, priceIdx, timeIdx, sortVal]);
 
     const handleSwap = () => {
+        isSwapping.current = true;
         setFromCity(toCity);
         setToCity(fromCity);
     };
@@ -226,7 +240,13 @@ export default function BusesPage() {
 
                 /* ── MAIN ── */
                 .bp-main { flex: 1; min-width: 0; }
-                .bp-result-meta { font-size: 0.88rem; color: #6b8cbf; margin-bottom: 1rem; }
+                .bp-result-meta {
+                    font-size: 0.88rem; color: #3a5f9a; margin-bottom: 1rem;
+                    background: #fff; border: 1px solid #e8f0fe; border-radius: 10px;
+                    padding: 0.65rem 1rem;
+                    display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+                    box-shadow: 0 2px 8px rgba(0,82,204,0.07);
+                }
                 .bp-result-meta strong { color: #1a3c6b; }
 
                 /* ── BUS CARD ── */
@@ -263,6 +283,7 @@ export default function BusesPage() {
                 .bcard-dashes { flex: 1; height: 1.5px; background: repeating-linear-gradient(90deg, #0052cc 0, #0052cc 4px, transparent 4px, transparent 8px); }
                 .bcard-bus-icon { font-size: 1rem; }
                 .bcard-overnight { font-size: 0.72rem; color: #6b5bb0; font-weight: 500; }
+                .bcard-direct { font-size: 0.72rem; color: #00875a; font-weight: 500; }
 
                 .bcard-footer {
                     display: flex; align-items: center; justify-content: space-between;
@@ -337,8 +358,9 @@ export default function BusesPage() {
                                 <DestinationInput
                                     value={toCity}
                                     onChange={setToCity}
-                                    placeholder="Đà Lạt, Nha Trang..."
+                                    placeholder={fromCity ? "Chọn điểm đến..." : "Đà Lạt, Nha Trang..."}
                                     cityMode
+                                    cities={destinationCities.length > 0 ? destinationCities : undefined}
                                 />
                             </div>
 

@@ -521,9 +521,34 @@ function TrendingCard({ dest, rank }: { dest: TrendingDest; rank: number }) {
 }
 
 // ── Suggestion Card Sub-component ─────────────────────────────────
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+function getToken(): string {
+    try {
+        const raw = localStorage.getItem("auth-storage");
+        if (raw) return JSON.parse(raw)?.state?.token ?? "";
+    } catch { }
+    return "";
+}
+
 function SuggestionCard({ s }: { s: Suggestion }) {
     const GRAD = ["from-blue-400 to-emerald-400", "from-orange-400 to-pink-500", "from-purple-500 to-indigo-500"];
     const gradIdx = Math.abs(s.city.charCodeAt(0)) % GRAD.length;
+    const [feedback, setFeedback] = useState<"like" | "dislike" | null>(null);
+
+    const sendFeedback = async (action: "like" | "dislike") => {
+        setFeedback(action);
+        const token = getToken();
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        try {
+            await fetch(`${API_BASE}/api/chat/feedback`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({ city: s.city, action }),
+            });
+        } catch { }
+    };
 
     return (
         <div className="tp-sug">
@@ -611,6 +636,35 @@ function SuggestionCard({ s }: { s: Suggestion }) {
                     <Link href={`/flights?search=${encodeURIComponent(s.city)}`} className="tp-sug-btn-sec">
                         ✈️ Vé bay
                     </Link>
+                </div>
+
+                {/* Feedback */}
+                <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid #f0f4ff" }}>
+                    <span style={{ fontSize: "0.78rem", color: "#6b778c" }}>Gợi ý này có phù hợp với bạn không?</span>
+                    <button
+                        onClick={() => sendFeedback("like")}
+                        style={{
+                            border: "1.5px solid", borderRadius: 99, padding: "0.25rem 0.85rem",
+                            fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", transition: "all .15s",
+                            borderColor: feedback === "like" ? "#22c55e" : "#d1d5db",
+                            background: feedback === "like" ? "#dcfce7" : "#fff",
+                            color: feedback === "like" ? "#16a34a" : "#6b778c",
+                        }}
+                    >
+                        👍 Thích{feedback === "like" && " ✓"}
+                    </button>
+                    <button
+                        onClick={() => sendFeedback("dislike")}
+                        style={{
+                            border: "1.5px solid", borderRadius: 99, padding: "0.25rem 0.85rem",
+                            fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", transition: "all .15s",
+                            borderColor: feedback === "dislike" ? "#ef4444" : "#d1d5db",
+                            background: feedback === "dislike" ? "#fee2e2" : "#fff",
+                            color: feedback === "dislike" ? "#dc2626" : "#6b778c",
+                        }}
+                    >
+                        👎 Không thích{feedback === "dislike" && " ✓"}
+                    </button>
                 </div>
             </div>
         </div>

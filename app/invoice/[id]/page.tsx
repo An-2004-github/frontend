@@ -33,6 +33,7 @@ const TYPE_CONFIG: Record<string, { icon: string; label: string; color: string }
     room:   { icon: "🏨", label: "Khách sạn",  color: "#0052cc" },
     flight: { icon: "✈️", label: "Chuyến bay", color: "#6f42c1" },
     bus:    { icon: "🚌", label: "Xe khách",   color: "#fd7e14" },
+    train:  { icon: "🚆", label: "Tàu hỏa",   color: "#003580" },
 };
 
 const fmt = (n: number) => n?.toLocaleString("vi-VN") + "₫";
@@ -247,8 +248,8 @@ export default function InvoicePage() {
                                     </>
                                 )}
 
-                                {/* Chuyến bay / Xe khách */}
-                                {(item.entity_type === "flight" || item.entity_type === "bus") && (
+                                {/* Chuyến bay / Xe khách / Tàu hỏa */}
+                                {(item.entity_type === "flight" || item.entity_type === "bus" || item.entity_type === "train") && (
                                     <>
                                         {item.from_city && item.to_city && (
                                             <div className="inv-row">
@@ -303,7 +304,7 @@ export default function InvoicePage() {
                 </div>
 
                 <BookingSuggestions
-                    entityType={item?.entity_type as "room" | "flight" | "bus"}
+                    entityType={item?.entity_type as "room" | "flight" | "bus" | "train"}
                     toCity={item?.to_city}
                     checkIn={item?.check_in_date}
                 />

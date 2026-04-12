@@ -6,7 +6,7 @@ router = APIRouter(prefix="/api/buses", tags=["buses"])
 
 
 # Tìm kiếm chuyến xe
-@router.get("/")
+@router.get("")
 def search_buses(
     from_city: str | None = None,
     to_city: str | None = None,
@@ -80,6 +80,26 @@ def get_companies():
         result = conn.execute(
             text("SELECT DISTINCT company FROM buses WHERE status = 'active' ORDER BY company")
         )
+        return [row[0] for row in result]
+
+
+@router.get("/destinations")
+def get_bus_destinations(from_city: str | None = None):
+    with engine.connect() as conn:
+        if from_city:
+            result = conn.execute(text("""
+                SELECT DISTINCT to_city FROM buses
+                WHERE status = 'active'
+                  AND from_city LIKE :from_city
+                  AND DATE(depart_time) >= CURDATE()
+                ORDER BY to_city
+            """), {"from_city": f"%{from_city}%"})
+        else:
+            result = conn.execute(text("""
+                SELECT DISTINCT to_city FROM buses
+                WHERE status = 'active' AND DATE(depart_time) >= CURDATE()
+                ORDER BY to_city
+            """))
         return [row[0] for row in result]
 
 

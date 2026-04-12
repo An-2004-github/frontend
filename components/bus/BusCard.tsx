@@ -95,8 +95,8 @@ export default function BusCard({ bus, passengers = 1 }: Props) {
                 <div className="bcard-route">
                     <div className="bcard-city">
                         <div className="bcard-time">{formatTime(bus.depart_time)}</div>
-                        <div className="bcard-date">{formatDate(bus.depart_time)}</div>
                         <div className="bcard-city-name">{bus.from_city}</div>
+                        <div className="bcard-date">{formatDate(bus.depart_time)}</div>
                     </div>
 
                     <div className="bcard-middle">
@@ -108,15 +108,15 @@ export default function BusCard({ bus, passengers = 1 }: Props) {
                             <div className="bcard-dashes" />
                             <div className="bcard-dot" />
                         </div>
-                        {isOvernight && (
-                            <div className="bcard-overnight">🌙 Xe đêm</div>
-                        )}
+                        <div className="bcard-direct">
+                            {isOvernight ? "🌙 Xe đêm" : "Xe thẳng"}
+                        </div>
                     </div>
 
                     <div className="bcard-city" style={{ textAlign: "right" }}>
                         <div className="bcard-time">{formatTime(bus.arrive_time)}</div>
-                        <div className="bcard-date">{formatDate(bus.arrive_time)}</div>
                         <div className="bcard-city-name">{bus.to_city}</div>
+                        <div className="bcard-date">{formatDate(bus.arrive_time)}</div>
                     </div>
                 </div>
 

@@ -23,6 +23,9 @@ interface TicketOption {
 interface Props {
     flight: Flight;
     passengers: number;
+    adults: number;
+    childrenCount: number;
+    infants: number;
     onClose: () => void;
 }
 
@@ -38,7 +41,7 @@ function formatDate(dateStr: string) {
     });
 }
 
-export default function FlightTicketModal({ flight, passengers, onClose }: Props) {
+export default function FlightTicketModal({ flight, passengers, adults, childrenCount, infants, onClose }: Props) {
     const router = useRouter();
     const { setBooking } = useBookingStore();
     const [tickets, setTickets] = useState<TicketOption[]>([]);
@@ -88,6 +91,9 @@ export default function FlightTicketModal({ flight, passengers, onClose }: Props
             arriveTime: flight.arrive_time,
             seatClass: selected.seat_class,
             passengers,
+            adultsCount: adults,
+            childrenCount,
+            infantsCount: infants,
             basePrice,
             taxAndFees,
             totalPrice: basePrice + taxAndFees,

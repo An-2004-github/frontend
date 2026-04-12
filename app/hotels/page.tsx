@@ -2,12 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import HotelList from "@/components/hotel/HotelList";
 import { Hotel } from "@/types/hotel";
 import { hotelService } from "@/services/hotelService";
-import { destinationService, Destination } from "@/services/detinationService";
 import { promotionService } from "@/services/promotionService";
 import { Promotion } from "@/types/promotion";
 import DestinationInput from "@/components/ui/DestinationInput";
@@ -32,19 +30,26 @@ const SORT_OPTIONS = [
     { label: "Giá cao nhất", value: "price_desc" },
 ];
 
-const DEST_EMOJIS = ["🏖️", "🌆", "🏔️", "🌴", "🏯", "🌊"];
+const POPULAR_CITIES_HP = [
+    { city: "Hà Nội", emoji: "🏛️", label: "Thủ đô ngàn năm" },
+    { city: "TP. Hồ Chí Minh", emoji: "🌆", label: "Thành phố sôi động" },
+    { city: "Đà Nẵng", emoji: "🌊", label: "Thành phố đáng sống" },
+    { city: "Hội An", emoji: "🏮", label: "Phố cổ di sản" },
+    { city: "Nha Trang", emoji: "🏖️", label: "Thiên đường biển" },
+    { city: "Đà Lạt", emoji: "🌸", label: "Thành phố ngàn hoa" },
+    { city: "Phú Quốc", emoji: "🏝️", label: "Đảo ngọc nhiệt đới" },
+    { city: "Huế", emoji: "🏯", label: "Cố đô lịch sử" },
+];
 
 export default function HotelsPage() {
     // Data
     const [topHotels, setTopHotels] = useState<Hotel[]>([]);
     const [hotels, setHotels] = useState<Hotel[]>([]);
-    const [destinations, setDestinations] = useState<Destination[]>([]);
     const [promos, setPromos] = useState<Promotion[]>([]);
 
     // Loading states
     const [loadingTop, setLoadingTop] = useState(true);
     const [loadingHotels, setLoadingHotels] = useState(false);
-    const [loadingDest, setLoadingDest] = useState(true);
 
     // Filter state
     const [searchInput, setSearchInput] = useState("");
@@ -52,29 +57,73 @@ export default function HotelsPage() {
     const [priceIdx, setPriceIdx] = useState(0);
     const [ratingIdx, setRatingIdx] = useState(0);
     const [sortVal, setSortVal] = useState("rating");
-    const [selectedDest, setSelectedDest] = useState<Destination | null>(null);
+    const [selectedCity, setSelectedCity] = useState<string | null>(null);
+    const [checkIn, setCheckIn] = useState(() => new Date().toISOString().split("T")[0]);
+    const [checkOut, setCheckOut] = useState("");
     const [showFilter, setShowFilter] = useState(false);
-    const [destTab, setDestTab] = useState<"domestic" | "international">("domestic");
+
+    // Guest picker
+    const [adults, setAdults] = useState(1);
+    const [children, setChildren] = useState(0);
+    const [rooms, setRooms] = useState(1);
+    const [guestOpen, setGuestOpen] = useState(false);
+    const guestRef = useRef<HTMLDivElement>(null);
+
+    // Max rooms = số người lớn (mỗi người lớn tối đa 1 phòng riêng)
+    const maxRooms = adults;
+    // Guests per room (rounded up) — used to filter hotels
+    const guestsPerRoom = Math.ceil((adults + children) / rooms);
+
+    // Đóng guest picker khi click ngoài
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (guestRef.current && !guestRef.current.contains(e.target as Node))
+                setGuestOpen(false);
+        };
+        document.addEventListener("mousedown", handler);
+        return () => document.removeEventListener("mousedown", handler);
+    }, []);
+
+    const guestSummary = [
+        `${adults} người lớn`,
+        ...(children > 0 ? [`${children} trẻ em`] : []),
+        `${rooms} phòng`,
+    ].join(", ");
+
+    const handleSetAdults = (next: number) => {
+        setAdults(next);
+        if (rooms > next) setRooms(next);
+    };
 
     const listRef = useRef<HTMLDivElement>(null);
     const searchParams = useSearchParams();
 
-    // ── Init from URL parameters ──────────────────────────────────
+    // ── Init from URL parameters → auto search ───────────────────
     useEffect(() => {
         const qSearch = searchParams?.get("search");
         const qDestId = searchParams?.get("destination_id");
 
-        if (qSearch) {
-            setSearchInput(qSearch);
-            setSearch(qSearch);
-        }
-        if (qDestId) {
-            setSelectedDest({ 
-                destination_id: Number(qDestId), 
-                name: qSearch || "", 
-                city: qSearch || "" 
-            } as Destination);
-        }
+        if (!qSearch && !qDestId) return;
+
+        if (qSearch) { setSearchInput(qSearch); setSearch(qSearch); setSelectedCity(qSearch); }
+        const qCheckIn = searchParams?.get("check_in");
+        const qCheckOut = searchParams?.get("check_out");
+        if (qCheckIn) setCheckIn(qCheckIn);
+        if (qCheckOut) setCheckOut(qCheckOut);
+        setShowFilter(true);
+
+        // Auto-fetch ngay lập tức với params từ URL
+        setLoadingHotels(true);
+        hotelService.getHotels({
+            search: qSearch || undefined,
+            destination_id: qDestId ? Number(qDestId) : undefined,
+            sort: "rating",
+            min_guests: guestsPerRoom,
+        }).then(setHotels).catch(() => setHotels([])).finally(() => {
+            setLoadingHotels(false);
+            setTimeout(() => listRef.current?.scrollIntoView({ behavior: "smooth" }), 300);
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams]);
 
     // ── Fetch top rated on mount ──────────────────────────────────
@@ -86,44 +135,32 @@ export default function HotelsPage() {
             .then(setPromos).catch(() => { });
     }, []);
 
-    // ── Fetch destinations when tab changes ──────────────────────
-    useEffect(() => {
-        setLoadingDest(true);
-        setSelectedDest(null);
-        destinationService.getDestinations({
-            limit: 6,
-            country: destTab === "domestic" ? "Vietnam" : undefined,
-        })
-            .then((data) => {
-                if (destTab === "international") {
-                    setDestinations(data.filter(d => d.country !== "Vietnam"));
-                } else {
-                    setDestinations(data);
-                }
-            })
-            .finally(() => setLoadingDest(false));
-    }, [destTab]);
-
     // ── Fetch filtered hotels ─────────────────────────────────────
     const fetchHotels = useCallback(async (keyword?: string) => {
         setLoadingHotels(true);
         try {
             const price = PRICE_OPTIONS[priceIdx];
             const data = await hotelService.getHotels({
-                search: (keyword ?? searchInput) || undefined,
-                destination_id: selectedDest?.destination_id,
+                search: keyword || undefined,
                 min_price: price.min,
                 max_price: price.max,
                 sort: sortVal as "rating" | "price_asc" | "price_desc",
+                min_guests: guestsPerRoom,
             });
             const minRating = RATING_OPTIONS[ratingIdx].min;
             setHotels(minRating > 0 ? data.filter(h => (h.avg_rating ?? 0) >= minRating) : data);
         } finally {
             setLoadingHotels(false);
         }
-    }, [searchInput, priceIdx, ratingIdx, sortVal, selectedDest]);
+    }, [priceIdx, ratingIdx, sortVal, guestsPerRoom]);
 
-    // Chỉ fetch khi bấm nút tìm
+    // Tự động re-fetch khi filter/sort thay đổi (chỉ khi đã tìm kiếm)
+    useEffect(() => {
+        if (!showFilter) return;
+        fetchHotels(search);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [priceIdx, ratingIdx, sortVal, guestsPerRoom]);
+
     const handleSearch = () => {
         setSearch(searchInput);
         setShowFilter(true);
@@ -131,18 +168,10 @@ export default function HotelsPage() {
         setTimeout(() => listRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     };
 
-    const handleDestClick = (dest: Destination) => {
-        if (selectedDest?.destination_id === dest.destination_id) {
-            setSelectedDest(null);
-        } else {
-            setSelectedDest(dest);
-        }
-    };
-
     const handleReset = () => {
         setSearchInput("");
         setPriceIdx(0); setRatingIdx(0);
-        setSortVal("rating"); setSelectedDest(null);
+        setSortVal("rating"); setSelectedCity(null);
         setShowFilter(false); setHotels([]);
     };
 
@@ -162,7 +191,12 @@ export default function HotelsPage() {
                 .hp-hero {
                     background: linear-gradient(135deg, #003580 0%, #0052cc 55%, #0065ff 100%);
                     padding: 3rem 1.5rem 5rem;
-                    position: relative; overflow: hidden; text-align: center;
+                    position: relative; overflow: visible; text-align: center;
+                }
+                /* Wrapper riêng để clip các vòng trang trí mà không ảnh hưởng dropdown */
+                .hp-hero-deco {
+                    position: absolute; inset: 0; overflow: hidden;
+                    pointer-events: none; border-radius: inherit;
                 }
                 .hp-hero-bg {
                     position: absolute; inset: 0;
@@ -210,6 +244,48 @@ export default function HotelsPage() {
                     box-shadow: 0 0 0 3px rgba(0,82,204,0.1);
                 }
                 .hp-search-input::placeholder { color: #b0bcd8; font-weight: 300; }
+                /* ── GUEST PICKER ── */
+                .hp-guest-btn {
+                    width: 100%; border: 1.5px solid #dde3f0; border-radius: 10px;
+                    padding: 0.7rem 1rem; font-size: 0.88rem;
+                    font-family: 'DM Sans', sans-serif; color: #1a3c6b;
+                    background: #fff; cursor: pointer; text-align: left;
+                    display: flex; align-items: center; justify-content: space-between;
+                    gap: 0.5rem; white-space: nowrap;
+                    transition: border-color 0.2s, box-shadow 0.2s;
+                }
+                .hp-guest-btn:hover { border-color: #0052cc; box-shadow: 0 0 0 3px rgba(0,82,204,0.08); }
+                .hp-guest-arrow { font-size: 0.7rem; color: #6b8cbf; flex-shrink: 0; }
+                .hp-guest-dropdown {
+                    position: absolute; top: calc(100% + 6px); left: 0;
+                    min-width: 300px;
+                    background: #fff; border-radius: 14px;
+                    border: 1.5px solid #dde3f0;
+                    box-shadow: 0 12px 40px rgba(0,52,128,0.18);
+                    padding: 0.4rem 0; z-index: 9999;
+                }
+                .hp-guest-row {
+                    display: flex; align-items: center; justify-content: space-between;
+                    padding: 0.85rem 1.25rem;
+                    border-bottom: 1px solid #f0f4ff;
+                }
+                .hp-guest-row:last-child { border-bottom: none; }
+                .hp-guest-info { display: flex; align-items: center; gap: 0.75rem; flex: 1; }
+                .hp-guest-icon { font-size: 1.4rem; flex-shrink: 0; }
+                .hp-guest-label { font-size: 0.92rem; font-weight: 600; color: #1a3c6b; }
+                .hp-guest-sub { font-size: 0.75rem; color: #6b8cbf; margin-top: 0.1rem; }
+                .hp-guest-counter { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
+                .hp-guest-count-btn {
+                    width: 34px; height: 34px; border-radius: 50%;
+                    border: 2px solid #0052cc; background: #0052cc; color: #fff;
+                    font-size: 1.2rem; font-weight: 700; line-height: 1;
+                    cursor: pointer; display: flex; align-items: center; justify-content: center;
+                    transition: opacity 0.15s; flex-shrink: 0;
+                }
+                .hp-guest-count-btn:disabled { background: #e8ecf8; border-color: #e8ecf8; color: #b0bcd8; cursor: not-allowed; }
+                .hp-guest-count-btn:not(:disabled):hover { opacity: 0.85; }
+                .hp-guest-count-val { font-size: 1.05rem; font-weight: 700; color: #1a3c6b; min-width: 24px; text-align: center; }
+
                 .hp-search-btn {
                     padding: 0.75rem 1.75rem;
                     background: linear-gradient(135deg, #0052cc, #0065ff);
@@ -517,9 +593,12 @@ export default function HotelsPage() {
             <div className="hp-root">
                 {/* ── HERO ── */}
                 <div className="hp-hero">
-                    <div className="hp-hero-bg" />
-                    <div className="hp-hero-circle" style={{ width: 220, height: 220, right: -60, top: -60 }} />
-                    <div className="hp-hero-circle" style={{ width: 140, height: 140, left: -40, bottom: -40 }} />
+                    {/* Các phần tử trang trí được bọc riêng để clip mà không ảnh hưởng dropdown */}
+                    <div className="hp-hero-deco">
+                        <div className="hp-hero-bg" />
+                        <div className="hp-hero-circle" style={{ width: 220, height: 220, right: -60, top: -60 }} />
+                        <div className="hp-hero-circle" style={{ width: 140, height: 140, left: -40, bottom: -40 }} />
+                    </div>
                     <h1>🏨 Tìm khách sạn lý tưởng</h1>
                     <p>Hàng trăm lựa chọn khách sạn trên toàn Việt Nam với giá tốt nhất</p>
 
@@ -536,15 +615,76 @@ export default function HotelsPage() {
                         </div>
                         <div className="hp-search-field">
                             <label className="hp-search-label">📅 Nhận phòng</label>
-                            <input className="hp-search-input" type="date" />
+                            <input className="hp-search-input" type="date" value={checkIn} min={new Date().toISOString().split("T")[0]}
+                                onChange={e => {
+                                    const newCheckIn = e.target.value;
+                                    setCheckIn(newCheckIn);
+                                    // Nếu checkOut <= checkIn mới thì reset sang ngày hôm sau
+                                    if (checkOut && checkOut <= newCheckIn) {
+                                        const d = new Date(newCheckIn);
+                                        d.setDate(d.getDate() + 1);
+                                        setCheckOut(d.toISOString().split("T")[0]);
+                                    }
+                                }} />
                         </div>
                         <div className="hp-search-field">
                             <label className="hp-search-label">📅 Trả phòng</label>
-                            <input className="hp-search-input" type="date" />
+                            <input className="hp-search-input" type="date" value={checkOut}
+                                min={(() => { const d = new Date(checkIn || new Date()); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; })()}
+                                onChange={e => setCheckOut(e.target.value)} />
                         </div>
-                        <div className="hp-search-field" style={{ minWidth: 100 }}>
-                            <label className="hp-search-label">👤 Khách</label>
-                            <input className="hp-search-input" type="number" defaultValue={2} min={1} max={10} />
+                        <div className="hp-search-field" style={{ minWidth: 260, position: "relative" }} ref={guestRef}>
+                            <label className="hp-search-label">👥 Khách và Phòng</label>
+                            <button className="hp-guest-btn" onClick={() => setGuestOpen(o => !o)}>
+                                <span>🛏 {guestSummary}</span>
+                                <span className="hp-guest-arrow">{guestOpen ? "▲" : "▼"}</span>
+                            </button>
+                            {guestOpen && (
+                                <div className="hp-guest-dropdown">
+                                    {/* Người lớn */}
+                                    <div className="hp-guest-row">
+                                        <div className="hp-guest-info">
+                                            <span className="hp-guest-icon">🧑‍🤝‍🧑</span>
+                                            <div><div className="hp-guest-label">Người lớn</div></div>
+                                        </div>
+                                        <div className="hp-guest-counter">
+                                            <button className="hp-guest-count-btn" disabled={adults <= 1} onClick={() => handleSetAdults(Math.max(1, adults - 1))}>−</button>
+                                            <span className="hp-guest-count-val">{adults}</span>
+                                            <button className="hp-guest-count-btn" onClick={() => handleSetAdults(adults + 1)}>+</button>
+                                        </div>
+                                    </div>
+                                    {/* Trẻ em */}
+                                    <div className="hp-guest-row">
+                                        <div className="hp-guest-info">
+                                            <span className="hp-guest-icon">🧒</span>
+                                            <div>
+                                                <div className="hp-guest-label">Trẻ em</div>
+                                                <div className="hp-guest-sub">Dưới 18 tuổi</div>
+                                            </div>
+                                        </div>
+                                        <div className="hp-guest-counter">
+                                            <button className="hp-guest-count-btn" disabled={children <= 0} onClick={() => setChildren(c => Math.max(0, c - 1))}>−</button>
+                                            <span className="hp-guest-count-val">{children}</span>
+                                            <button className="hp-guest-count-btn" disabled={children >= 6} onClick={() => setChildren(c => Math.min(6, c + 1))}>+</button>
+                                        </div>
+                                    </div>
+                                    {/* Phòng */}
+                                    <div className="hp-guest-row">
+                                        <div className="hp-guest-info">
+                                            <span className="hp-guest-icon">🛏</span>
+                                            <div>
+                                                <div className="hp-guest-label">Phòng</div>
+                                                <div className="hp-guest-sub">Tối đa {maxRooms} phòng</div>
+                                            </div>
+                                        </div>
+                                        <div className="hp-guest-counter">
+                                            <button className="hp-guest-count-btn" disabled={rooms <= 1} onClick={() => setRooms(r => Math.max(1, r - 1))}>−</button>
+                                            <span className="hp-guest-count-val">{rooms}</span>
+                                            <button className="hp-guest-count-btn" disabled={rooms >= maxRooms} onClick={() => setRooms(r => Math.min(maxRooms, r + 1))}>+</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                         <button className="hp-search-btn" onClick={handleSearch}>Tìm ngay</button>
                     </div>
@@ -579,61 +719,49 @@ export default function HotelsPage() {
                     {/* ── POPULAR DESTINATIONS ── */}
                     <div className="hp-section-header">
                         <div className="hp-section-title">📍 Điểm đến phổ biến</div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                            {/* Toggle Trong nước / Quốc tế */}
-                            <div className="hp-dest-toggle">
-                                <button
-                                    className={`hp-dest-toggle-btn${destTab === "domestic" ? " active" : ""}`}
-                                    onClick={() => { setDestTab("domestic"); setSelectedDest(null); }}
-                                >
-                                    Trong nước
-                                </button>
-                                <button
-                                    className={`hp-dest-toggle-btn${destTab === "international" ? " active" : ""}`}
-                                    onClick={() => { setDestTab("international"); setSelectedDest(null); }}
-                                >
-                                    Quốc tế
-                                </button>
-                            </div>
-                            {selectedDest && (
-                                <button
-                                    onClick={() => setSelectedDest(null)}
-                                    style={{ fontSize: "0.82rem", color: "#0052cc", background: "none", border: "none", cursor: "pointer" }}
-                                >
-                                    ✕ Bỏ chọn {selectedDest.name}
-                                </button>
-                            )}
-                        </div>
+                        {selectedCity && (
+                            <button
+                                onClick={() => { setSelectedCity(null); setShowFilter(false); setHotels([]); }}
+                                style={{ fontSize: "0.82rem", color: "#0052cc", background: "none", border: "none", cursor: "pointer" }}
+                            >
+                                ✕ Bỏ chọn {selectedCity}
+                            </button>
+                        )}
                     </div>
-                    {loadingDest ? (
-                        <div className="hp-loading"><div className="hp-spinner" /></div>
-                    ) : (
-                        <div className="hp-dest-grid">
-                            {destinations.map((dest, i) => (
-                                <div
-                                    key={dest.destination_id}
-                                    className={`hp-dest-card${selectedDest?.destination_id === dest.destination_id ? " active" : ""}`}
-                                    onClick={() => handleDestClick(dest)}
-                                >
-                                    <div className="hp-dest-card-img">
-                                        {dest.image_url
-                                            ? <Image src={dest.image_url} alt={dest.name} fill style={{ objectFit: "cover" }} />
-                                            : DEST_EMOJIS[i % DEST_EMOJIS.length]
-                                        }
-                                    </div>
-                                    <div className="hp-dest-card-body">
-                                        <div className="hp-dest-card-name">{dest.city || dest.name}</div>
-                                        <div className="hp-dest-card-count">{dest.hotel_count} khách sạn</div>
-                                    </div>
+                    <div className="hp-dest-grid">
+                        {POPULAR_CITIES_HP.map((item) => (
+                            <div
+                                key={item.city}
+                                className={`hp-dest-card${selectedCity === item.city ? " active" : ""}`}
+                                onClick={() => {
+                                    if (selectedCity === item.city) {
+                                        setSelectedCity(null);
+                                        setShowFilter(false);
+                                        setHotels([]);
+                                    } else {
+                                        setSelectedCity(item.city);
+                                        setSearchInput(item.city);
+                                        setShowFilter(true);
+                                        setLoadingHotels(true);
+                                        hotelService.getHotels({ search: item.city, sort: "rating", min_guests: guestsPerRoom })
+                                            .then(setHotels).catch(() => setHotels([]))
+                                            .finally(() => {
+                                                setLoadingHotels(false);
+                                                setTimeout(() => listRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+                                            });
+                                    }
+                                }}
+                            >
+                                <div className="hp-dest-card-img" style={{ fontSize: "1.8rem" }}>
+                                    {item.emoji}
                                 </div>
-                            ))}
-                            {destinations.length === 0 && (
-                                <div style={{ gridColumn: "1/-1", textAlign: "center", padding: "2rem", color: "#6b8cbf" }}>
-                                    Chưa có điểm đến {destTab === "international" ? "quốc tế" : "trong nước"} nào.
+                                <div className="hp-dest-card-body">
+                                    <div className="hp-dest-card-name">{item.city}</div>
+                                    <div className="hp-dest-card-count">{item.label}</div>
                                 </div>
-                            )}
-                        </div>
-                    )}
+                            </div>
+                        ))}
+                    </div>
 
                     {/* ── TOP RATED (khi chưa filter) ── */}
                     {!showFilter && (
@@ -648,7 +776,7 @@ export default function HotelsPage() {
                                     <span>Đang tải...</span>
                                 </div>
                             ) : (
-                                <HotelList hotels={topHotels} />
+                                <HotelList hotels={topHotels} adults={adults} childrenCount={children} rooms={rooms} checkIn={checkIn} checkOut={checkOut} />
                             )}
                         </>
                     )}
@@ -659,7 +787,7 @@ export default function HotelsPage() {
                             <div className="hp-section-header">
                                 <div className="hp-section-title">
                                     🔍 Kết quả tìm kiếm
-                                    {selectedDest && <span style={{ color: "#0052cc" }}> · {selectedDest.city || selectedDest.name}</span>}
+                                    {selectedCity && <span style={{ color: "#0052cc" }}> · {selectedCity}</span>}
                                 </div>
                             </div>
 
@@ -731,7 +859,7 @@ export default function HotelsPage() {
                                             <span>Đang tìm kiếm...</span>
                                         </div>
                                     ) : (
-                                        <HotelList hotels={hotels} />
+                                        <HotelList hotels={hotels} adults={adults} childrenCount={children} rooms={rooms} checkIn={checkIn} checkOut={checkOut} />
                                     )}
                                 </div>
                             </div>

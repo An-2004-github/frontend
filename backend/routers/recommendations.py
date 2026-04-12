@@ -99,7 +99,7 @@ def _get_search_boost(user_id: int) -> dict[int, float]:
         return boost
 
 
-@router.get("/")
+@router.get("")
 def get_recommendations(
     limit: int = 8,
     user_id: int = Depends(get_current_user),

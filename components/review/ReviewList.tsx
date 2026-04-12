@@ -10,9 +10,12 @@ interface Props {
     refreshKey?: number;
 }
 
+const INITIAL_SHOW = 3;
+
 export default function ReviewList({ entityId, entityType, refreshKey }: Props) {
     const [reviews, setReviews] = useState<Review[]>([]);
     const [loading, setLoading] = useState(true);
+    const [showAll, setShowAll] = useState(false);
 
     useEffect(() => {
         setLoading(true);
@@ -47,9 +50,11 @@ export default function ReviewList({ entityId, entityType, refreshKey }: Props) 
         );
     }
 
+    const visible = showAll ? reviews : reviews.slice(0, INITIAL_SHOW);
+
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-            {reviews.map((review) => (
+            {visible.map((review) => (
                 <div key={review.review_id} style={{
                     padding: "1rem 0",
                     borderBottom: "1px solid #f0f4ff",
@@ -92,6 +97,21 @@ export default function ReviewList({ entityId, entityType, refreshKey }: Props) 
                     </p>
                 </div>
             ))}
+
+            {reviews.length > INITIAL_SHOW && (
+                <button
+                    onClick={() => setShowAll(v => !v)}
+                    style={{
+                        marginTop: "0.75rem", width: "100%",
+                        padding: "0.55rem", borderRadius: 8,
+                        border: "1.5px solid #c8d8ff", background: "#f0f4ff",
+                        color: "#0052cc", fontSize: "0.85rem", fontWeight: 600,
+                        cursor: "pointer",
+                    }}
+                >
+                    {showAll ? "▲ Thu gọn" : `▼ Xem thêm ${reviews.length - INITIAL_SHOW} đánh giá`}
+                </button>
+            )}
         </div>
     );
 }

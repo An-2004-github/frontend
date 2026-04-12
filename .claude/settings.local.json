@@ -7,7 +7,8 @@
       "Bash(find c:/Users/ADMIN -maxdepth 5 -name *.py -path */routers/*)",
       "Bash(curl -s \"http://localhost:8000/api/flights\")",
       "Bash(echo \"EXIT:$?\")",
-      "Bash(curl -v \"http://localhost:8000/api/flights\")"
+      "Bash(curl -v \"http://localhost:8000/api/flights\")",
+      "Bash(python -c \"from database import engine; from sqlalchemy import text; conn = engine.connect\\(\\); r = conn.execute\\(text\\('DESCRIBE promotions'\\)\\); [print\\(dict\\(x._mapping\\)\\) for x in r]\")"
     ]
   }
 }

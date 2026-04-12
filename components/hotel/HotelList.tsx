@@ -3,9 +3,14 @@ import HotelCard from "./HotelCard";
 
 interface Props {
     hotels: Hotel[];
+    adults?: number;
+    childrenCount?: number;
+    rooms?: number;
+    checkIn?: string;
+    checkOut?: string;
 }
 
-export default function HotelList({ hotels }: Props) {
+export default function HotelList({ hotels, adults, childrenCount, rooms, checkIn, checkOut }: Props) {
     if (!hotels || hotels.length === 0) {
         return (
             <div className="h-empty">
@@ -21,7 +26,7 @@ export default function HotelList({ hotels }: Props) {
     return (
         <div className="h-grid">
             {hotels.map((hotel) => (
-                <HotelCard key={hotel.hotel_id} hotel={hotel} />
+                <HotelCard key={hotel.hotel_id} hotel={hotel} adults={adults} childrenCount={childrenCount} rooms={rooms} checkIn={checkIn} checkOut={checkOut} />
             ))}
         </div>
     );

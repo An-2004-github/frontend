@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import api from "@/lib/axios";
@@ -26,7 +26,6 @@ interface AvailableRoom extends RoomType {
 }
 
 const TODAY = new Date().toISOString().split("T")[0];
-const TOMORROW = new Date(Date.now() + 86400000).toISOString().split("T")[0];
 
 const AMENITY_ICONS: Record<string, string> = {
     "WiFi miễn phí": "📶", "Hồ bơi": "🏊", "Spa": "💆", "Nhà hàng": "🍽",
@@ -37,6 +36,7 @@ const AMENITY_ICONS: Record<string, string> = {
 export default function HotelDetailPage() {
     const { hotel_id } = useParams<{ hotel_id: string }>();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { user } = useAuthStore();
     const { setBooking } = useBookingStore();
 
@@ -45,24 +45,63 @@ export default function HotelDetailPage() {
     const [activeImg, setActiveImg] = useState(0);
     const [reviewRefreshKey, setReviewRefreshKey] = useState(0);
 
-    const [checkIn, setCheckIn] = useState(TODAY);
-    const [checkOut, setCheckOut] = useState(TOMORROW);
-    const [guests, setGuests] = useState(2);
+    const [checkIn, setCheckIn] = useState(() => searchParams.get("check_in") || TODAY);
+    const [checkOut, setCheckOut] = useState(() => {
+        const co = searchParams.get("check_out");
+        if (co) return co;
+        // Mặc định 1 đêm sau check_in
+        const ci = searchParams.get("check_in") || TODAY;
+        const d = new Date(ci);
+        d.setDate(d.getDate() + 1);
+        return d.toISOString().split("T")[0];
+    });
+
+    // Guest picker — khởi tạo từ query params (truyền qua từ trang tìm kiếm)
+    const [adults, setAdults] = useState(() => Number(searchParams.get("adults") ?? 1) || 1);
+    const [children, setChildren] = useState(() => Number(searchParams.get("children") ?? 0) || 0);
+    const [rooms, setRooms] = useState(() => Number(searchParams.get("rooms") ?? 1) || 1);
+    const [guestOpen, setGuestOpen] = useState(false);
+    const guestRef = useRef<HTMLDivElement>(null);
+
+    const maxRooms = adults;
+    const guests = adults + children;
+    const guestSummary = `${adults} người lớn${children > 0 ? `, ${children} trẻ em` : ""}, ${rooms} phòng`;
+
+    const handleSetAdults = (next: number) => {
+        setAdults(next);
+        if (rooms > next) setRooms(next);
+    };
+
     const [availRooms, setAvailRooms] = useState<AvailableRoom[]>([]);
     const [checkLoading, setCheckLoading] = useState(false);
     const [selectedRoom, setSelectedRoom] = useState<AvailableRoom | null>(null);
 
+    // Close guest picker on outside click
     useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (guestRef.current && !guestRef.current.contains(e.target as Node))
+                setGuestOpen(false);
+        };
+        document.addEventListener("mousedown", handler);
+        return () => document.removeEventListener("mousedown", handler);
+    }, []);
+
+    const fetchHotel = () => {
         api.get(`/api/hotels/${hotel_id}`)
             .then(res => {
                 const data = res.data;
                 if (!data.reviews) data.reviews = [];
                 setHotel(data);
-                logInteraction("hotel", Number(hotel_id), "view_detail");
             })
             .catch(() => router.push("/hotels"))
             .finally(() => setLoading(false));
-    }, [hotel_id, router]);
+    };
+
+    useEffect(() => {
+        fetchHotel();
+        logInteraction("hotel", Number(hotel_id), "view_detail");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [hotel_id]);
 
     const [availError, setAvailError] = useState<string | null>(null);
 
@@ -92,7 +131,7 @@ export default function HotelDetailPage() {
 
     const handleBook = () => {
         if (!selectedRoom || !hotel) return;
-        const basePrice = selectedRoom.price_per_night * nights;
+        const basePrice = selectedRoom.price_per_night * nights * rooms;
         const taxAndFees = Math.round(basePrice * 0.21);
 
         setBooking({
@@ -101,7 +140,7 @@ export default function HotelDetailPage() {
             hotelName: hotel.name,
             roomTypeId: selectedRoom.room_type_id,
             roomName: selectedRoom.name,
-            quantity: 1,
+            quantity: rooms,
             checkIn,
             checkOut,
             nights,
@@ -294,7 +333,7 @@ export default function HotelDetailPage() {
                                 <ReviewForm
                                     entityType="hotel"
                                     entityId={Number(hotel_id)}
-                                    onSuccess={() => setReviewRefreshKey(k => k + 1)}
+                                    onSuccess={() => { setReviewRefreshKey(k => k + 1); fetchHotel(); }}
                                 />
                             </div>
                         </div>
@@ -317,9 +356,43 @@ export default function HotelDetailPage() {
                                     </div>
                                 </div>
 
-                                <div className="hdp-field" style={{ marginBottom: "0.75rem" }}>
-                                    <label className="hdp-field-label">Số khách</label>
-                                    <input type="number" min={1} max={10} className="hdp-field-input" value={guests} onChange={(e) => setGuests(Number(e.target.value))} />
+                                <div className="hdp-field" style={{ marginBottom: "0.75rem", position: "relative" }} ref={guestRef}>
+                                    <label className="hdp-field-label">Khách & Phòng</label>
+                                    <button
+                                        className="hdp-field-input"
+                                        style={{ textAlign: "left", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                                        onClick={() => setGuestOpen(o => !o)}
+                                        type="button"
+                                    >
+                                        <span>🛏 {guestSummary}</span>
+                                        <span style={{ fontSize: "0.7rem", color: "#6b8cbf" }}>{guestOpen ? "▲" : "▼"}</span>
+                                    </button>
+                                    {guestOpen && (
+                                        <div style={{
+                                            position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
+                                            background: "#fff", border: "1.5px solid #dde3f0", borderRadius: 12,
+                                            boxShadow: "0 8px 32px rgba(0,0,0,0.14)", zIndex: 999,
+                                            padding: "0.5rem 0",
+                                        }}>
+                                            {([
+                                                { label: "Người lớn", value: adults, onMinus: () => handleSetAdults(Math.max(1, adults - 1)), onPlus: () => handleSetAdults(adults + 1), disableMinus: adults <= 1, disablePlus: false },
+                                                { label: "Trẻ em", value: children, onMinus: () => setChildren(c => Math.max(0, c - 1)), onPlus: () => setChildren(c => c + 1), disableMinus: children <= 0, disablePlus: false },
+                                                { label: `Phòng (tối đa ${maxRooms})`, value: rooms, onMinus: () => setRooms(r => Math.max(1, r - 1)), onPlus: () => setRooms(r => Math.min(maxRooms, r + 1)), disableMinus: rooms <= 1, disablePlus: rooms >= maxRooms },
+                                            ]).map(({ label, value, onMinus, onPlus, disableMinus, disablePlus }) => (
+                                                <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.6rem 1rem", borderBottom: "1px solid #f0f4ff" }}>
+                                                    <span style={{ fontSize: "0.88rem", fontWeight: 500, color: "#1a3c6b" }}>{label}</span>
+                                                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                                                        <button onClick={onMinus} disabled={disableMinus} style={{ width: 28, height: 28, borderRadius: "50%", border: "1.5px solid #c8d8ff", background: "#f0f4ff", color: "#0052cc", fontSize: "1rem", fontWeight: 700, cursor: disableMinus ? "not-allowed" : "pointer", opacity: disableMinus ? 0.35 : 1, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                                                        <span style={{ fontWeight: 700, minWidth: 18, textAlign: "center", color: "#1a3c6b" }}>{value}</span>
+                                                        <button onClick={onPlus} disabled={disablePlus} style={{ width: 28, height: 28, borderRadius: "50%", border: "1.5px solid #c8d8ff", background: "#f0f4ff", color: "#0052cc", fontSize: "1rem", fontWeight: 700, cursor: disablePlus ? "not-allowed" : "pointer", opacity: disablePlus ? 0.35 : 1, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            <div style={{ padding: "0.5rem 1rem 0" }}>
+                                                <button onClick={() => setGuestOpen(false)} style={{ width: "100%", padding: "0.45rem", borderRadius: 8, background: "linear-gradient(135deg,#0052cc,#0065ff)", color: "#fff", border: "none", fontWeight: 600, fontSize: "0.85rem", cursor: "pointer" }}>Xong</button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <button className="hdp-check-btn" onClick={handleCheckAvailability} disabled={checkLoading}>
@@ -331,18 +404,25 @@ export default function HotelDetailPage() {
                                         <div style={{ fontSize: "0.78rem", fontWeight: 600, color: "#6b778c", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "0.6rem" }}>
                                             Chọn loại phòng ({nights} đêm)
                                         </div>
-                                        {availRooms.map((room) => (
+                                        {availRooms
+                                            .filter(room => room.max_guests >= Math.ceil(guests / rooms))
+                                            .map((room) => (
                                             <div key={room.room_type_id}
-                                                className={`hdp-room${selectedRoom?.room_type_id === room.room_type_id ? " selected" : ""}`}
-                                                onClick={() => setSelectedRoom(room)}
+                                                className={`hdp-room${selectedRoom?.room_type_id === room.room_type_id ? " selected" : ""}${room.available_rooms < rooms ? " disabled" : ""}`}
+                                                onClick={() => room.available_rooms >= rooms && setSelectedRoom(room)}
+                                                style={room.available_rooms < rooms ? { opacity: 0.5, cursor: "not-allowed" } : {}}
                                             >
                                                 <div className="hdp-room-name">{room.name}</div>
                                                 <div className="hdp-room-meta">
-                                                    <span className="hdp-room-guests">👤 Tối đa {room.max_guests} khách</span>
-                                                    <span className="hdp-room-price">{Number(room.price_per_night).toLocaleString("vi-VN")}₫/đêm</span>
+                                                    <span className="hdp-room-guests">👤 Tối đa {room.max_guests} khách/phòng</span>
+                                                    <span className="hdp-room-price">{Number(room.price_per_night).toLocaleString("vi-VN")}₫/phòng/đêm</span>
                                                 </div>
                                                 <div className={`hdp-room-avail${room.available_rooms <= 2 ? " low" : ""}`}>
-                                                    {room.available_rooms <= 2 ? `🔥 Chỉ còn ${room.available_rooms} phòng` : `✅ Còn ${room.available_rooms} phòng`}
+                                                    {room.available_rooms < rooms
+                                                        ? `🚫 Không đủ ${rooms} phòng (còn ${room.available_rooms})`
+                                                        : room.available_rooms <= 2
+                                                            ? `🔥 Chỉ còn ${room.available_rooms} phòng`
+                                                            : `✅ Còn ${room.available_rooms} phòng`}
                                                 </div>
                                             </div>
                                         ))}
@@ -363,8 +443,8 @@ export default function HotelDetailPage() {
 
                                 {selectedRoom && (
                                     <div className="hdp-total">
-                                        <span>Tổng {nights} đêm</span>
-                                        <span className="hdp-total-price">{(selectedRoom.price_per_night * nights).toLocaleString("vi-VN")}₫</span>
+                                        <span>{rooms} phòng × {nights} đêm</span>
+                                        <span className="hdp-total-price">{(selectedRoom.price_per_night * nights * rooms).toLocaleString("vi-VN")}₫</span>
                                     </div>
                                 )}
 

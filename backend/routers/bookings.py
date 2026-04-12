@@ -4,7 +4,7 @@ from sqlalchemy import text
 from database import engine
 from auth import get_current_user
 from pydantic import BaseModel
-from email_service import send_booking_confirmation_email
+from email_service import send_booking_confirmation_email, send_cancel_confirmation_email
 from datetime import date as ddate
 
 router = APIRouter(prefix="/api/bookings", tags=["bookings"])
@@ -82,16 +82,23 @@ def get_my_bookings(user_id: int = Depends(get_current_user)):
                     bi.entity_type,
                     bi.entity_id,
                     bi.price AS item_price,
-                    COALESCE(bi.check_in_date, CASE bi.entity_type WHEN 'flight' THEN f.depart_time WHEN 'bus' THEN bs.depart_time ELSE NULL END) AS check_in_date,
-                    COALESCE(bi.check_out_date, CASE bi.entity_type WHEN 'flight' THEN f.arrive_time WHEN 'bus' THEN bs.arrive_time ELSE NULL END) AS check_out_date,
+                    COALESCE(bi.check_in_date, CASE bi.entity_type WHEN 'flight' THEN f.depart_time WHEN 'bus' THEN bs.depart_time WHEN 'train' THEN t.depart_time ELSE NULL END) AS check_in_date,
+                    COALESCE(bi.check_out_date, CASE bi.entity_type WHEN 'flight' THEN f.arrive_time WHEN 'bus' THEN bs.arrive_time WHEN 'train' THEN t.arrive_time ELSE NULL END) AS check_out_date,
 
                     -- Tên entity
                     CASE bi.entity_type
                         WHEN 'room'   THEN CONCAT(h.name, ' - ', rt.name)
                         WHEN 'flight' THEN CONCAT(f.airline, ': ', f.from_city, ' → ', f.to_city)
                         WHEN 'bus'    THEN CONCAT(bs.company, ': ', bs.from_city, ' → ', bs.to_city)
+                        WHEN 'train'  THEN CONCAT('Tàu ', t.train_code, ': ', t.from_city, ' → ', t.to_city)
                         ELSE CONCAT(bi.entity_type, ' #', bi.entity_id)
-                    END AS entity_name
+                    END AS entity_name,
+
+                    -- Thêm from/to city và depart/arrive cho tất cả transport
+                    CASE bi.entity_type WHEN 'flight' THEN f.from_city WHEN 'bus' THEN bs.from_city WHEN 'train' THEN t.from_city ELSE NULL END AS from_city,
+                    CASE bi.entity_type WHEN 'flight' THEN f.to_city WHEN 'bus' THEN bs.to_city WHEN 'train' THEN t.to_city ELSE NULL END AS to_city,
+                    CASE bi.entity_type WHEN 'flight' THEN f.depart_time WHEN 'bus' THEN bs.depart_time WHEN 'train' THEN t.depart_time ELSE NULL END AS depart_time,
+                    CASE bi.entity_type WHEN 'flight' THEN f.arrive_time WHEN 'bus' THEN bs.arrive_time WHEN 'train' THEN t.arrive_time ELSE NULL END AS arrive_time
 
                 FROM bookings b
                 JOIN booking_items bi ON bi.booking_id = b.booking_id
@@ -99,6 +106,7 @@ def get_my_bookings(user_id: int = Depends(get_current_user)):
                 LEFT JOIN hotels h ON h.hotel_id = rt.hotel_id
                 LEFT JOIN flights f ON f.flight_id = bi.entity_id AND bi.entity_type = 'flight'
                 LEFT JOIN buses bs ON bs.bus_id = bi.entity_id AND bi.entity_type = 'bus'
+                LEFT JOIN trains t ON t.train_id = bi.entity_id AND bi.entity_type = 'train'
 
                 WHERE b.user_id = :user_id
                 ORDER BY b.booking_date DESC
@@ -110,9 +118,9 @@ def get_my_bookings(user_id: int = Depends(get_current_user)):
 
 
 # Tạo booking mới
-@router.post("/")
+@router.post("")
 def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user)):
-    quantity = data.passengers if data.entity_type == "flight" else data.guests
+    quantity = data.passengers if data.entity_type in ("flight", "bus", "train") else data.guests
 
     with engine.begin() as conn:
         # Kiểm tra đủ ghế trước khi đặt (cho flight)
@@ -206,11 +214,35 @@ def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user
                     text(f"UPDATE bus_seats SET is_booked = 1 WHERE seat_id IN ({','.join(seat_ids)})")
                 )
 
-        # Tăng used_count nếu có mã giảm giá
+        # Trừ ghế trong train_seats
+        if data.entity_type == "train" and data.seat_class:
+            seat_rows = conn.execute(
+                text("""
+                    SELECT seat_id FROM train_seats
+                    WHERE train_id = :tid AND seat_class = :cls AND is_booked = 0
+                    LIMIT :n
+                """),
+                {"tid": data.entity_id, "cls": data.seat_class, "n": quantity}
+            ).fetchall()
+            seat_ids = [str(r.seat_id) for r in seat_rows]
+            if seat_ids:
+                conn.execute(
+                    text(f"UPDATE train_seats SET is_booked = 1 WHERE seat_id IN ({','.join(seat_ids)})")
+                )
+
+        # Tăng used_count và ghi nhận per-user usage nếu có mã giảm giá
         if data.promo_id:
             conn.execute(
                 text("UPDATE promotions SET used_count = used_count + 1 WHERE promo_id = :pid"),
                 {"pid": data.promo_id}
+            )
+            # Ghi nhận user đã dùng mã này (bỏ qua nếu đã tồn tại)
+            conn.execute(
+                text("""
+                    INSERT IGNORE INTO promo_user_usages (promo_id, user_id)
+                    VALUES (:pid, :uid)
+                """),
+                {"pid": data.promo_id, "uid": user_id}
             )
 
     return {"booking_id": booking_id, "message": "Đặt chỗ thành công"}
@@ -223,6 +255,7 @@ def _get_booking_email_info(conn, booking_id: int, user_id: int):
             u.email, u.full_name,
             b.final_amount, b.booking_date,
             bi.entity_type, bi.check_in_date, bi.check_out_date,
+            bi.quantity, bi.guests,
             CASE bi.entity_type
                 WHEN 'room'   THEN CONCAT(h.name, ' - ', rt.name)
                 WHEN 'flight' THEN CONCAT(f.airline, ': ', f.from_city, ' → ', f.to_city)
@@ -316,6 +349,8 @@ def pay_with_wallet(booking_id: int, background_tasks: BackgroundTasks, user_id:
             check_in=str(email_info["check_in_date"]) if email_info["check_in_date"] else None,
             check_out=str(email_info["check_out_date"]) if email_info["check_out_date"] else None,
             booking_date=str(email_info["booking_date"])[:10] if email_info["booking_date"] else None,
+            rooms=int(email_info["quantity"]) if email_info.get("quantity") else None,
+            guests=int(email_info["guests"]) if email_info.get("guests") else None,
         )
 
     new_balance = balance - amount
@@ -392,6 +427,8 @@ def pay_combined(booking_id: int, data: PayCombinedRequest, background_tasks: Ba
             check_in=str(email_info["check_in_date"]) if email_info["check_in_date"] else None,
             check_out=str(email_info["check_out_date"]) if email_info["check_out_date"] else None,
             booking_date=str(email_info["booking_date"])[:10] if email_info["booking_date"] else None,
+            rooms=int(email_info["quantity"]) if email_info.get("quantity") else None,
+            guests=int(email_info["guests"]) if email_info.get("guests") else None,
         )
 
     msg = "Thanh toán thành công"
@@ -416,29 +453,45 @@ def get_booking(booking_id: int, user_id: int = Depends(get_current_user)):
         items = conn.execute(text("""
             SELECT
                 bi.*,
-                COALESCE(bi.check_in_date, CASE bi.entity_type WHEN 'flight' THEN f.depart_time WHEN 'bus' THEN bs.depart_time ELSE NULL END) AS check_in_date_calc,
-                COALESCE(bi.check_out_date, CASE bi.entity_type WHEN 'flight' THEN f.arrive_time WHEN 'bus' THEN bs.arrive_time ELSE NULL END) AS check_out_date_calc,
+                COALESCE(bi.check_in_date, CASE bi.entity_type WHEN 'flight' THEN f.depart_time WHEN 'bus' THEN bs.depart_time WHEN 'train' THEN t.depart_time ELSE NULL END) AS check_in_date_calc,
+                COALESCE(bi.check_out_date, CASE bi.entity_type WHEN 'flight' THEN f.arrive_time WHEN 'bus' THEN bs.arrive_time WHEN 'train' THEN t.arrive_time ELSE NULL END) AS check_out_date_calc,
                 CASE bi.entity_type
                     WHEN 'room'   THEN CONCAT(h.name, ' - ', rt.name)
                     WHEN 'flight' THEN CONCAT(f.airline, ': ', f.from_city, ' → ', f.to_city)
                     WHEN 'bus'    THEN CONCAT(bs.company, ': ', bs.from_city, ' → ', bs.to_city)
+                    WHEN 'train'  THEN CONCAT('Tàu ', t.train_code, ': ', t.from_city, ' → ', t.to_city)
                     ELSE CONCAT(bi.entity_type, ' #', bi.entity_id)
                 END AS entity_name,
                 CASE bi.entity_type
                     WHEN 'flight' THEN f.from_city
                     WHEN 'bus'    THEN bs.from_city
+                    WHEN 'train'  THEN t.from_city
                     ELSE NULL
                 END AS from_city,
                 CASE bi.entity_type
                     WHEN 'flight' THEN f.to_city
                     WHEN 'bus'    THEN bs.to_city
+                    WHEN 'train'  THEN t.to_city
                     ELSE NULL
-                END AS to_city
+                END AS to_city,
+                CASE bi.entity_type
+                    WHEN 'flight' THEN f.depart_time
+                    WHEN 'bus'    THEN bs.depart_time
+                    WHEN 'train'  THEN t.depart_time
+                    ELSE NULL
+                END AS depart_time,
+                CASE bi.entity_type
+                    WHEN 'flight' THEN f.arrive_time
+                    WHEN 'bus'    THEN bs.arrive_time
+                    WHEN 'train'  THEN t.arrive_time
+                    ELSE NULL
+                END AS arrive_time
             FROM booking_items bi
             LEFT JOIN room_types rt ON rt.room_type_id = bi.entity_id AND bi.entity_type = 'room'
             LEFT JOIN hotels h ON h.hotel_id = rt.hotel_id
             LEFT JOIN flights f ON f.flight_id = bi.entity_id AND bi.entity_type = 'flight'
             LEFT JOIN buses bs ON bs.bus_id = bi.entity_id AND bi.entity_type = 'bus'
+            LEFT JOIN trains t ON t.train_id = bi.entity_id AND bi.entity_type = 'train'
             WHERE bi.booking_id = :id
         """), {"id": booking_id}).fetchall()
 
@@ -792,7 +845,7 @@ class CancelRequest(BaseModel):
 
 
 @router.post("/{booking_id}/cancel")
-def cancel_booking(booking_id: int, data: CancelRequest, user_id: int = Depends(get_current_user)):
+def cancel_booking(booking_id: int, data: CancelRequest, background_tasks: BackgroundTasks, user_id: int = Depends(get_current_user)):
     with engine.begin() as conn:
         booking = conn.execute(
             text("SELECT * FROM bookings WHERE booking_id = :id AND user_id = :uid AND status = 'confirmed'"),
@@ -809,12 +862,34 @@ def cancel_booking(booking_id: int, data: CancelRequest, user_id: int = Depends(
         item_d = dict(item._mapping)
         entity_type = item_d["entity_type"]
 
-        # Lấy rank của user
+        # Lấy rank + email của user
         user_row = conn.execute(
-            text("SELECT COALESCE(user_rank, 'bronze') AS user_rank FROM users WHERE user_id = :uid"),
+            text("SELECT COALESCE(user_rank, 'bronze') AS user_rank, email, full_name FROM users WHERE user_id = :uid"),
             {"uid": user_id}
         ).fetchone()
-        user_rank = dict(user_row._mapping)["user_rank"] if user_row else "bronze"
+        user_row_d = dict(user_row._mapping) if user_row else {}
+        user_rank = user_row_d.get("user_rank", "bronze")
+        user_email = user_row_d.get("email", "")
+        user_name = user_row_d.get("full_name") or "Quý khách"
+
+        # Lấy tên dịch vụ
+        svc_name_row = conn.execute(text("""
+            SELECT CASE bi.entity_type
+                WHEN 'room'   THEN CONCAT(h.name, ' - ', rt.name)
+                WHEN 'flight' THEN CONCAT(f.airline, ': ', f.from_city, ' → ', f.to_city)
+                WHEN 'bus'    THEN CONCAT(bs.company, ': ', bs.from_city, ' → ', bs.to_city)
+                WHEN 'train'  THEN CONCAT('Tàu ', t.train_code, ': ', t.from_city, ' → ', t.to_city)
+                ELSE CONCAT(bi.entity_type, ' #', bi.entity_id)
+            END AS service_name
+            FROM booking_items bi
+            LEFT JOIN room_types rt ON rt.room_type_id = bi.entity_id AND bi.entity_type = 'room'
+            LEFT JOIN hotels h ON h.hotel_id = rt.hotel_id
+            LEFT JOIN flights f ON f.flight_id = bi.entity_id AND bi.entity_type = 'flight'
+            LEFT JOIN buses bs ON bs.bus_id = bi.entity_id AND bi.entity_type = 'bus'
+            LEFT JOIN trains t ON t.train_id = bi.entity_id AND bi.entity_type = 'train'
+            WHERE bi.booking_id = :bid LIMIT 1
+        """), {"bid": booking_id}).fetchone()
+        service_name = dict(svc_name_row._mapping)["service_name"] if svc_name_row else f"Đặt chỗ #{booking_id}"
 
         # Calculate cancel fee theo rank
         cancel_fee = 0.0
@@ -823,7 +898,7 @@ def cancel_booking(booking_id: int, data: CancelRequest, user_id: int = Depends(
             try:
                 svc_date = check_in_raw if isinstance(check_in_raw, ddate) else ddate.fromisoformat(str(check_in_raw))
                 days_until = (svc_date - ddate.today()).days
-                rate, _note = get_cancel_fee_rate(user_rank, days_until, entity_type)
+                rate, _ = get_cancel_fee_rate(user_rank, days_until, entity_type)
                 cancel_fee = round(total_price * rate, 2)
             except Exception:
                 pass
@@ -881,6 +956,19 @@ def cancel_booking(booking_id: int, data: CancelRequest, user_id: int = Depends(
                    "cf": cancel_fee, "ra": refund_amount,
                    "rm": data.refund_method, "bi": data.bank_info})
             message = "Đặt chỗ đã được hủy. Tiền sẽ được hoàn về ngân hàng trong vòng 2–5 ngày."
+
+    # Gửi email thông báo hủy (ngoài transaction)
+    if user_email:
+        background_tasks.add_task(
+            send_cancel_confirmation_email,
+            email=user_email,
+            name=user_name,
+            booking_id=booking_id,
+            service_name=service_name,
+            refund_amount=refund_amount,
+            cancel_fee=cancel_fee,
+            refund_method=data.refund_method,
+        )
 
     return {
         "status": "cancelled",

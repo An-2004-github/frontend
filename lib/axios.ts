@@ -41,7 +41,19 @@ axiosInstance.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401) {
-            console.error("Token hết hạn hoặc không hợp lệ!");
+            // Xóa token cũ hết hạn khỏi localStorage để tránh lặp lại lỗi
+            try {
+                const raw = localStorage.getItem('auth-storage');
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (parsed?.state?.token) {
+                        parsed.state.token = null;
+                        parsed.state.user = null;
+                        parsed.state.isAuthenticated = false;
+                        localStorage.setItem('auth-storage', JSON.stringify(parsed));
+                    }
+                }
+            } catch { }
         }
         return Promise.reject(error);
     }

@@ -7,7 +7,7 @@ router = APIRouter(prefix="/api/promotions", tags=["promotions"])
 
 
 # Lấy tất cả promotions (có filter theo applies_to)
-@router.get("/")
+@router.get("")
 def get_promotions(applies_to: str | None = None):
     conditions = ["status = 'active'", "expired_at > NOW()"]
     params = {}
@@ -69,9 +69,22 @@ def validate_promo(data: dict, user_id: int = Depends(get_current_user)):
 
         promo = dict(promo._mapping)
 
-        # Kiểm tra đã hết lượt chưa
+        # Kiểm tra đã hết lượt chung
         if promo["used_count"] >= promo["usage_limit"]:
             raise HTTPException(400, "Mã giảm giá đã hết lượt sử dụng")
+
+        # Kiểm tra giới hạn per-user (mỗi tài khoản chỉ dùng được N lần)
+        per_user_limit = promo.get("per_user_limit")
+        if per_user_limit is not None:
+            user_usage = conn.execute(
+                text("""
+                    SELECT COUNT(*) AS cnt FROM promo_user_usages
+                    WHERE promo_id = :pid AND user_id = :uid
+                """),
+                {"pid": promo["promo_id"], "uid": user_id}
+            ).fetchone()
+            if user_usage and user_usage.cnt >= per_user_limit:
+                raise HTTPException(400, "Bạn đã sử dụng mã giảm giá này rồi")
 
         # Kiểm tra giá trị đơn hàng tối thiểu
         if order_value < promo["min_order_value"]:

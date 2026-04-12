@@ -69,7 +69,8 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
     const appliesTo =
         booking.type === "hotel" ? "hotel" :
         booking.type === "flight" ? "flight" :
-        booking.type === "bus" ? "bus" : "all";
+        booking.type === "bus" ? "bus" :
+        booking.type === "train" ? "train" : "all";
 
     useEffect(() => {
         const fetchPromos = async () => {
@@ -258,6 +259,16 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                             <div className="bc-popular">{booking.fromCity} → {booking.toCity}</div>
                             <div className="bc-info-row">🚌 Khởi hành: {new Date(booking.departTime).toLocaleString("vi-VN")}</div>
                             <div className="bc-info-row">👥 {booking.passengers} hành khách</div>
+                        </>
+                    )}
+
+                    {booking.type === "train" && (
+                        <>
+                            <div className="bc-room-name">Tàu {booking.trainCode}</div>
+                            <div className="bc-popular">{booking.fromCity} → {booking.toCity}</div>
+                            <div className="bc-info-row">🚉 {booking.fromStation} → {booking.toStation}</div>
+                            <div className="bc-info-row">🚆 Khởi hành: {new Date(booking.departTime).toLocaleString("vi-VN")}</div>
+                            <div className="bc-info-row">👥 {booking.passengers} hành khách · {booking.seatClassName}</div>
                         </>
                     )}
 

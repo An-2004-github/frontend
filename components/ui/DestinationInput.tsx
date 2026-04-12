@@ -11,6 +11,8 @@ interface Props {
     className?: string;
     inputStyle?: React.CSSProperties;
     cityMode?: boolean;
+    /** Khi truyền vào, danh sách này sẽ thay thế danh sách lấy từ API */
+    cities?: string[];
 }
 
 let _cache: Destination[] | null = null;
@@ -22,6 +24,7 @@ export default function DestinationInput({
     className = "",
     inputStyle,
     cityMode = false,
+    cities: citiesOverride,
 }: Props) {
     const [destinations, setDestinations] = useState<Destination[]>(_cache ?? []);
     const [open, setOpen] = useState(false);
@@ -87,8 +90,8 @@ export default function DestinationInput({
         return () => document.removeEventListener("mousedown", handler);
     }, []);
 
-    // Lấy danh sách tỉnh/thành phố duy nhất
-    const cities = [...new Set(destinations.map(d => d.city))].sort();
+    // Lấy danh sách tỉnh/thành phố duy nhất (ưu tiên prop override)
+    const cities = citiesOverride ?? [...new Set(destinations.map(d => d.city))].sort();
 
     const filtered = value.trim().length === 0
         ? cities

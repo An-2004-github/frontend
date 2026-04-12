@@ -31,4 +31,11 @@ export const busService = {
         const response = await axiosInstance.get("/api/buses/cities");
         return response.data;
     },
+
+    getDestinationCities: async (fromCity: string): Promise<string[]> => {
+        const response = await axiosInstance.get("/api/buses/destinations", {
+            params: { from_city: fromCity },
+        });
+        return response.data;
+    },
 };

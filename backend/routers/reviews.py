@@ -14,7 +14,7 @@ class ReviewCreate(BaseModel):
     comment: str
 
 
-@router.get("/")
+@router.get("")
 def get_reviews(entity_type: str, entity_id: int):
     with engine.connect() as conn:
         result = conn.execute(
@@ -32,7 +32,7 @@ def get_reviews(entity_type: str, entity_id: int):
         return [dict(row._mapping) for row in result]
 
 
-@router.post("/", status_code=201)
+@router.post("", status_code=201)
 def create_review(data: ReviewCreate, user_id: int = Depends(get_current_user)):
     if data.rating < 1 or data.rating > 5:
         raise HTTPException(status_code=400, detail="Rating phải từ 1 đến 5")

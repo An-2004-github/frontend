@@ -19,7 +19,8 @@ export default function PaymentPage() {
     const { user, login } = useAuthStore();
     const { payment, clearPayment } = usePaymentStore();
 
-    const [tab, setTab] = useState<"wallet" | "qr">(user ? "wallet" : "qr");
+    const isGuest = user?.provider === "guest";
+    const [tab, setTab] = useState<"wallet" | "qr">((user && !isGuest) ? "wallet" : "qr");
     const [balance, setBalance] = useState<number>(user?.wallet ?? 0);
     const [paying, setPaying] = useState(false);
     const [checking, setChecking] = useState(false);
@@ -28,10 +29,11 @@ export default function PaymentPage() {
     const [useWallet, setUseWallet] = useState(false);
     const [localPayment, setLocalPayment] = useState<{ totalAmount: number; description: string } | null>(null);
     const [loadingBooking, setLoadingBooking] = useState(false);
-    const [timeLeft, setTimeLeft] = useState(15 * 60);
+    const [timeLeft, setTimeLeft] = useState<number | null>(null);
     const [expired, setExpired] = useState(false);
-    const qrTimeLeft = timeLeft;
+    const qrTimeLeft = timeLeft ?? 900;
     const qrExpired = expired;
+    const safeTimeLeft = timeLeft ?? 900;
 
     const amount = (payment?.totalAmount ?? localPayment?.totalAmount) ?? 0;
     const description = (payment?.description ?? localPayment?.description) ?? `Đặt chỗ #${bookingId}`;
@@ -59,20 +61,31 @@ export default function PaymentPage() {
             .catch(() => { });
     }, []);
 
-    // Nếu không có payment trong store, tự fetch booking từ API
+    // Fetch booking để lấy thời gian đặt và tính countdown chính xác
     useEffect(() => {
-        if (payment) return;
         setLoadingBooking(true);
         api.get(`/api/bookings/${bookingId}`)
             .then(res => {
                 const b = res.data;
-                if (b.status !== "pending") { router.replace("/profile/bookings"); return; }
-                const item = b.items?.[0];
-                let desc = `Đặt chỗ #${bookingId}`;
-                if (item?.entity_type === "room") desc = `Khách sạn #${item.entity_id}`;
-                else if (item?.entity_type === "flight") desc = `Chuyến bay #${item.entity_id}`;
-                else if (item?.entity_type === "bus") desc = `Xe khách #${item.entity_id}`;
-                setLocalPayment({ totalAmount: b.final_amount ?? b.total_price, description: desc });
+                if (b.status !== "pending") {
+                    if (b.status === "cancelled") { setExpired(true); setTimeLeft(0); return; }
+                    router.replace("/profile/bookings"); return;
+                }
+                // Tính thời gian còn lại dựa trên booking_date từ server
+                const bookingDate = new Date(b.booking_date);
+                const expiresAt = bookingDate.getTime() + 15 * 60 * 1000;
+                const remaining = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
+                setTimeLeft(remaining);
+                if (remaining === 0) setExpired(true);
+
+                if (!payment) {
+                    const item = b.items?.[0];
+                    let desc = `Đặt chỗ #${bookingId}`;
+                    if (item?.entity_type === "room") desc = `Khách sạn #${item.entity_id}`;
+                    else if (item?.entity_type === "flight") desc = `Chuyến bay #${item.entity_id}`;
+                    else if (item?.entity_type === "bus") desc = `Xe khách #${item.entity_id}`;
+                    setLocalPayment({ totalAmount: b.final_amount ?? b.total_price, description: desc });
+                }
             })
             .catch(() => router.replace("/profile/bookings"))
             .finally(() => setLoadingBooking(false));
@@ -137,16 +150,15 @@ export default function PaymentPage() {
 
     // Đếm ngược timer chung cho toàn trang thanh toán
     useEffect(() => {
-        if (expired || paid) return;
+        if (expired || paid || timeLeft === null) return;
         if (timeLeft <= 0) {
             setExpired(true);
-            // Tự động hủy booking khi hết thời gian
             api.post(`/api/bookings/${bookingId}/cancel-pending`).catch(() => {});
             return;
         }
         const interval = setInterval(() => {
             setTimeLeft(t => {
-                if (t <= 1) { clearInterval(interval); return 0; }
+                if (t === null || t <= 1) { clearInterval(interval); return 0; }
                 return t - 1;
             });
         }, 1000);
@@ -417,7 +429,7 @@ export default function PaymentPage() {
                 <div className="pay-content">
                     {/* Tabs */}
                     <div className="pay-tabs">
-                        {user && (
+                        {user && !isGuest && (
                             <button
                                 className={`pay-tab${tab === "wallet" ? " active" : ""}`}
                                 onClick={() => setTab("wallet")}
@@ -438,15 +450,15 @@ export default function PaymentPage() {
                         <div className="pay-card">
                             <div className="pay-card-title">
                                 💰 Thanh toán bằng Ví VIVU
-                                {!expired && (
+                                {!expired && timeLeft !== null && (
                                     <span style={{
                                         marginLeft: "auto", fontSize: "0.78rem", fontWeight: 700,
-                                        color: timeLeft <= 60 ? "#c0392b" : timeLeft <= 180 ? "#b8860b" : "#00875a",
-                                        background: timeLeft <= 60 ? "#fff0f0" : timeLeft <= 180 ? "#fffbe6" : "#e6f9f0",
+                                        color: safeTimeLeft <= 60 ? "#c0392b" : safeTimeLeft <= 180 ? "#b8860b" : "#00875a",
+                                        background: safeTimeLeft <= 60 ? "#fff0f0" : safeTimeLeft <= 180 ? "#fffbe6" : "#e6f9f0",
                                         padding: "0.2rem 0.65rem", borderRadius: 99,
-                                        border: `1px solid ${timeLeft <= 60 ? "#ffcdd2" : timeLeft <= 180 ? "#ffe082" : "#b7dfbb"}`,
+                                        border: `1px solid ${safeTimeLeft <= 60 ? "#ffcdd2" : safeTimeLeft <= 180 ? "#ffe082" : "#b7dfbb"}`,
                                     }}>
-                                        ⏱ {formatTime(timeLeft)}
+                                        ⏱ {formatTime(safeTimeLeft)}
                                     </span>
                                 )}
                             </div>
@@ -539,7 +551,7 @@ export default function PaymentPage() {
                         <div className="pay-card">
                             <div className="pay-card-title">
                                 📱 Quét QR để thanh toán
-                                {!qrExpired && (
+                                {!qrExpired && timeLeft !== null && (
                                     <span style={{
                                         marginLeft: "auto", fontSize: "0.78rem", fontWeight: 700,
                                         color: qrTimeLeft <= 60 ? "#c0392b" : qrTimeLeft <= 180 ? "#b8860b" : "#00875a",
@@ -552,7 +564,8 @@ export default function PaymentPage() {
                                 )}
                             </div>
 
-                            {/* Checkbox dùng ví */}
+                            {/* Checkbox dùng ví — ẩn với guest */}
+                            {!isGuest && (
                             <label
                                 className={`pay-use-wallet${useWallet ? " checked" : ""}`}
                                 onClick={() => setUseWallet(v => !v)}
@@ -566,9 +579,10 @@ export default function PaymentPage() {
                                 <span className="pay-use-wallet-label">💰 Sử dụng số dư Ví VIVU</span>
                                 <span className="pay-use-wallet-balance">{balance.toLocaleString("vi-VN")}₫</span>
                             </label>
+                            )}
 
                             {/* Breakdown khi dùng ví */}
-                            {useWallet && (
+                            {!isGuest && useWallet && (
                                 <div className="pay-breakdown">
                                     <div className="pay-breakdown-row">
                                         <span className="pay-breakdown-label">Tổng đặt chỗ</span>
@@ -588,7 +602,8 @@ export default function PaymentPage() {
                                 </div>
                             )}
 
-                            {/* Cashback info */}
+                            {/* Cashback info — ẩn với guest */}
+                            {!isGuest && (
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#e6f9f0", borderRadius: 8, padding: "0.5rem 0.75rem", marginBottom: "0.75rem" }}>
                                 <span style={{ fontSize: "0.82rem", color: "#00875a", fontWeight: 600 }}>
                                     🎁 Cashback ({(cashbackRate * 100).toFixed(1)}% · hạng {userRank})
@@ -597,6 +612,7 @@ export default function PaymentPage() {
                                     +{cashbackAmount.toLocaleString("vi-VN")}₫
                                 </span>
                             </div>
+                            )}
 
                             {/* QR hoặc thông báo đủ tiền */}
                             {qrAmount === 0 ? (

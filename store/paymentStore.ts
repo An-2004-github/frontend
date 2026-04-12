@@ -4,7 +4,7 @@ export interface PaymentInfo {
     bookingId: number;
     totalAmount: number;
     description: string; // e.g. "Vietnam Airlines: Hà Nội → TP.HCM"
-    entityType: "hotel" | "flight" | "bus";
+    entityType: "hotel" | "flight" | "bus" | "train";
 }
 
 interface PaymentStore {

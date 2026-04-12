@@ -11,6 +11,7 @@ const NAV_LINKS = [
     { href: "/hotels",         label: "Khách sạn",   icon: "🏨" },
     { href: "/flights",        label: "Máy bay",     icon: "✈️" },
     { href: "/buses",          label: "Xe khách",    icon: "🚌" },
+    { href: "/trains",         label: "Tàu hỏa",    icon: "🚆" },
     { href: "/promotion",      label: "Khuyến mãi",  icon: "🎁" },
     { href: "/travel-planner", label: "Gợi ý",       icon: "🗺️" },
 ];
@@ -157,6 +158,24 @@ export default function Navbar() {
                 .navbar-dropdown-item.danger:hover { background: #fff0ee; color: #c0392b; }
                 .navbar-dropdown-divider { height: 1px; background: #e8f0fe; margin: 0.35rem 0; }
 
+                /* Admin toggle btn */
+                .navbar-btn-admin {
+                    display: flex; align-items: center; gap: 0.4rem;
+                    padding: 0.45rem 1rem;
+                    border-radius: 8px; font-size: 0.85rem; font-weight: 700;
+                    text-decoration: none; white-space: nowrap;
+                    transition: opacity 0.18s, transform 0.15s; flex-shrink: 0;
+                }
+                .navbar-btn-admin:hover { opacity: 0.88; transform: translateY(-1px); }
+                .navbar-btn-admin.to-admin {
+                    background: linear-gradient(135deg, #7c3aed, #9f5efc);
+                    color: #fff; border: none;
+                }
+                .navbar-btn-admin.to-shop {
+                    background: linear-gradient(135deg, #0052cc, #0065ff);
+                    color: #fff; border: none;
+                }
+
                 /* Login/Register */
                 .navbar-btn-outline {
                     padding: 0.45rem 1.1rem;
@@ -242,13 +261,26 @@ export default function Navbar() {
 
                     {/* Auth */}
                     <div className="navbar-auth">
-                        {!user ? (
+                        {(!user || user.provider === "guest") ? (
                             <>
                                 <Link href="/login" className="navbar-btn-outline">Đăng nhập</Link>
                                 <Link href="/register" className="navbar-btn-solid">Đăng ký</Link>
                             </>
                         ) : (
                             <>
+                                {/* Admin toggle button */}
+                                {user.role === "ADMIN" && (
+                                    pathname.startsWith("/admin") ? (
+                                        <Link href="/" className="navbar-btn-admin to-shop">
+                                            🛒 Trang mua hàng
+                                        </Link>
+                                    ) : (
+                                        <Link href="/admin" className="navbar-btn-admin to-admin">
+                                            ⚙️ Trang admin
+                                        </Link>
+                                    )
+                                )}
+
                                 {/* Wallet */}
                                 <div className="navbar-wallet">
                                     💰 {(user.wallet ?? 0).toLocaleString("vi-VN")}₫

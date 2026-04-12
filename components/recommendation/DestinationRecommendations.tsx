@@ -1,171 +1,171 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
-import api from "@/lib/axios";
-import { useAuthStore } from "@/store/authStore";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
-interface Destination {
-    destination_id: number;
-    name: string;
-    city: string;
-    country?: string;
-    description?: string;
-    min_price?: number;
-    best_rating?: number;
-    booking_count?: number;
-    image_url?: string;
-    score?: number;
-    boosted?: boolean;   // true = được boost từ search gần đây
-}
-
-const GRAD_COLORS = [
-    "from-blue-400 to-emerald-400",
-    "from-orange-400 to-pink-500",
-    "from-purple-500 to-indigo-500",
-    "from-cyan-500 to-blue-500",
-    "from-rose-400 to-orange-400",
-    "from-teal-400 to-cyan-500",
-    "from-violet-500 to-purple-500",
-    "from-amber-400 to-yellow-500",
+const POPULAR_CITIES = [
+    {
+        city: "Hà Nội",
+        label: "Thủ đô ngàn năm văn hiến",
+        image: "https://images.unsplash.com/photo-1509942774463-acf339cf87d5?w=600&q=80",
+    },
+    {
+        city: "TP. Hồ Chí Minh",
+        label: "Thành phố không ngủ",
+        image: "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=600&q=80",
+    },
+    {
+        city: "Đà Nẵng",
+        label: "Thành phố đáng sống",
+        image: "https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=600&q=80",
+    },
+    {
+        city: "Hội An",
+        label: "Phố cổ di sản thế giới",
+        image: "https://images.unsplash.com/photo-1528127269322-539801943592?w=600&q=80",
+    },
+    {
+        city: "Nha Trang",
+        label: "Thiên đường biển xanh",
+        image: "https://images.unsplash.com/photo-1570366583862-f91883984fde?w=600&q=80",
+    },
+    {
+        city: "Đà Lạt",
+        label: "Thành phố ngàn hoa",
+        image: "https://images.unsplash.com/photo-1598970605070-a38a6ccd3a2d?w=600&q=80",
+    },
+    {
+        city: "Phú Quốc",
+        label: "Đảo ngọc nhiệt đới",
+        image: "https://images.unsplash.com/photo-1548018560-c7196548b4f7?w=600&q=80",
+    },
+    {
+        city: "Huế",
+        label: "Cố đô lịch sử",
+        image: "https://images.unsplash.com/photo-1557750255-c76072a7aad1?w=600&q=80",
+    },
 ];
 
 export default function DestinationRecommendations() {
-    const { user } = useAuthStore();
-    const [destinations, setDestinations] = useState<Destination[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [isPersonalized, setIsPersonalized] = useState(false);
+    const router = useRouter();
+    const [hovered, setHovered] = useState<string | null>(null);
 
-    useEffect(() => {
-        const fetchRecs = async () => {
-            setLoading(true);
-            try {
-                if (user) {
-                    const res = await api.get("/api/recommendations/", { params: { limit: 8 } });
-                    setDestinations(res.data);
-                    setIsPersonalized(true);
-                } else {
-                    const res = await api.get("/api/recommendations/guest", { params: { limit: 8 } });
-                    setDestinations(res.data);
-                    setIsPersonalized(false);
-                }
-            } catch {
-                // fallback to popular
-                try {
-                    const res = await api.get("/api/recommendations/popular", { params: { limit: 8 } });
-                    setDestinations(res.data);
-                } catch {
-                    setDestinations([]);
-                }
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchRecs();
-    }, [user]);
-
-    if (loading) {
-        return (
-            <section>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "2rem" }}>
-                    <div>
-                        <div style={{ height: 32, width: 280, background: "#e8f0fe", borderRadius: 8, marginBottom: 8 }} />
-                        <div style={{ height: 18, width: 200, background: "#f0f4ff", borderRadius: 6 }} />
-                    </div>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "1rem" }}>
-                    {Array.from({ length: 4 }).map((_, i) => (
-                        <div key={i} style={{ height: 200, borderRadius: 20, background: "linear-gradient(135deg,#e8f0fe,#f0f4ff)", animation: "pulse 1.5s ease-in-out infinite" }} />
-                    ))}
-                </div>
-            </section>
-        );
-    }
-
-    if (destinations.length === 0) return null;
+    const handleClick = (city: string) => {
+        router.push(`/hotels?search=${encodeURIComponent(city)}`);
+    };
 
     return (
         <section>
             <style>{`
-                .rec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
-                @media (min-width: 768px) { .rec-grid { grid-template-columns: repeat(4, 1fr); } }
-                .rec-card { position: relative; border-radius: 20px; overflow: hidden; height: 200px; cursor: pointer; box-shadow: 0 2px 12px rgba(0,0,0,0.10); transition: transform 0.25s, box-shadow 0.25s; }
-                .rec-card:hover { transform: translateY(-4px); box-shadow: 0 8px 28px rgba(0,0,0,0.18); }
-                .rec-card-overlay { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.75) 40%, transparent 100%); }
-                .rec-card-body { position: absolute; bottom: 0; left: 0; padding: 1rem; color: #fff; }
-                .rec-card-city { font-size: 1.05rem; font-weight: 800; margin-bottom: 0.15rem; line-height: 1.2; }
-                .rec-card-meta { font-size: 0.72rem; color: rgba(255,255,255,0.82); display: flex; gap: 0.5rem; align-items: center; }
-                .rec-score-badge { position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.18); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.3); color: #fff; font-size: 0.68rem; font-weight: 700; padding: 0.18rem 0.5rem; border-radius: 99px; }
-                @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.5 } }
+                .pop-header {
+                    display: flex; justify-content: space-between; align-items: flex-end;
+                    margin-bottom: 1.75rem;
+                }
+                .pop-title { font-size: 1.75rem; font-weight: 800; color: #111827; margin-bottom: 0.3rem; }
+                .pop-subtitle { color: #6b7280; font-size: 0.9rem; }
+                .pop-see-all {
+                    color: #2563eb; font-weight: 600; font-size: 0.88rem;
+                    text-decoration: none; padding: 0.4rem 1rem;
+                    border: 1.5px solid #bfdbfe; border-radius: 8px;
+                    transition: all 0.15s; white-space: nowrap;
+                }
+                .pop-see-all:hover { background: #eff6ff; border-color: #93c5fd; }
+
+                .pop-grid {
+                    display: grid;
+                    grid-template-columns: repeat(2, 1fr);
+                    gap: 1rem;
+                }
+                @media (min-width: 640px)  { .pop-grid { grid-template-columns: repeat(3, 1fr); } }
+                @media (min-width: 1024px) { .pop-grid { grid-template-columns: repeat(4, 1fr); } }
+
+                .pop-card {
+                    position: relative; border-radius: 18px; overflow: hidden;
+                    height: 200px; cursor: pointer;
+                    box-shadow: 0 2px 12px rgba(0,0,0,0.10);
+                    transition: transform 0.28s cubic-bezier(.34,1.4,.64,1), box-shadow 0.25s;
+                }
+                .pop-card:hover { transform: translateY(-6px) scale(1.025); box-shadow: 0 18px 40px rgba(0,0,0,0.22); }
+                .pop-card:active { transform: scale(0.98); }
+
+                .pop-overlay {
+                    position: absolute; inset: 0;
+                    background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.1) 55%, transparent 100%);
+                    transition: opacity 0.25s;
+                }
+                .pop-card:hover .pop-overlay { opacity: 1.15; }
+
+                .pop-hint {
+                    position: absolute; inset: 0; display: flex;
+                    align-items: center; justify-content: center;
+                    opacity: 0; transition: opacity 0.2s;
+                    background: rgba(0,53,128,0.22); backdrop-filter: blur(1px);
+                }
+                .pop-card:hover .pop-hint { opacity: 1; }
+                .pop-hint span {
+                    background: #fff; color: #003580;
+                    font-size: 0.78rem; font-weight: 700;
+                    padding: 0.45rem 1.1rem; border-radius: 99px;
+                    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+                }
+
+                .pop-body {
+                    position: absolute; bottom: 0; left: 0; right: 0;
+                    padding: 0.85rem 1rem 0.9rem;
+                }
+                .pop-city {
+                    font-size: 1.1rem; font-weight: 800; color: #fff;
+                    text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+                    margin-bottom: 0.15rem;
+                }
+                .pop-label {
+                    font-size: 0.7rem; color: rgba(255,255,255,0.82);
+                    font-weight: 400;
+                }
             `}</style>
 
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "2rem" }}>
+            <div className="pop-header">
                 <div>
-                    <h2 style={{ fontSize: "1.75rem", fontWeight: 800, color: "#111827", marginBottom: "0.25rem" }}>
-                        {isPersonalized ? "✨ Gợi ý dành riêng cho bạn" : "🔥 Điểm đến nổi bật"}
-                    </h2>
-                    <p style={{ color: "#6b7280", fontSize: "0.95rem" }}>
-                        {isPersonalized
-                            ? "Dựa trên lịch sử và sở thích của bạn"
-                            : "Những địa điểm được yêu thích nhất"}
-                    </p>
+                    <h2 className="pop-title">🌏 Điểm đến phổ biến</h2>
+                    <p className="pop-subtitle">Những thành phố được yêu thích nhất Việt Nam</p>
                 </div>
-                <Link href="/hotels" style={{ color: "#2563eb", fontWeight: 600, fontSize: "0.95rem", textDecoration: "none" }}>
-                    Xem tất cả →
-                </Link>
+                <a href="/hotels" className="pop-see-all">Xem tất cả →</a>
             </div>
 
-            <div className="rec-grid">
-                {destinations.map((dest, idx) => (
-                    <Link
-                        key={dest.destination_id}
-                        href={`/hotels?destination_id=${dest.destination_id}&search=${encodeURIComponent(dest.city)}`}
-                        style={{ textDecoration: "none" }}
+            <div className="pop-grid">
+                {POPULAR_CITIES.map((dest) => (
+                    <div
+                        key={dest.city}
+                        className="pop-card"
+                        onClick={() => handleClick(dest.city)}
+                        onMouseEnter={() => setHovered(dest.city)}
+                        onMouseLeave={() => setHovered(null)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={e => e.key === "Enter" && handleClick(dest.city)}
+                        aria-label={`Tìm khách sạn tại ${dest.city}`}
                     >
-                        <div className="rec-card">
-                            {/* Background: real image or gradient fallback */}
-                            {dest.image_url ? (
-                                <Image
-                                    src={dest.image_url}
-                                    alt={dest.name}
-                                    fill
-                                    style={{ objectFit: "cover" }}
-                                    sizes="(max-width: 768px) 50vw, 25vw"
-                                />
-                            ) : (
-                                <div style={{
-                                    position: "absolute", inset: 0,
-                                    background: `linear-gradient(135deg, var(--tw-gradient-stops))`,
-                                }} className={`bg-linear-to-br ${GRAD_COLORS[idx % GRAD_COLORS.length]}`} />
-                            )}
-
-                            <div className="rec-card-overlay" />
-
-                            {/* Badge: boosted từ search hoặc NCF score */}
-                            {isPersonalized && (
-                                dest.boosted
-                                    ? <div className="rec-score-badge">🔍 Tìm kiếm gần đây</div>
-                                    : dest.score !== undefined && (
-                                        <div className="rec-score-badge">
-                                            ⚡ {Math.round(dest.score * 100)}% phù hợp
-                                        </div>
-                                    )
-                            )}
-
-                            <div className="rec-card-body">
-                                <div className="rec-card-city">{dest.city || dest.name}</div>
-                                <div className="rec-card-meta">
-                                    {dest.best_rating && dest.best_rating > 0 && (
-                                        <span>⭐ {Number(dest.best_rating).toFixed(1)}</span>
-                                    )}
-                                    {dest.min_price && (
-                                        <span>Từ {Number(dest.min_price).toLocaleString("vi-VN")}₫</span>
-                                    )}
-                                </div>
-                            </div>
+                        <Image
+                            src={dest.image}
+                            alt={dest.city}
+                            fill
+                            style={{
+                                objectFit: "cover",
+                                transform: hovered === dest.city ? "scale(1.08)" : "scale(1)",
+                                transition: "transform 0.45s ease",
+                            }}
+                            sizes="(max-width: 640px) 50vw, 25vw"
+                        />
+                        <div className="pop-overlay" />
+                        <div className="pop-hint">
+                            <span>🔍 Tìm khách sạn</span>
                         </div>
-                    </Link>
+                        <div className="pop-body">
+                            <div className="pop-city">{dest.city}</div>
+                            <div className="pop-label">{dest.label}</div>
+                        </div>
+                    </div>
                 ))}
             </div>
         </section>

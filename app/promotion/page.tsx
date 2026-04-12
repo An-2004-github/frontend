@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { Promotion } from "@/types/promotion";
 import { promotionService } from "@/services/promotionService";
 import PromotionList from "@/components/promotion/promotionList";
 
 const CATEGORIES = [
-    { key: "all", label: "Tất cả", icon: "🎁" },
     { key: "hotel", label: "Khách sạn", icon: "🏨" },
     { key: "flight", label: "Máy bay", icon: "✈️" },
     { key: "bus", label: "Xe khách", icon: "🚌" },
@@ -17,7 +17,8 @@ export default function PromotionsPage() {
     const [promotions, setPromotions] = useState<Promotion[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [activeCategory, setActiveCategory] = useState("all");
+    const [activeCategory, setActiveCategory] = useState("hotel");
+    const [copiedWelcome, setCopiedWelcome] = useState(false);
 
     const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const tabsRef = useRef<HTMLDivElement>(null);
@@ -69,13 +70,12 @@ export default function PromotionsPage() {
     };
 
     // Group promotions by category
-    const grouped = CATEGORIES.slice(1).reduce((acc, cat) => {
+    const grouped = CATEGORIES.reduce((acc, cat) => {
         acc[cat.key] = promotions.filter(
             (p) => p.applies_to === cat.key || p.applies_to === "all"
         );
         return acc;
     }, {} as Record<string, Promotion[]>);
-    grouped["all"] = promotions;
 
     return (
         <>
@@ -184,6 +184,22 @@ export default function PromotionsPage() {
                     font-size: 0.78rem; color: #6b778c; flex-wrap: wrap;
                 }
                 .pcard-meta-dot { color: #c1c7d0; }
+
+                .pcard-limits {
+                    display: flex; flex-direction: column; gap: 0.3rem;
+                    background: #f8faff; border: 1px solid #e8f0fe;
+                    border-radius: 8px; padding: 0.5rem 0.75rem;
+                }
+                .pcard-limit-item {
+                    display: flex; justify-content: space-between; align-items: center;
+                }
+                .pcard-limit-label {
+                    font-size: 0.75rem; color: #6b778c;
+                }
+                .pcard-limit-value {
+                    font-size: 0.75rem; font-weight: 600; color: #172b4d;
+                }
+                .pcard-limit-value:has(+ *) { color: #00875a; }
 
                 .pcard-usage { display: flex; flex-direction: column; gap: 0.3rem; }
                 .pcard-usage-bar {
@@ -326,10 +342,85 @@ export default function PromotionsPage() {
                     text-align: center; margin: 2rem 1.5rem;
                 }
 
+                /* ===== BANNERS ===== */
+                .pp-banners {
+                    max-width: 1100px; margin: 2rem auto 0;
+                    padding: 0 1.5rem;
+                    display: flex; flex-direction: column; gap: 0.85rem;
+                }
+                .pp-banner-img {
+                    width: 100% !important;
+                    height: auto !important;
+                    border-radius: 14px; display: block;
+                    box-shadow: 0 4px 18px rgba(0,82,204,0.13);
+                    transition: transform 0.22s, box-shadow 0.22s;
+                }
+                .pp-banner-img:hover {
+                    transform: translateY(-3px);
+                    box-shadow: 0 10px 32px rgba(0,82,204,0.18);
+                }
+
+                /* ===== WELCOME30 HIGHLIGHT ===== */
+                .pp-welcome-wrap {
+                    max-width: 1100px; margin: 1.5rem auto 0;
+                    padding: 0 1.5rem;
+                }
+                .pp-welcome {
+                    background: linear-gradient(135deg, #ff6b35 0%, #f7931e 50%, #ffcd3c 100%);
+                    border-radius: 16px;
+                    padding: 1.5rem 2rem;
+                    display: flex; align-items: center; gap: 1.5rem;
+                    box-shadow: 0 6px 24px rgba(247,147,30,0.3);
+                    position: relative; overflow: hidden;
+                }
+                .pp-welcome::before {
+                    content: '';
+                    position: absolute; inset: 0;
+                    background-image: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
+                    background-size: 20px 20px;
+                }
+                .pp-welcome-badge {
+                    background: rgba(255,255,255,0.25);
+                    border: 2px solid rgba(255,255,255,0.5);
+                    border-radius: 12px;
+                    padding: 0.5rem 1rem;
+                    font-size: 2rem; font-weight: 800;
+                    color: #fff; letter-spacing: 2px;
+                    font-family: 'Courier New', monospace;
+                    flex-shrink: 0; position: relative;
+                    text-shadow: 0 2px 6px rgba(0,0,0,0.2);
+                }
+                .pp-welcome-info { flex: 1; position: relative; }
+                .pp-welcome-title {
+                    font-family: 'Nunito', sans-serif;
+                    font-size: 1.1rem; font-weight: 800;
+                    color: #fff; margin: 0 0 0.2rem;
+                    text-shadow: 0 1px 4px rgba(0,0,0,0.15);
+                }
+                .pp-welcome-desc {
+                    font-size: 0.85rem; color: rgba(255,255,255,0.9);
+                    margin: 0;
+                }
+                .pp-welcome-copy {
+                    position: relative;
+                    background: #fff;
+                    color: #f7931e;
+                    font-weight: 700; font-size: 0.88rem;
+                    padding: 0.6rem 1.4rem;
+                    border-radius: 99px; border: none;
+                    cursor: pointer; white-space: nowrap; flex-shrink: 0;
+                    box-shadow: 0 3px 12px rgba(0,0,0,0.15);
+                    transition: transform 0.15s, box-shadow 0.15s;
+                }
+                .pp-welcome-copy:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.2); }
+                .pp-welcome-copy.copied { background: #00875a; color: #fff; }
+
                 @media (max-width: 640px) {
                     .pp-hero h1 { font-size: 1.6rem; }
                     .pp-hero-stats { gap: 1rem; }
                     .pp-grid { grid-template-columns: 1fr; }
+                    .pp-banners { grid-template-columns: 1fr; }
+                    .pp-welcome { flex-direction: column; text-align: center; }
                 }
             `}</style>
 
@@ -375,6 +466,32 @@ export default function PromotionsPage() {
                                 {cat.icon} {cat.label}
                             </button>
                         ))}
+                    </div>
+                </div>
+
+                {/* Banners */}
+                <div className="pp-banners">
+                    <Image src="/images/banner-nghi-le-4-30.jpg" alt="Nghỉ lễ 30/4 - 1/5" className="pp-banner-img" width={1100} height={580} style={{ width: "100%", height: "auto" }} />
+                </div>
+
+                {/* WELCOME30 highlight */}
+                <div className="pp-welcome-wrap">
+                    <div className="pp-welcome">
+                        <div className="pp-welcome-badge">WELCOME30</div>
+                        <div className="pp-welcome-info">
+                            <p className="pp-welcome-title">🎉 Ưu đãi đặc biệt dành cho thành viên mới!</p>
+                            <p className="pp-welcome-desc">Giảm ngay 30% đơn hàng đầu tiên — áp dụng tất cả dịch vụ</p>
+                        </div>
+                        <button
+                            className={`pp-welcome-copy${copiedWelcome ? " copied" : ""}`}
+                            onClick={() => {
+                                navigator.clipboard.writeText("WELCOME30");
+                                setCopiedWelcome(true);
+                                setTimeout(() => setCopiedWelcome(false), 2000);
+                            }}
+                        >
+                            {copiedWelcome ? "✓ Đã sao chép!" : "Sao chép mã"}
+                        </button>
                     </div>
                 </div>
 

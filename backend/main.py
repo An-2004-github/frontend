@@ -21,7 +21,10 @@ from routers.banners import router as banners_router
 from routers.chat import router as chat_router
 from routers.interactions import router as interactions_router
 from routers.travel_planner import router as travel_planner_router
+from routers.trains import router as trains_router
 from contextlib import asynccontextmanager
+import asyncio
+from booking_expire import booking_expire_loop
 
 try:
     from routers.recommendations import router as recommendations_router
@@ -41,16 +44,30 @@ async def lifespan(_app):
         ok = recommender.load()
         if not ok:
             print("[NCF] Model not found — run 'python -m ml.train' to train first.")
+
+    # Khởi động scheduler tự động hủy booking pending quá 15 phút
+    expire_task = asyncio.create_task(booking_expire_loop())
+
     yield
+
+    expire_task.cancel()
+    try:
+        await expire_task
+    except asyncio.CancelledError:
+        pass
 
 
 # Câu lệnh chạy backend: uvicorn main:app --reload
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan, redirect_slashes=False)
 
 # Danh sách các domain được phép gọi API
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://vivuvuive.io.vn",
+    "https://vivuvuive.io.vn",
+    "http://www.vivuvuive.io.vn",
+    "https://www.vivuvuive.io.vn",
 ]
 
 app.add_middleware(
@@ -107,3 +124,4 @@ if _ML_AVAILABLE and recommendations_router is not None:
     app.include_router(recommendations_router)
 app.include_router(interactions_router)
 app.include_router(travel_planner_router)
+app.include_router(trains_router)

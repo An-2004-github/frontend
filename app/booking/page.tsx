@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { useBookingStore } from "@/store/bookingStore";
 import { usePaymentStore } from "@/store/paymentStore";
-import BookingForm, { ContactForm } from "@/components/booking/BookingForm";
+import BookingForm, { ContactForm, PassengerInfo, emptyPassenger } from "@/components/booking/BookingForm";
 import BookingCard from "@/components/booking/BookingCard";
 import api from "@/lib/axios";
 
@@ -17,25 +17,33 @@ export default function BookingPage() {
     const [submitting, setSubmitting] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
-    const [form, setForm] = useState<ContactForm>({
+    const passengerCount = (booking?.type === "flight" || booking?.type === "bus" || booking?.type === "train")
+        ? (booking.passengers ?? 1)
+        : 1;
+
+    const buildInitialPassengerList = (): PassengerInfo[] => {
+        if (booking?.type === "flight") {
+            const adults = booking.adultsCount ?? 1;
+            const children = booking.childrenCount ?? 0;
+            const infantsCount = booking.infantsCount ?? 0;
+            return [
+                ...Array.from({ length: adults }, () => emptyPassenger("adult")),
+                ...Array.from({ length: children }, () => emptyPassenger("child")),
+                ...Array.from({ length: infantsCount }, () => emptyPassenger("infant")),
+            ];
+        }
+        return Array.from({ length: passengerCount }, () => emptyPassenger("adult"));
+    };
+
+    const [form, setForm] = useState<ContactForm>(() => ({
         contactName: "",
         contactPhone: "",
         contactEmail: "",
         bookingForSelf: true,
         guestName: "",
         specialRequests: [],
-        passengerGender: "",
-        passengerLastName: "",
-        passengerFirstName: "",
-        passengerBirthDay: "",
-        passengerBirthMonth: "",
-        passengerBirthYear: "",
-        passengerNationality: "",
-        passportNumber: "",
-        passportExpDay: "",
-        passportExpMonth: "",
-        passportExpYear: "",
-    });
+        passengerList: buildInitialPassengerList(),
+    }));
 
     // Pre-fill from user
     useEffect(() => {
@@ -60,6 +68,15 @@ export default function BookingPage() {
         setErrors(e => ({ ...e, [field]: "" }));
     };
 
+    const handlePassengerChange = (index: number, field: keyof PassengerInfo, value: string) => {
+        setForm(f => {
+            const newList = [...f.passengerList];
+            newList[index] = { ...newList[index], [field]: value };
+            return { ...f, passengerList: newList };
+        });
+        setErrors(e => ({ ...e, [`passenger_${index}_${field}`]: "" }));
+    };
+
     const validate = (): boolean => {
         const e: Record<string, string> = {};
         if (!form.contactName.trim())
@@ -77,15 +94,24 @@ export default function BookingPage() {
         else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.contactEmail))
             e.contactEmail = "Email không hợp lệ";
 
-        if (!form.bookingForSelf && !form.guestName.trim())
+        if (booking?.type === "hotel" && !form.bookingForSelf && !form.guestName.trim())
             e.guestName = "Vui lòng nhập tên người được đặt";
 
         if (booking?.type === "flight") {
-            if (!form.passengerGender) e.passengerGender = "Vui lòng chọn giới tính";
-            if (!form.passengerLastName.trim()) e.passengerLastName = "Vui lòng nhập họ";
-            if (!form.passengerFirstName.trim()) e.passengerFirstName = "Vui lòng nhập tên";
-            if (!form.passengerNationality) e.passengerNationality = "Vui lòng chọn quốc tịch";
-            if (!form.passportNumber.trim()) e.passportNumber = "Vui lòng nhập số hộ chiếu";
+            form.passengerList.forEach((p, i) => {
+                if (!p.gender) e[`passenger_${i}_gender`] = "Vui lòng chọn giới tính";
+                if (!p.lastName.trim()) e[`passenger_${i}_lastName`] = "Vui lòng nhập họ";
+                if (!p.firstName.trim()) e[`passenger_${i}_firstName`] = "Vui lòng nhập tên";
+                if (!p.nationality) e[`passenger_${i}_nationality`] = "Vui lòng chọn quốc tịch";
+                if (!p.passportNumber.trim()) e[`passenger_${i}_passportNumber`] = "Vui lòng nhập số hộ chiếu";
+            });
+        }
+
+        if (booking?.type === "bus" || booking?.type === "train") {
+            form.passengerList.forEach((p, i) => {
+                if (!p.gender) e[`passenger_${i}_gender`] = "Vui lòng chọn giới tính";
+                if (!p.firstName.trim()) e[`passenger_${i}_firstName`] = "Vui lòng nhập họ và tên";
+            });
         }
 
         setErrors(e);
@@ -148,6 +174,14 @@ export default function BookingPage() {
                     entity_id: booking.busId,
                     passengers: booking.passengers,
                 };
+            } else if (booking.type === "train") {
+                payload = {
+                    ...payload,
+                    entity_type: "train",
+                    entity_id: booking.trainId,
+                    passengers: booking.passengers,
+                    seat_class: booking.seatClass,
+                };
             }
 
             const res = await api.post("/api/bookings", payload);
@@ -157,6 +191,7 @@ export default function BookingPage() {
             if (booking.type === "hotel") description = `${booking.hotelName} - ${booking.roomName}`;
             else if (booking.type === "flight") description = `${booking.airline}: ${booking.fromCity} → ${booking.toCity}`;
             else if (booking.type === "bus") description = `${booking.company}: ${booking.fromCity} → ${booking.toCity}`;
+            else if (booking.type === "train") description = `Tàu ${booking.trainCode}: ${booking.fromCity} → ${booking.toCity}`;
 
             setPayment({
                 bookingId,
@@ -200,7 +235,9 @@ export default function BookingPage() {
                                 errors={errors}
                                 bookingType={booking.type}
                                 flightRoute={booking.type === "flight" ? { fromCity: booking.fromCity, toCity: booking.toCity } : undefined}
+                                passengerCount={passengerCount}
                                 onChange={handleChange}
+                                onPassengerChange={handlePassengerChange}
                             />
                         </div>
                         <div>

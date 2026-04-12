@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import FlightList from "@/components/flight/FlightList";
 import { Flight } from "@/types/flight";
@@ -49,7 +49,17 @@ export default function FlightsPage() {
     const [toCity, setToCity] = useState(searchParams.get("to") || "");
     const [departDate, setDepartDate] = useState(searchParams.get("date") || TODAY);
     const [returnDate, setReturnDate] = useState("");
-    const [passengers, setPassengers] = useState(1);
+
+    // Passenger picker
+    const [adults, setAdults] = useState(1);
+    const [childrenCount, setChildrenCount] = useState(0);
+    const [infants, setInfants] = useState(0);
+    const [passengerOpen, setPassengerOpen] = useState(false);
+    const passengerRef = useRef<HTMLDivElement>(null);
+    const passengers = adults + childrenCount + infants;
+
+    // Destination cities filtered by fromCity
+    const [destinationCities, setDestinationCities] = useState<string[]>([]);
 
     // Filter
     const [airlines, setAirlines] = useState<string[]>([]);
@@ -64,10 +74,41 @@ export default function FlightsPage() {
     const [searched, setSearched] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Close passenger picker on outside click
+    useEffect(() => {
+        const handleClick = (e: MouseEvent) => {
+            if (passengerRef.current && !passengerRef.current.contains(e.target as Node)) {
+                setPassengerOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClick);
+        return () => document.removeEventListener("mousedown", handleClick);
+    }, []);
+
     // Load airlines for filter
     useEffect(() => {
         flightService.getAirlines().then(setAirlines).catch(() => { });
     }, []);
+
+    // Load destination cities when fromCity or departDate changes
+    const isFirstFromCity = useRef(true);
+    const isSwapping = useRef(false);
+    useEffect(() => {
+        if (!fromCity.trim()) { setDestinationCities([]); return; }
+        flightService.getDestinationCities(fromCity, departDate)
+            .then(cities => {
+                setDestinationCities(cities);
+                // Nếu điểm đến hiện tại không còn trong danh sách mới → reset (trừ khi đang swap)
+                if (!isFirstFromCity.current && !isSwapping.current && toCity && !cities.includes(toCity)) {
+                    setToCity("");
+                }
+                isSwapping.current = false;
+            })
+            .catch(() => { setDestinationCities([]); isSwapping.current = false; });
+        if (isFirstFromCity.current) { isFirstFromCity.current = false; return; }
+        if (!isSwapping.current) setToCity("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [fromCity, departDate]);
 
     const handleSearch = useCallback(async () => {
         if (!fromCity || !toCity) return;
@@ -106,6 +147,7 @@ export default function FlightsPage() {
     }, [selectedAirline, priceIdx, timeIdx, sortVal]);
 
     const handleSwap = () => {
+        isSwapping.current = true;
         setFromCity(toCity);
         setToCity(fromCity);
     };
@@ -244,7 +286,13 @@ export default function FlightsPage() {
 
                 /* ── MAIN ── */
                 .fp-main { flex: 1; min-width: 0; }
-                .fp-result-meta { font-size: 0.88rem; color: #6b8cbf; margin-bottom: 1rem; }
+                .fp-result-meta {
+                    font-size: 0.88rem; color: #3a5f9a; margin-bottom: 1rem;
+                    background: #fff; border: 1px solid #e8f0fe; border-radius: 10px;
+                    padding: 0.65rem 1rem;
+                    display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+                    box-shadow: 0 2px 8px rgba(0,82,204,0.07);
+                }
                 .fp-result-meta strong { color: #1a3c6b; }
 
                 /* ── FLIGHT CARD ── */
@@ -320,6 +368,56 @@ export default function FlightsPage() {
                     border: 1px solid #e8f0fe; color: #6b8cbf;
                 }
 
+                /* ── PASSENGER PICKER ── */
+                .fp-passenger-wrap { position: relative; }
+                .fp-passenger-btn {
+                    width: 100%; display: flex; align-items: center; justify-content: space-between;
+                    border: 1.5px solid #dde3f0; border-radius: 10px;
+                    padding: 0.7rem 0.9rem; font-size: 0.9rem;
+                    font-family: 'DM Sans', sans-serif; color: #1a3c6b;
+                    background: #fff; cursor: pointer; white-space: nowrap;
+                    transition: border-color 0.2s, box-shadow 0.2s;
+                }
+                .fp-passenger-btn:focus, .fp-passenger-btn.open {
+                    border-color: #0052cc; box-shadow: 0 0 0 3px rgba(0,82,204,0.1); outline: none;
+                }
+                .fp-passenger-btn-arrow { font-size: 0.7rem; color: #6b778c; margin-left: 0.5rem; }
+
+                .fp-passenger-dropdown {
+                    position: absolute; top: calc(100% + 6px); left: 0;
+                    min-width: 280px; background: #fff;
+                    border: 1.5px solid #dde3f0; border-radius: 12px;
+                    box-shadow: 0 8px 32px rgba(0,0,0,0.14); z-index: 9999;
+                    padding: 0.75rem 1rem 0.5rem;
+                }
+                .fp-passenger-row {
+                    display: flex; align-items: center; justify-content: space-between;
+                    padding: 0.6rem 0; border-bottom: 1px solid #f0f4ff;
+                }
+                .fp-passenger-row:last-of-type { border-bottom: none; }
+                .fp-passenger-label { font-size: 0.88rem; color: #1a3c6b; font-weight: 500; }
+                .fp-passenger-sub { font-size: 0.72rem; color: #6b8cbf; }
+                .fp-passenger-counter { display: flex; align-items: center; gap: 0.6rem; }
+                .fp-passenger-count-btn {
+                    width: 28px; height: 28px; border-radius: 50%;
+                    border: 1.5px solid #c8d8ff; background: #f0f4ff;
+                    font-size: 1rem; font-weight: 700; color: #0052cc;
+                    cursor: pointer; display: flex; align-items: center; justify-content: center;
+                    transition: background 0.15s, border-color 0.15s;
+                    line-height: 1;
+                }
+                .fp-passenger-count-btn:hover:not(:disabled) { background: #dde9ff; border-color: #0052cc; }
+                .fp-passenger-count-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+                .fp-passenger-count-val { font-family: 'Nunito', sans-serif; font-size: 1rem; font-weight: 700; color: #1a3c6b; min-width: 18px; text-align: center; }
+                .fp-passenger-note { font-size: 0.72rem; color: #6b8cbf; padding: 0.4rem 0 0.6rem; }
+                .fp-passenger-done {
+                    width: 100%; margin-top: 0.5rem;
+                    padding: 0.5rem; border-radius: 8px;
+                    background: linear-gradient(135deg, #0052cc, #0065ff);
+                    color: #fff; border: none; font-family: 'DM Sans', sans-serif;
+                    font-size: 0.88rem; font-weight: 600; cursor: pointer;
+                }
+
                 @media (max-width: 768px) {
                     .fp-search-row { flex-direction: column; }
                     .fp-layout { flex-direction: column; }
@@ -373,8 +471,9 @@ export default function FlightsPage() {
                                 <DestinationInput
                                     value={toCity}
                                     onChange={setToCity}
-                                    placeholder="Đà Nẵng, Phú Quốc..."
+                                    placeholder={fromCity ? "Chọn điểm đến..." : "Đà Nẵng, Phú Quốc..."}
                                     cityMode
+                                    cities={destinationCities.length > 0 ? destinationCities : undefined}
                                 />
                             </div>
 
@@ -402,14 +501,65 @@ export default function FlightsPage() {
                                 </div>
                             )}
 
-                            <div className="fp-search-field" style={{ minWidth: 90 }}>
+                            <div className="fp-search-field" style={{ minWidth: 200 }} ref={passengerRef}>
                                 <label className="fp-search-label">👤 Hành khách</label>
-                                <input
-                                    className="fp-search-input"
-                                    type="number" min={1} max={9}
-                                    value={passengers}
-                                    onChange={(e) => setPassengers(Number(e.target.value))}
-                                />
+                                <div className="fp-passenger-wrap">
+                                    <button
+                                        className={`fp-passenger-btn${passengerOpen ? " open" : ""}`}
+                                        onClick={() => setPassengerOpen(o => !o)}
+                                        type="button"
+                                    >
+                                        <span>
+                                            {passengers} hành khách
+                                            {adults > 0 && ` · ${adults} NL`}
+                                            {childrenCount > 0 && ` · ${childrenCount} TE`}
+                                            {infants > 0 && ` · ${infants} EB`}
+                                        </span>
+                                        <span className="fp-passenger-btn-arrow">{passengerOpen ? "▲" : "▼"}</span>
+                                    </button>
+                                    {passengerOpen && (
+                                        <div className="fp-passenger-dropdown">
+                                            {/* Adults */}
+                                            <div className="fp-passenger-row">
+                                                <div>
+                                                    <div className="fp-passenger-label">Người lớn</div>
+                                                    <div className="fp-passenger-sub">Từ 12 tuổi</div>
+                                                </div>
+                                                <div className="fp-passenger-counter">
+                                                    <button className="fp-passenger-count-btn" disabled={adults <= 1} onClick={() => setAdults(a => Math.max(1, a - 1))}>−</button>
+                                                    <span className="fp-passenger-count-val">{adults}</span>
+                                                    <button className="fp-passenger-count-btn" disabled={passengers >= 9} onClick={() => setAdults(a => a + 1)}>+</button>
+                                                </div>
+                                            </div>
+                                            {/* Children */}
+                                            <div className="fp-passenger-row">
+                                                <div>
+                                                    <div className="fp-passenger-label">Trẻ em</div>
+                                                    <div className="fp-passenger-sub">2 – 11 tuổi</div>
+                                                </div>
+                                                <div className="fp-passenger-counter">
+                                                    <button className="fp-passenger-count-btn" disabled={childrenCount <= 0} onClick={() => setChildrenCount(c => Math.max(0, c - 1))}>−</button>
+                                                    <span className="fp-passenger-count-val">{childrenCount}</span>
+                                                    <button className="fp-passenger-count-btn" disabled={passengers >= 9} onClick={() => setChildrenCount(c => c + 1)}>+</button>
+                                                </div>
+                                            </div>
+                                            {/* Infants */}
+                                            <div className="fp-passenger-row">
+                                                <div>
+                                                    <div className="fp-passenger-label">Em bé</div>
+                                                    <div className="fp-passenger-sub">Dưới 2 tuổi</div>
+                                                </div>
+                                                <div className="fp-passenger-counter">
+                                                    <button className="fp-passenger-count-btn" disabled={infants <= 0} onClick={() => setInfants(i => Math.max(0, i - 1))}>−</button>
+                                                    <span className="fp-passenger-count-val">{infants}</span>
+                                                    <button className="fp-passenger-count-btn" disabled={infants >= adults || passengers >= 9} onClick={() => setInfants(i => i + 1)}>+</button>
+                                                </div>
+                                            </div>
+                                            <div className="fp-passenger-note">* Mỗi em bé cần 1 người lớn đi kèm. Tối đa 9 hành khách.</div>
+                                            <button className="fp-passenger-done" onClick={() => setPassengerOpen(false)}>Xong</button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             <button
@@ -541,7 +691,13 @@ export default function FlightsPage() {
                                         ⚠ {error}
                                     </div>
                                 ) : (
-                                    <FlightList flights={flights} passengers={passengers} />
+                                    <FlightList
+                                        flights={flights}
+                                        passengers={passengers}
+                                        adults={adults}
+                                        childrenCount={childrenCount}
+                                        infants={infants}
+                                    />
                                 )}
                             </div>
                         </div>

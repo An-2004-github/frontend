@@ -6,7 +6,7 @@ router = APIRouter(prefix="/api/destinations", tags=["destinations"])
 
 
 # Lấy danh sách điểm đến (kèm số khách sạn, có filter country)
-@router.get("/")
+@router.get("")
 def get_destinations(limit: int | None = None, country: str | None = None):
     conditions = []
     params = {}

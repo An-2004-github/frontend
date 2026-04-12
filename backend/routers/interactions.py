@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from pydantic import BaseModel
 from database import engine
-from auth import get_current_user
+from auth import get_optional_user
 
 router = APIRouter(prefix="/api/interactions", tags=["interactions"])
 
@@ -25,9 +25,11 @@ class SearchLog(BaseModel):
 @router.post("/log")
 def log_interaction(
     body: InteractionLog,
-    user_id: int = Depends(get_current_user),
+    user_id: int = Depends(get_optional_user),
 ):
     """Ghi lại hành vi user với một entity."""
+    if not user_id:
+        return {"ok": False}
     with engine.begin() as conn:
         conn.execute(text("""
             INSERT INTO user_interactions (user_id, entity_type, entity_id, action)
@@ -44,9 +46,11 @@ def log_interaction(
 @router.post("/search")
 def log_search(
     body: SearchLog,
-    user_id: int = Depends(get_current_user),
+    user_id: int = Depends(get_optional_user),
 ):
     """Ghi lại từ khóa tìm kiếm của user."""
+    if not user_id:
+        return {"ok": False}
     keyword = (body.keyword or "").strip()
     if not keyword or len(keyword) < 2:
         return {"ok": False}

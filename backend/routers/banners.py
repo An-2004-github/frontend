@@ -22,7 +22,7 @@ with engine.begin() as _conn:
     """))
 
 
-@router.get("/")
+@router.get("")
 def get_active_banners():
     """Trả về banners đang active và còn trong thời gian hiển thị, dùng cho homepage."""
     with engine.connect() as conn:

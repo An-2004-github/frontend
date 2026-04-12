@@ -7,9 +7,14 @@ import { logInteraction } from "@/lib/logInteraction";
 
 interface Props {
     hotel: Hotel;
+    adults?: number;
+    childrenCount?: number;
+    rooms?: number;
+    checkIn?: string;
+    checkOut?: string;
 }
 
-export default function HotelCard({ hotel }: Props) {
+export default function HotelCard({ hotel, adults = 1, childrenCount = 0, rooms = 1, checkIn = "", checkOut = "" }: Props) {
     const stars = hotel.star_rating ?? hotel.stars ?? 0;
     const price = hotel.min_price ?? hotel.price_per_night ?? null;
     const imageUrl = hotel.image_url ?? null;
@@ -104,7 +109,7 @@ export default function HotelCard({ hotel }: Props) {
                         <span className="hcard-price-contact">Liên hệ báo giá</span>
                     )}
                     <Link
-                        href={`/hotels/${hotel.hotel_id}`}
+                        href={`/hotels/${hotel.hotel_id}?adults=${adults}&children=${childrenCount}&rooms=${rooms}${checkIn ? `&check_in=${checkIn}` : ""}${checkOut ? `&check_out=${checkOut}` : ""}`}
                         className="hcard-btn"
                         onClick={() => logInteraction("hotel", hotel.hotel_id, "click")}
                     >

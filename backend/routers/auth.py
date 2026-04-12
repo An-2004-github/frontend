@@ -5,12 +5,12 @@ from auth import hash_password, verify_password, create_access_token, get_curren
 from pydantic import BaseModel, EmailStr
 from google.oauth2 import id_token
 from google.auth.transport import requests
-from email_service import send_welcome_email, send_otp_email
+from email_service import send_welcome_email, send_otp_email, send_reset_password_email
 from rank_utils import get_rank, get_cashback_rate, RANK_LABELS, RANK_THRESHOLDS
 import random, string
 from datetime import datetime, timedelta
 
-GOOGLE_CLIENT_ID = "432427620604-dk7u0doioej55b63neos8rhm2uu4oe0i.apps.googleusercontent.com"
+GOOGLE_CLIENT_ID = "600520983957-j74rtlmpkj0ia8ifv19uihnn0h8la03o.apps.googleusercontent.com"
 
 # OTP store tạm — production nên dùng Redis
 otp_store: dict = {}
@@ -44,6 +44,14 @@ class VerifyOTPRequest(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
+    new_password: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    otp: str
     new_password: str
 
 
@@ -141,7 +149,11 @@ def login(data: LoginRequest):
             raise HTTPException(400, "Sai email hoặc mật khẩu")
         user = dict(user._mapping)
 
-        if not verify_password(data.password, user["password_hash"]):
+        # Tài khoản đăng ký qua Google không có mật khẩu
+        if user.get("provider") == "google" and not user.get("password_hash"):
+            raise HTTPException(400, "Tài khoản này đăng nhập bằng Google. Vui lòng dùng nút 'Đăng nhập với Google'")
+
+        if not user.get("password_hash") or not verify_password(data.password, user["password_hash"]):
             raise HTTPException(400, "Sai email hoặc mật khẩu")
 
         token = create_access_token({"user_id": user["user_id"], "email": user["email"]})
@@ -338,6 +350,70 @@ def get_my_rank(user_id: int = Depends(get_current_user)):
             "next_threshold": next_threshold,
             "progress_pct": round(min(total_spent / next_threshold * 100, 100), 1) if next_threshold else 100,
         }
+
+
+@router.post("/forgot-password")
+async def forgot_password(data: ForgotPasswordRequest, background_tasks: BackgroundTasks):
+    with engine.connect() as conn:
+        user = conn.execute(
+            text("SELECT user_id, full_name, provider FROM users WHERE email = :email"),
+            {"email": data.email}
+        ).fetchone()
+
+    if not user:
+        raise HTTPException(404, "Email này chưa được đăng ký tài khoản")
+
+    user_d = dict(user._mapping)
+    if user_d["provider"] != "local":
+        raise HTTPException(400, "Tài khoản này đăng nhập bằng Google, không thể đặt lại mật khẩu")
+
+    otp = "".join(random.choices(string.digits, k=6))
+    expires = datetime.now() + timedelta(minutes=10)
+    otp_store[f"reset:{data.email}"] = {"otp": otp, "expires": expires}
+
+    background_tasks.add_task(
+        send_reset_password_email,
+        email=data.email,
+        name=user_d["full_name"] or "Quý khách",
+        otp=otp,
+    )
+    print(f"🔑 Reset OTP [{data.email}] = {otp}")
+    return {"message": "Mã OTP đã được gửi tới email của bạn"}
+
+
+@router.post("/reset-password")
+def reset_password(data: ResetPasswordRequest):
+    store_key = f"reset:{data.email}"
+    record = otp_store.get(store_key)
+
+    if not record:
+        raise HTTPException(400, "Mã OTP không hợp lệ hoặc đã hết hạn")
+
+    if datetime.now() > record["expires"]:
+        del otp_store[store_key]
+        raise HTTPException(400, "Mã OTP đã hết hạn, vui lòng yêu cầu lại")
+
+    if record["otp"] != data.otp:
+        raise HTTPException(400, "Mã OTP không đúng")
+
+    if len(data.new_password) < 6:
+        raise HTTPException(400, "Mật khẩu mới phải có ít nhất 6 ký tự")
+
+    del otp_store[store_key]
+
+    with engine.begin() as conn:
+        user = conn.execute(
+            text("SELECT user_id FROM users WHERE email = :email AND provider = 'local'"),
+            {"email": data.email}
+        ).fetchone()
+        if not user:
+            raise HTTPException(404, "Tài khoản không tồn tại")
+        conn.execute(
+            text("UPDATE users SET password_hash = :hash WHERE user_id = :id"),
+            {"hash": hash_password(data.new_password), "id": dict(user._mapping)["user_id"]}
+        )
+
+    return {"message": "Đặt lại mật khẩu thành công"}
 
 
 @router.post("/google")

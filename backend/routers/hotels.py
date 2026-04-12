@@ -6,7 +6,7 @@ router = APIRouter(prefix="/api/hotels", tags=["hotels"])
 
 
 # Lấy danh sách khách sạn (filter + sort)
-@router.get("/")
+@router.get("")
 def get_hotels(
     search: str | None = None,
     destination_id: int | None = None,
@@ -14,6 +14,7 @@ def get_hotels(
     max_price: float | None = None,
     sort: str | None = None,   # "rating" | "price_asc" | "price_desc"
     limit: int | None = None,
+    min_guests: int | None = None,  # lọc phòng đủ sức chứa
 ):
     conditions = []
     params = {}
@@ -45,6 +46,16 @@ def get_hotels(
         """)
         params["max_price"] = max_price
 
+    if min_guests is not None:
+        conditions.append("""
+            EXISTS (
+                SELECT 1 FROM room_types rt
+                WHERE rt.hotel_id = h.hotel_id
+                AND rt.max_guests >= :min_guests
+            )
+        """)
+        params["min_guests"] = min_guests
+
     query = """
         SELECT
             h.*,
@@ -53,6 +64,9 @@ def get_hotels(
             (SELECT MIN(rt.price_per_night)
              FROM room_types rt
              WHERE rt.hotel_id = h.hotel_id) AS min_price,
+            (SELECT MAX(rt.max_guests)
+             FROM room_types rt
+             WHERE rt.hotel_id = h.hotel_id) AS max_guest_capacity,
             (SELECT image_url FROM images
              WHERE entity_type = 'hotel' AND entity_id = h.hotel_id
              LIMIT 1) AS image_url,

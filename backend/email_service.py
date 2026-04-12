@@ -76,6 +76,8 @@ async def send_booking_confirmation_email(
     check_in: str | None = None,
     check_out: str | None = None,
     booking_date: str | None = None,
+    rooms: int | None = None,
+    guests: int | None = None,
 ):
     type_icons = {"room": "🏨", "flight": "✈️", "bus": "🚌"}
     type_labels = {"room": "Khách sạn", "flight": "Chuyến bay", "bus": "Xe khách"}
@@ -95,6 +97,18 @@ async def send_booking_confirmation_email(
         <tr>
             <td style="padding:0.6rem 0;color:#6b8cbf;font-size:0.88rem;border-bottom:1px solid #f0f4ff;">📅 Trả phòng</td>
             <td style="padding:0.6rem 0;font-weight:600;color:#1a3c6b;text-align:right;border-bottom:1px solid #f0f4ff;">{check_out}</td>
+        </tr>"""
+    if rooms is not None:
+        extra_rows += f"""
+        <tr>
+            <td style="padding:0.6rem 0;color:#6b8cbf;font-size:0.88rem;border-bottom:1px solid #f0f4ff;">🛏 Số phòng</td>
+            <td style="padding:0.6rem 0;font-weight:600;color:#1a3c6b;text-align:right;border-bottom:1px solid #f0f4ff;">{rooms} phòng</td>
+        </tr>"""
+    if guests is not None:
+        extra_rows += f"""
+        <tr>
+            <td style="padding:0.6rem 0;color:#6b8cbf;font-size:0.88rem;border-bottom:1px solid #f0f4ff;">👥 Số khách</td>
+            <td style="padding:0.6rem 0;font-weight:600;color:#1a3c6b;text-align:right;border-bottom:1px solid #f0f4ff;">{guests} khách</td>
         </tr>"""
 
     html = f"""
@@ -183,6 +197,54 @@ async def send_booking_confirmation_email(
         print(f"✅ Booking confirmation email sent to {email} (booking #{booking_id})")
     except Exception as e:
         print(f"❌ Booking confirmation email error: {e}")
+
+
+async def send_reset_password_email(email: str, name: str, otp: str):
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="UTF-8">
+    <style>
+        body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4ff; margin: 0; padding: 0; }}
+        .wrapper {{ max-width: 480px; margin: 40px auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,82,204,0.1); }}
+        .header {{ background: linear-gradient(135deg, #003580, #0065ff); padding: 2rem; text-align: center; }}
+        .header h1 {{ color: #fff; font-size: 1.4rem; margin: 0; }}
+        .body {{ padding: 2rem 2.5rem; text-align: center; }}
+        .otp-box {{ background: #f0f4ff; border: 2px dashed #c8d8ff; border-radius: 12px; padding: 1.5rem; margin: 1.5rem 0; }}
+        .otp-code {{ font-family: 'Courier New', monospace; font-size: 2.5rem; font-weight: 800; color: #0052cc; letter-spacing: 8px; }}
+        .expire {{ font-size: 0.82rem; color: #6b8cbf; margin-top: 0.5rem; }}
+        .warning {{ background: #fff8e1; border-left: 4px solid #f39c12; padding: 0.75rem 1rem; border-radius: 0 8px 8px 0; font-size: 0.83rem; color: #7b5700; text-align: left; margin-top: 1rem; }}
+        .footer {{ background: #f8faff; padding: 1rem 2rem; text-align: center; color: #6b8cbf; font-size: 0.78rem; border-top: 1px solid #e8f0fe; }}
+    </style>
+    </head>
+    <body>
+        <div class="wrapper">
+            <div class="header"><h1>🔑 VIVU Travel — Đặt lại mật khẩu</h1></div>
+            <div class="body">
+                <p style="color:#1a3c6b;font-size:1rem;font-weight:600;">Xin chào {name}!</p>
+                <p style="color:#4a5568;font-size:0.92rem;">Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn. Sử dụng mã OTP bên dưới:</p>
+                <div class="otp-box">
+                    <div class="otp-code">{otp}</div>
+                    <div class="expire">Mã có hiệu lực trong 10 phút</div>
+                </div>
+                <div class="warning">⚠️ Nếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này. Tài khoản của bạn vẫn an toàn.</div>
+            </div>
+            <div class="footer">© 2026 VIVU Travel · Email tự động, vui lòng không trả lời.</div>
+        </div>
+    </body>
+    </html>
+    """
+    message = MessageSchema(
+        subject="🔑 Đặt lại mật khẩu VIVU Travel",
+        recipients=[email],
+        body=html,
+        subtype=MessageType.html,
+    )
+    try:
+        await fm.send_message(message)
+        print(f"✅ Reset password email sent to {email}")
+    except Exception as e:
+        print(f"❌ Reset password email error: {e}")
 
 
 async def send_withdrawal_success_email(email: str, name: str, amount: float, bank_info: str):

@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/axios";
 import { useAuthStore } from "@/store/authStore";
 
-type Section = "dashboard" | "bookings" | "hotels" | "flights" | "buses" | "users" | "withdrawals" | "promotions" | "banners" | "modifications";
+type Section = "dashboard" | "bookings" | "hotels" | "flights" | "buses" | "trains" | "users" | "wallets" | "promotions" | "banners" | "modifications";
 
 interface Stats {
     total_users: number; total_bookings: number; confirmed_bookings: number;
     pending_bookings: number; total_revenue: number;
-    total_hotels: number; total_flights: number; total_buses: number;
+    total_hotels: number; total_flights: number; total_buses: number; total_trains: number;
 }
 
 type ChartPeriod = "7d" | "monthly";
@@ -103,6 +103,276 @@ function Modal({ title, fields, values, onChange, onSave, onClose, saving }: {
     );
 }
 
+// ── WALLET SECTION COMPONENT ──────────────────────────────────────
+function WalletSection() {
+    const [tab, setTab] = useState<"wallets" | "withdrawals">("wallets");
+
+    // Wallets tab state
+    const [wallets, setWallets] = useState<Record<string, unknown>[]>([]);
+    const [walletsLoading, setWalletsLoading] = useState(true);
+    const [walletSearch, setWalletSearch] = useState("");
+    const [selectedUser, setSelectedUser] = useState<Record<string, unknown> | null>(null);
+    const [txns, setTxns] = useState<Record<string, unknown>[]>([]);
+    const [txnLoading, setTxnLoading] = useState(false);
+
+    // Withdrawals tab state
+    const [withdrawals, setWithdrawals] = useState<Record<string, unknown>[]>([]);
+    const [wdLoading, setWdLoading] = useState(false);
+    const [wdSearch, setWdSearch] = useState("");
+    const [pendingCount, setPendingCount] = useState(0);
+
+    const loadWallets = () => {
+        setWalletsLoading(true);
+        api.get("/api/admin/wallets")
+            .then(r => setWallets(r.data))
+            .finally(() => setWalletsLoading(false));
+    };
+
+    const loadWithdrawals = () => {
+        setWdLoading(true);
+        api.get("/api/admin/withdrawals")
+            .then(r => {
+                setWithdrawals(r.data);
+                setPendingCount(r.data.filter((w: Record<string, unknown>) => w.status === "pending").length);
+            })
+            .finally(() => setWdLoading(false));
+    };
+
+    useEffect(() => { loadWallets(); loadWithdrawals(); }, []);
+
+    const openTxns = async (user: Record<string, unknown>) => {
+        setSelectedUser(user);
+        setTxnLoading(true);
+        setTxns([]);
+        try {
+            const r = await api.get(`/api/admin/wallets/${user.user_id}/transactions`);
+            setTxns(r.data);
+        } finally { setTxnLoading(false); }
+    };
+
+    const handleWithdrawalAction = async (id: number, action: "approve" | "reject") => {
+        const label = action === "approve" ? "xác nhận chuyển tiền" : "từ chối";
+        if (!confirm(`Xác nhận ${label} yêu cầu #${id}?`)) return;
+        try {
+            await api.post(`/api/admin/withdrawals/${id}/${action}`);
+            loadWithdrawals();
+            loadWallets(); // cập nhật số dư ví sau khi duyệt
+        } catch (e: unknown) {
+            const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+            alert(detail || "Thao tác thất bại");
+        }
+    };
+
+    const fmtAmt = (n: number) => {
+        const abs = Math.abs(n).toLocaleString("vi-VN") + "₫";
+        return n >= 0 ? `+${abs}` : `-${abs}`;
+    };
+
+    const typeLabel: Record<string, string> = { deposit: "Nạp tiền", withdrawal: "Rút tiền", payment: "Thanh toán", refund: "Hoàn tiền", cashback: "Cashback" };
+    const typeColor: Record<string, string> = { deposit: "#00875a", withdrawal: "#c0392b", payment: "#b8860b", refund: "#0052cc", cashback: "#7b2d8b" };
+    const typeBg: Record<string, string>    = { deposit: "#e6f9f0", withdrawal: "#fff0f0", payment: "#fffbe6", refund: "#e8f0fe", cashback: "#f3e8ff" };
+
+    const wdStatusColor: Record<string, string> = { pending: "#b8860b", completed: "#00875a", rejected: "#c0392b" };
+    const wdStatusLabel: Record<string, string>  = { pending: "Chờ xử lý", completed: "Đã hoàn tất", rejected: "Bị từ chối" };
+    const wdStatusBg: Record<string, string>     = { pending: "#fffbe6", completed: "#e6f9f0", rejected: "#fff0f0" };
+
+    const filteredWallets = wallets.filter(w =>
+        String(w.full_name || "").toLowerCase().includes(walletSearch.toLowerCase()) ||
+        String(w.email || "").toLowerCase().includes(walletSearch.toLowerCase())
+    );
+
+    const filteredWd = withdrawals.filter(w =>
+        String(w.full_name || "").toLowerCase().includes(wdSearch.toLowerCase()) ||
+        String(w.email || "").toLowerCase().includes(wdSearch.toLowerCase()) ||
+        String(w.bank_name || "").toLowerCase().includes(wdSearch.toLowerCase()) ||
+        String(w.account_no || "").toLowerCase().includes(wdSearch.toLowerCase())
+    );
+
+    const tabStyle = (active: boolean) => ({
+        padding: "0.55rem 1.4rem", borderRadius: 8, border: "none", cursor: "pointer",
+        fontWeight: 700, fontSize: "0.88rem",
+        background: active ? "#0052cc" : "#f0f4ff",
+        color: active ? "#fff" : "#6b8cbf",
+        transition: "all 0.15s", position: "relative" as const,
+    });
+
+    return (
+        <div>
+            {/* Tabs */}
+            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem", alignItems: "center" }}>
+                <button style={tabStyle(tab === "wallets")} onClick={() => setTab("wallets")}>👛 Danh sách ví</button>
+                <button style={tabStyle(tab === "withdrawals")} onClick={() => setTab("withdrawals")}>
+                    💸 Yêu cầu rút tiền
+                    {pendingCount > 0 && (
+                        <span style={{ marginLeft: 6, background: "#c0392b", color: "#fff", borderRadius: 99, fontSize: "0.7rem", padding: "0.1rem 0.45rem", fontWeight: 800 }}>
+                            {pendingCount}
+                        </span>
+                    )}
+                </button>
+            </div>
+
+            {/* ── TAB: DANH SÁCH VÍ ── */}
+            {tab === "wallets" && (
+                <div className="adm-table-card">
+                    <div className="adm-table-header">
+                        <div className="adm-table-title">👛 Ví người dùng</div>
+                        <div className="adm-table-actions">
+                            <input className="adm-search" value={walletSearch} onChange={e => setWalletSearch(e.target.value)} placeholder="🔍 Tìm tên, email..." />
+                        </div>
+                    </div>
+                    <div className="adm-table-wrap">
+                        {walletsLoading ? <div className="adm-loading">Đang tải...</div> : filteredWallets.length === 0 ? <div className="adm-empty">Không tìm thấy</div> : (
+                            <table>
+                                <thead><tr><th>#</th><th>Họ tên</th><th>Email</th><th>Số dư ví</th><th>Thao tác</th></tr></thead>
+                                <tbody>
+                                    {filteredWallets.map((w, i) => (
+                                        <tr key={String(w.user_id)}>
+                                            <td style={{ color: "#6b8cbf" }}>{i + 1}</td>
+                                            <td style={{ fontWeight: 600 }}>{String(w.full_name || "—")}</td>
+                                            <td style={{ color: "#6b8cbf", fontSize: "0.82rem" }}>{String(w.email || "")}</td>
+                                            <td style={{ fontWeight: 700, color: Number(w.wallet) > 0 ? "#00875a" : "#6b8cbf" }}>
+                                                {Number(w.wallet || 0).toLocaleString("vi-VN")}₫
+                                            </td>
+                                            <td>
+                                                <button className="adm-action-btn" style={{ background: "#e8f0fe", color: "#0052cc" }} onClick={() => openTxns(w)}>
+                                                    📋 Lịch sử giao dịch
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* ── TAB: RÚT TIỀN ── */}
+            {tab === "withdrawals" && (
+                <div className="adm-table-card">
+                    <div className="adm-table-header">
+                        <div className="adm-table-title">💸 Yêu cầu rút tiền</div>
+                        <div className="adm-table-actions">
+                            <input className="adm-search" value={wdSearch} onChange={e => setWdSearch(e.target.value)} placeholder="🔍 Tìm tên, ngân hàng..." />
+                        </div>
+                    </div>
+                    <div className="adm-table-wrap">
+                        {wdLoading ? <div className="adm-loading">Đang tải...</div> : filteredWd.length === 0 ? <div className="adm-empty">Không có yêu cầu rút tiền nào</div> : (
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>#</th><th>Khách hàng</th><th>Số tiền</th>
+                                        <th>Ngân hàng</th><th>Số TK / Chủ TK</th>
+                                        <th>Ngày yêu cầu</th><th>Trạng thái</th><th>Thao tác</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredWd.map((row, i) => (
+                                        <tr key={String(row.id ?? i)}>
+                                            <td style={{ color: "#6b8cbf" }}>#{String(row.id)}</td>
+                                            <td>
+                                                <div style={{ fontWeight: 600 }}>{String(row.full_name || "—")}</div>
+                                                <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{String(row.email || "")}</div>
+                                            </td>
+                                            <td style={{ fontWeight: 800, color: "#c0392b" }}>
+                                                -{Number(row.amount).toLocaleString("vi-VN")}₫
+                                            </td>
+                                            <td style={{ fontWeight: 600 }}>{String(row.bank_name || "—")}</td>
+                                            <td>
+                                                <div style={{ fontWeight: 600 }}>{String(row.account_no || "—")}</div>
+                                                <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{String(row.account_name || "")}</div>
+                                            </td>
+                                            <td style={{ color: "#6b8cbf", fontSize: "0.8rem", whiteSpace: "nowrap" }}>
+                                                {row.created_at ? new Date(String(row.created_at)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—"}
+                                            </td>
+                                            <td>
+                                                <span className="adm-badge" style={{ background: wdStatusBg[String(row.status)] || "#f0f4ff", color: wdStatusColor[String(row.status)] || "#6b8cbf" }}>
+                                                    {wdStatusLabel[String(row.status)] || String(row.status)}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                {String(row.status) === "pending" && (
+                                                    <>
+                                                        <button className="adm-action-btn adm-approve-btn" onClick={() => handleWithdrawalAction(Number(row.id), "approve")}>✅ Xác nhận CK</button>
+                                                        <button className="adm-action-btn adm-reject-btn" onClick={() => handleWithdrawalAction(Number(row.id), "reject")}>✕ Từ chối</button>
+                                                    </>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* ── Modal lịch sử giao dịch ── */}
+            {selectedUser && (
+                <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    onClick={() => setSelectedUser(null)}>
+                    <div style={{ background: "#fff", borderRadius: 16, padding: "2rem", width: "100%", maxWidth: 760, maxHeight: "88vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}
+                        onClick={e => e.stopPropagation()}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.25rem" }}>
+                            <div>
+                                <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "#1a3c6b" }}>📋 Lịch sử giao dịch — {String(selectedUser.full_name)}</div>
+                                <div style={{ fontSize: "0.82rem", color: "#6b8cbf", marginTop: 3 }}>
+                                    {String(selectedUser.email)} &nbsp;|&nbsp; Số dư: <strong style={{ color: "#00875a" }}>{Number(selectedUser.wallet || 0).toLocaleString("vi-VN")}₫</strong>
+                                </div>
+                            </div>
+                            <button onClick={() => setSelectedUser(null)} style={{ background: "none", border: "none", fontSize: "1.4rem", cursor: "pointer", color: "#6b8cbf" }}>×</button>
+                        </div>
+
+                        {txnLoading ? (
+                            <div style={{ textAlign: "center", padding: "2rem", color: "#6b8cbf" }}>Đang tải...</div>
+                        ) : txns.length === 0 ? (
+                            <div style={{ textAlign: "center", padding: "2rem", color: "#6b8cbf" }}>Chưa có giao dịch nào</div>
+                        ) : (
+                            <div style={{ overflowX: "auto" }}>
+                                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+                                    <thead>
+                                        <tr style={{ background: "#f0f4ff" }}>
+                                            {["Thời gian", "Loại", "Số tiền", "Mô tả", "Người duyệt", "Trạng thái"].map(h => (
+                                                <th key={h} style={{ padding: "0.6rem 0.85rem", textAlign: "left", fontWeight: 700, color: "#1a3c6b", whiteSpace: "nowrap" }}>{h}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {txns.map((t) => (
+                                            <tr key={String(t.transaction_id)} style={{ borderBottom: "1px solid #f0f4ff" }}>
+                                                <td style={{ padding: "0.6rem 0.85rem", color: "#6b8cbf", whiteSpace: "nowrap" }}>
+                                                    {new Date(String(t.created_at)).toLocaleString("vi-VN")}
+                                                </td>
+                                                <td style={{ padding: "0.6rem 0.85rem" }}>
+                                                    <span style={{ padding: "0.2rem 0.6rem", borderRadius: 99, fontSize: "0.78rem", fontWeight: 600, background: typeBg[String(t.type)] || "#f0f4ff", color: typeColor[String(t.type)] || "#1a3c6b" }}>
+                                                        {typeLabel[String(t.type)] || String(t.type)}
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: "0.6rem 0.85rem", fontWeight: 700, color: Number(t.amount) >= 0 ? "#00875a" : "#c0392b", whiteSpace: "nowrap" }}>
+                                                    {fmtAmt(Number(t.amount))}
+                                                </td>
+                                                <td style={{ padding: "0.6rem 0.85rem", color: "#4a5568" }}>{String(t.description || "—")}</td>
+                                                <td style={{ padding: "0.6rem 0.85rem", color: t.approved_by_name ? "#0052cc" : "#b0bcd8", fontStyle: t.approved_by_name ? "normal" : "italic", whiteSpace: "nowrap" }}>
+                                                    {t.approved_by_name ? `👤 ${String(t.approved_by_name)}` : "—"}
+                                                </td>
+                                                <td style={{ padding: "0.6rem 0.85rem" }}>
+                                                    <span style={{ padding: "0.2rem 0.5rem", borderRadius: 6, fontSize: "0.75rem", fontWeight: 600, background: t.status === "success" ? "#e6f9f0" : "#fff0f0", color: t.status === "success" ? "#00875a" : "#c0392b" }}>
+                                                        {t.status === "success" ? "Thành công" : String(t.status)}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function AdminPage() {
     const router = useRouter();
     const { user, hasHydrated } = useAuthStore();
@@ -118,6 +388,8 @@ export default function AdminPage() {
     const [formValues, setFormValues] = useState<Record<string, string>>({});
     const [saving, setSaving] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [importing, setImporting] = useState(false);
+    const excelInputRef = useRef<HTMLInputElement>(null);
     const [search, setSearch] = useState("");
 
     // Hotel detail / room types
@@ -260,6 +532,16 @@ export default function AdminPage() {
             { key: "available_seats", label: "Số ghế", type: "number" },
             { key: "image_url", label: "URL ảnh" },
         ],
+        trains: [
+            { key: "train_code", label: "Mã tàu (VD: SE1)", required: true },
+            { key: "from_city", label: "Thành phố đi", required: true },
+            { key: "to_city", label: "Thành phố đến", required: true },
+            { key: "from_station", label: "Ga đi", required: true },
+            { key: "to_station", label: "Ga đến", required: true },
+            { key: "depart_time", label: "Giờ khởi hành", type: "datetime-local", required: true },
+            { key: "arrive_time", label: "Giờ đến", type: "datetime-local", required: true },
+            { key: "status", label: "Trạng thái", type: "select", options: [{ value: "active", label: "Đang chạy" }, { value: "cancelled", label: "Đã hủy" }] },
+        ],
     };
 
     const bannerFieldDefs = [
@@ -281,8 +563,9 @@ export default function AdminPage() {
         { key: "max_discount", label: "Giảm tối đa (₫)", type: "number" },
         { key: "min_order_value", label: "Đơn hàng tối thiểu (₫)", type: "number" },
         { key: "usage_limit", label: "Số lần dùng tối đa", type: "number" },
-        { key: "applies_to", label: "Áp dụng cho", type: "select", options: [{ value: "all", label: "Tất cả" }, { value: "hotel", label: "Khách sạn" }, { value: "flight", label: "Chuyến bay" }, { value: "bus", label: "Xe khách" }] },
+        { key: "applies_to", label: "Áp dụng cho", type: "select", options: [{ value: "all", label: "Tất cả" }, { value: "hotel", label: "Khách sạn" }, { value: "flight", label: "Chuyến bay" }, { value: "bus", label: "Xe khách" }, { value: "train", label: "Tàu hỏa" }] },
         { key: "status", label: "Trạng thái", type: "select", options: [{ value: "active", label: "Đang hoạt động" }, { value: "inactive", label: "Tắt" }] },
+        { key: "per_user_limit", label: "Giới hạn/tài khoản (để trống = không giới hạn)", type: "number" },
         { key: "expired_at", label: "Hạn sử dụng", type: "datetime-local" },
     ];
 
@@ -303,13 +586,14 @@ export default function AdminPage() {
     // Alias kept for backward compat with existing code using userFieldDefs
     const userFieldDefs = modal?.mode === "edit" ? userEditFieldDefs : userCreateFieldDefs;
 
-    const idKey: Record<string, string> = { hotels: "hotel_id", flights: "flight_id", buses: "bus_id", users: "user_id", bookings: "booking_id", promotions: "promo_id", banners: "banner_id" };
+    const idKey: Record<string, string> = { hotels: "hotel_id", flights: "flight_id", buses: "bus_id", trains: "train_id", users: "user_id", bookings: "booking_id", promotions: "promo_id", banners: "banner_id" };
 
     const q = search.trim().toLowerCase();
     const filteredData = q === "" ? data : data.filter(row => {
         if (section === "hotels") return String(row.name || "").toLowerCase().includes(q) || String(row.dest_city || "").toLowerCase().includes(q) || String(row.address || "").toLowerCase().includes(q);
         if (section === "flights") return String(row.airline || "").toLowerCase().includes(q) || String(row.from_city || "").toLowerCase().includes(q) || String(row.to_city || "").toLowerCase().includes(q);
         if (section === "buses") return String(row.company || "").toLowerCase().includes(q) || String(row.from_city || "").toLowerCase().includes(q) || String(row.to_city || "").toLowerCase().includes(q);
+        if (section === "trains") return String(row.train_code || "").toLowerCase().includes(q) || String(row.from_city || "").toLowerCase().includes(q) || String(row.to_city || "").toLowerCase().includes(q);
         if (section === "bookings") return String(row.user_name || "").toLowerCase().includes(q) || String(row.user_email || "").toLowerCase().includes(q) || String(row.entity_name || "").toLowerCase().includes(q);
         if (section === "users") return String(row.full_name || "").toLowerCase().includes(q) || String(row.email || "").toLowerCase().includes(q) || String(row.phone || "").toLowerCase().includes(q);
         if (section === "withdrawals") return String(row.full_name || "").toLowerCase().includes(q) || String(row.email || "").toLowerCase().includes(q) || String(row.bank_name || "").toLowerCase().includes(q) || String(row.account_no || "").toLowerCase().includes(q);
@@ -333,6 +617,53 @@ export default function AdminPage() {
         Object.entries(row).forEach(([k, v]) => { vals[k] = v != null ? String(v) : ""; });
         setFormValues(vals);
         setModal({ mode: "edit", row });
+    };
+
+    const EXCEL_SECTIONS = ["hotels", "flights", "buses", "trains", "promotions"];
+
+    const downloadTemplate = () => {
+        api.get(`/api/admin/template/${section}`, { responseType: "blob" })
+            .then(res => {
+                const blob = new Blob([res.data], {
+                    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                });
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = `template_${section}.xlsx`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            })
+            .catch(() => alert("Không thể tải file mẫu. Vui lòng thử lại."));
+    };
+
+    const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!file.name.match(/\.(xlsx|xls)$/i)) {
+            alert("Chỉ hỗ trợ file .xlsx hoặc .xls");
+            e.target.value = "";
+            return;
+        }
+        setImporting(true);
+        const formData = new FormData();
+        formData.append("file", file);
+        try {
+            const res = await api.post(`/api/admin/import/${section}`, formData, {
+                headers: { "Content-Type": "multipart/form-data" },
+            });
+            const { inserted, skipped, errors } = res.data;
+            let msg = `✅ Nhập thành công ${inserted} bản ghi.`;
+            if (skipped > 0) msg += ` Bỏ qua ${skipped} bản ghi trùng.`;
+            if (errors?.length > 0) msg += `\n⚠️ Lỗi:\n${errors.slice(0, 5).join("\n")}`;
+            alert(msg);
+            loadSection(section);
+        } catch (err: unknown) {
+            const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+            alert("Nhập thất bại: " + (detail || "Lỗi không xác định"));
+        } finally {
+            setImporting(false);
+            e.target.value = "";
+        }
     };
 
     const buildPayload = () => {
@@ -380,6 +711,7 @@ export default function AdminPage() {
                     applies_to: formValues.applies_to || "all",
                     status: formValues.status || "active",
                     expired_at: formValues.expired_at || null,
+                    per_user_limit: formValues.per_user_limit ? Number(formValues.per_user_limit) : null,
                   }
                 : section === "banners"
                 ? {
@@ -476,8 +808,9 @@ export default function AdminPage() {
         { key: "hotels", icon: "🏨", label: "Khách sạn" },
         { key: "flights", icon: "✈️", label: "Chuyến bay" },
         { key: "buses", icon: "🚌", label: "Xe khách" },
+        { key: "trains", icon: "🚆", label: "Tàu hỏa" },
         { key: "users", icon: "👥", label: "Người dùng" },
-        { key: "withdrawals", icon: "💸", label: "Rút tiền" },
+        { key: "wallets", icon: "👛", label: "Quản lý ví" },
         { key: "promotions", icon: "🎟️", label: "Mã giảm giá" },
         { key: "banners", icon: "🖼️", label: "Banner" },
         { key: "modifications", icon: "🔄", label: "Đổi/Hủy lịch" },
@@ -492,6 +825,7 @@ export default function AdminPage() {
         { icon: "🏨", label: "Khách sạn", value: stats.total_hotels, color: "#6f42c1" },
         { icon: "✈️", label: "Chuyến bay", value: stats.total_flights, color: "#0052cc" },
         { icon: "🚌", label: "Xe khách", value: stats.total_buses, color: "#fd7e14" },
+        { icon: "🚆", label: "Tàu hỏa", value: stats.total_trains, color: "#003580" },
     ] : [];
 
     if (!hasHydrated) return null;
@@ -603,6 +937,20 @@ export default function AdminPage() {
                     display: flex; align-items: center; gap: 0.4rem;
                 }
                 .adm-add-btn:hover { opacity: 0.9; }
+                .adm-import-btn {
+                    background: #fff; color: #0052cc; border: 1.5px solid #0052cc; border-radius: 8px;
+                    padding: 0.55rem 1rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+                    display: flex; align-items: center; gap: 0.4rem; transition: background 0.15s;
+                }
+                .adm-import-btn:hover { background: #f0f4ff; }
+                .adm-import-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+                .adm-template-btn {
+                    background: #fff; color: #00875a; border: 1.5px solid #00875a; border-radius: 8px;
+                    padding: 0.55rem 1rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+                    display: flex; align-items: center; gap: 0.4rem; transition: background 0.15s;
+                    text-decoration: none;
+                }
+                .adm-template-btn:hover { background: #e6f9f0; }
 
                 .adm-table-wrap { overflow-x: auto; }
                 table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
@@ -717,10 +1065,36 @@ export default function AdminPage() {
                             {navItems.find(n => n.key === section)?.label}
                         </span>
                     </div>
-                    <span style={{ fontSize: "0.82rem", color: "#6b8cbf" }}>
-                        {new Date().toLocaleDateString("vi-VN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                        <span style={{ fontSize: "0.82rem", color: "#6b8cbf" }}>
+                            {new Date().toLocaleDateString("vi-VN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+                        </span>
+                        <button
+                            onClick={() => router.push("/")}
+                            style={{
+                                display: "flex", alignItems: "center", gap: "0.4rem",
+                                padding: "0.4rem 1rem", borderRadius: 8, border: "none",
+                                background: "linear-gradient(135deg,#0052cc,#0065ff)",
+                                color: "#fff", fontWeight: 700, fontSize: "0.82rem",
+                                cursor: "pointer", whiteSpace: "nowrap",
+                                transition: "opacity 0.15s",
+                            }}
+                            onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
+                            onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
+                        >
+                            🛒 Trang mua hàng
+                        </button>
+                    </div>
                 </div>
+
+                {/* Hidden Excel input */}
+                <input
+                    ref={excelInputRef}
+                    type="file"
+                    accept=".xlsx,.xls"
+                    style={{ display: "none" }}
+                    onChange={handleExcelImport}
+                />
 
                 <div className="adm-content">
 
@@ -801,6 +1175,7 @@ export default function AdminPage() {
                                     { key: "hotels", icon: "🏨", label: "Quản lý khách sạn" },
                                     { key: "flights", icon: "✈️", label: "Quản lý chuyến bay" },
                                     { key: "buses", icon: "🚌", label: "Quản lý xe khách" },
+                                    { key: "trains", icon: "🚆", label: "Quản lý tàu hỏa" },
                                     { key: "users", icon: "👥", label: "Quản lý người dùng" },
                                     { key: "withdrawals", icon: "💸", label: "Quản lý rút tiền" },
                                     { key: "promotions", icon: "🎟️", label: "Mã giảm giá" },
@@ -898,6 +1273,10 @@ export default function AdminPage() {
                                 <div className="adm-table-title">🏨 Danh sách khách sạn</div>
                                 <div className="adm-table-actions">
                                     <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} />
+                                    <button className="adm-template-btn" onClick={downloadTemplate}>📄 File mẫu</button>
+                                    <button className="adm-import-btn" disabled={importing} onClick={() => excelInputRef.current?.click()}>
+                                        {importing ? "⏳ Đang nhập..." : "📥 Nhập Excel"}
+                                    </button>
                                     <button className="adm-add-btn" onClick={openCreate}>＋ Thêm mới</button>
                                 </div>
                             </div>
@@ -1013,6 +1392,10 @@ export default function AdminPage() {
                                 <div className="adm-table-title">✈️ Danh sách chuyến bay</div>
                                 <div className="adm-table-actions">
                                     <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} />
+                                    <button className="adm-template-btn" onClick={downloadTemplate}>📄 File mẫu</button>
+                                    <button className="adm-import-btn" disabled={importing} onClick={() => excelInputRef.current?.click()}>
+                                        {importing ? "⏳ Đang nhập..." : "📥 Nhập Excel"}
+                                    </button>
                                     <button className="adm-add-btn" onClick={openCreate}>＋ Thêm mới</button>
                                 </div>
                             </div>
@@ -1050,6 +1433,10 @@ export default function AdminPage() {
                                 <div className="adm-table-title">🚌 Danh sách xe khách</div>
                                 <div className="adm-table-actions">
                                     <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} />
+                                    <button className="adm-template-btn" onClick={downloadTemplate}>📄 File mẫu</button>
+                                    <button className="adm-import-btn" disabled={importing} onClick={() => excelInputRef.current?.click()}>
+                                        {importing ? "⏳ Đang nhập..." : "📥 Nhập Excel"}
+                                    </button>
                                     <button className="adm-add-btn" onClick={openCreate}>＋ Thêm mới</button>
                                 </div>
                             </div>
@@ -1067,6 +1454,68 @@ export default function AdminPage() {
                                                     <td style={{ fontSize: "0.8rem" }}>{row.arrive_time ? new Date(String(row.arrive_time)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—"}</td>
                                                     <td style={{ color: "#0052cc", fontWeight: 700 }}>{fmt(Number(row.price))}</td>
                                                     <td>{String(row.available_seats)}</td>
+                                                    <td>
+                                                        <button className="adm-action-btn adm-edit-btn" onClick={() => openEdit(row)}>✏️ Sửa</button>
+                                                        <button className="adm-action-btn adm-del-btn" onClick={() => handleDelete(row)}>🗑 Xóa</button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── TRAINS ── */}
+                    {section === "trains" && (
+                        <div className="adm-table-card">
+                            <div className="adm-table-header">
+                                <div className="adm-table-title">🚆 Danh sách chuyến tàu</div>
+                                <div className="adm-table-actions">
+                                    <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} />
+                                    <button className="adm-template-btn" onClick={downloadTemplate}>📄 File mẫu</button>
+                                    <button className="adm-import-btn" disabled={importing} onClick={() => excelInputRef.current?.click()}>
+                                        {importing ? "⏳ Đang nhập..." : "📥 Nhập Excel"}
+                                    </button>
+                                    <button className="adm-add-btn" onClick={openCreate}>＋ Thêm mới</button>
+                                </div>
+                            </div>
+                            <div className="adm-table-wrap">
+                                {loading ? <div className="adm-loading">Đang tải...</div> : filteredData.length === 0 ? <div className="adm-empty">Chưa có chuyến tàu nào</div> : (
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>#</th><th>Mã tàu</th><th>Tuyến</th><th>Ga đi / Ga đến</th>
+                                                <th>Khởi hành</th><th>Đến</th><th>Ghế trống</th><th>Trạng thái</th><th>Thao tác</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {filteredData.map((row, i) => (
+                                                <tr key={String(row.train_id ?? i)}>
+                                                    <td style={{ color: "#6b8cbf" }}>#{String(row.train_id)}</td>
+                                                    <td>
+                                                        <span style={{ background: "#003580", color: "#fff", padding: "0.2rem 0.6rem", borderRadius: 99, fontSize: "0.8rem", fontWeight: 700 }}>
+                                                            {String(row.train_code)}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ fontWeight: 600 }}>{String(row.from_city)} → {String(row.to_city)}</td>
+                                                    <td style={{ fontSize: "0.78rem", color: "#6b8cbf" }}>
+                                                        {String(row.from_station)} → {String(row.to_station)}
+                                                    </td>
+                                                    <td style={{ fontSize: "0.8rem" }}>{row.depart_time ? new Date(String(row.depart_time)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—"}</td>
+                                                    <td style={{ fontSize: "0.8rem" }}>{row.arrive_time ? new Date(String(row.arrive_time)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—"}</td>
+                                                    <td style={{ textAlign: "center", fontWeight: 600, color: Number(row.available_seats) <= 10 ? "#c0392b" : "#00875a" }}>
+                                                        {String(row.available_seats ?? "—")} / {String(row.total_seats ?? "—")}
+                                                    </td>
+                                                    <td>
+                                                        <span className="adm-badge" style={{
+                                                            background: row.status === "active" ? "#e6f9f0" : "#fff0f0",
+                                                            color: row.status === "active" ? "#00875a" : "#c0392b",
+                                                        }}>
+                                                            {row.status === "active" ? "Đang chạy" : row.status === "cancelled" ? "Đã hủy" : String(row.status)}
+                                                        </span>
+                                                    </td>
                                                     <td>
                                                         <button className="adm-action-btn adm-edit-btn" onClick={() => openEdit(row)}>✏️ Sửa</button>
                                                         <button className="adm-action-btn adm-del-btn" onClick={() => handleDelete(row)}>🗑 Xóa</button>
@@ -1144,6 +1593,9 @@ export default function AdminPage() {
                                     <div className="adm-table-title">🎟️ Mã giảm giá</div>
                                     <div className="adm-table-actions">
                                         <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} />
+                                        <button className="adm-import-btn" disabled={importing} onClick={() => excelInputRef.current?.click()}>
+                                            {importing ? "⏳ Đang nhập..." : "📥 Nhập Excel"}
+                                        </button>
                                         <button className="adm-add-btn" onClick={openCreate}>＋ Thêm mới</button>
                                     </div>
                                 </div>
@@ -1237,95 +1689,6 @@ export default function AdminPage() {
                         );
                     })()}
 
-                    {/* ── WITHDRAWALS ── */}
-                    {section === "withdrawals" && (() => {
-                        const wdStatusColor: Record<string, string> = {
-                            pending: "#b8860b", completed: "#00875a", rejected: "#c0392b",
-                        };
-                        const wdStatusLabel: Record<string, string> = {
-                            pending: "Chờ xử lý", completed: "Đã hoàn tất", rejected: "Bị từ chối",
-                        };
-                        const wdStatusBg: Record<string, string> = {
-                            pending: "#fffbe6", completed: "#e6f9f0", rejected: "#fff0f0",
-                        };
-                        return (
-                            <div className="adm-table-card">
-                                <div className="adm-table-header">
-                                    <div className="adm-table-title">💸 Yêu cầu rút tiền</div>
-                                    <div className="adm-table-actions">
-                                        <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} />
-                                    </div>
-                                </div>
-                                <div className="adm-table-wrap">
-                                    {loading ? <div className="adm-loading">Đang tải...</div> :
-                                    filteredData.length === 0 ? <div className="adm-empty">Không có yêu cầu rút tiền nào</div> : (
-                                        <table>
-                                            <thead>
-                                                <tr>
-                                                    <th>#</th>
-                                                    <th>Khách hàng</th>
-                                                    <th>Số tiền</th>
-                                                    <th>Ngân hàng</th>
-                                                    <th>Số TK / Chủ TK</th>
-                                                    <th>Ngày yêu cầu</th>
-                                                    <th>Trạng thái</th>
-                                                    <th>Thao tác</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {filteredData.map((row, i) => (
-                                                    <tr key={String(row.id ?? i)}>
-                                                        <td style={{ color: "#6b8cbf" }}>#{String(row.id)}</td>
-                                                        <td>
-                                                            <div style={{ fontWeight: 600 }}>{String(row.full_name || "—")}</div>
-                                                            <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{String(row.email || "")}</div>
-                                                        </td>
-                                                        <td style={{ fontWeight: 800, color: "#c0392b", fontFamily: "Nunito, sans-serif" }}>
-                                                            -{Number(row.amount).toLocaleString("vi-VN")}₫
-                                                        </td>
-                                                        <td style={{ fontWeight: 600 }}>{String(row.bank_name || "—")}</td>
-                                                        <td>
-                                                            <div style={{ fontWeight: 600 }}>{String(row.account_no || "—")}</div>
-                                                            <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{String(row.account_name || "")}</div>
-                                                        </td>
-                                                        <td style={{ color: "#6b8cbf", fontSize: "0.8rem" }}>
-                                                            {row.created_at ? new Date(String(row.created_at)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—"}
-                                                        </td>
-                                                        <td>
-                                                            <span className="adm-badge" style={{
-                                                                background: wdStatusBg[String(row.status)] || "#f0f4ff",
-                                                                color: wdStatusColor[String(row.status)] || "#6b8cbf",
-                                                            }}>
-                                                                {wdStatusLabel[String(row.status)] || String(row.status)}
-                                                            </span>
-                                                        </td>
-                                                        <td>
-                                                            {String(row.status) === "pending" && (
-                                                                <>
-                                                                    <button
-                                                                        className="adm-action-btn adm-approve-btn"
-                                                                        onClick={() => handleWithdrawalAction(Number(row.id), "approve")}
-                                                                    >
-                                                                        ✅ Xác nhận CK
-                                                                    </button>
-                                                                    <button
-                                                                        className="adm-action-btn adm-reject-btn"
-                                                                        onClick={() => handleWithdrawalAction(Number(row.id), "reject")}
-                                                                    >
-                                                                        ✕ Từ chối
-                                                                    </button>
-                                                                </>
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })()}
 
                     {/* ── BANNERS ── */}
                     {section === "banners" && (
@@ -1429,6 +1792,9 @@ export default function AdminPage() {
                             </div>
                         </div>
                     )}
+
+                    {/* ── WALLETS ── */}
+                    {section === "wallets" && <WalletSection />}
 
                     {/* ── MODIFICATIONS ── */}
                     {section === "modifications" && (() => {

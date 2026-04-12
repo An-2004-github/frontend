@@ -16,8 +16,8 @@ interface Hotel {
 }
 
 interface Props {
-    entityType: "room" | "flight" | "bus";
-    toCity?: string;       // dùng cho flight/bus
+    entityType: "room" | "flight" | "bus" | "train";
+    toCity?: string;       // dùng cho flight/bus/train
     checkIn?: string;      // dùng cho hotel → suggest vé
 }
 
@@ -25,7 +25,7 @@ export default function BookingSuggestions({ entityType, toCity, checkIn }: Prop
     const [hotels, setHotels] = useState<Hotel[]>([]);
     const [loading, setLoading] = useState(false);
 
-    const isTransport = entityType === "flight" || entityType === "bus";
+    const isTransport = entityType === "flight" || entityType === "bus" || entityType === "train";
     const city = toCity || "";
 
     useEffect(() => {

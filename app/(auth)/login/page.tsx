@@ -373,6 +373,12 @@ export default function LoginPage() {
                             >
                                 {isLoading ? "Đang đăng nhập..." : "Đăng nhập"}
                             </button>
+
+                            <div style={{ textAlign: "center", marginTop: "0.875rem" }}>
+                                <Link href="/forgot-password" style={{ fontSize: "0.88rem", color: "#d4a050", fontWeight: 500, textDecoration: "none" }}>
+                                    Quên mật khẩu?
+                                </Link>
+                            </div>
                         </form>
 
                         <div className="divider">

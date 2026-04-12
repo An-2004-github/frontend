@@ -8,6 +8,9 @@ import { logInteraction } from "@/lib/logInteraction";
 interface Props {
     flight: Flight;
     passengers?: number;
+    adults?: number;
+    childrenCount?: number;
+    infants?: number;
 }
 
 const AIRLINE_LOGOS: Record<string, string> = {
@@ -33,7 +36,7 @@ function formatDuration(minutes: number) {
     return `${h}g${m > 0 ? ` ${m}p` : ""}`;
 }
 
-export default function FlightCard({ flight, passengers = 1 }: Props) {
+export default function FlightCard({ flight, passengers = 1, adults = 1, childrenCount = 0, infants = 0 }: Props) {
     const [showModal, setShowModal] = useState(false);
 
     const duration = flight.duration_minutes ?? 0;
@@ -147,6 +150,9 @@ export default function FlightCard({ flight, passengers = 1 }: Props) {
                 <FlightTicketModal
                     flight={flight}
                     passengers={passengers}
+                    adults={adults}
+                    childrenCount={childrenCount}
+                    infants={infants}
                     onClose={() => setShowModal(false)}
                 />
             )}

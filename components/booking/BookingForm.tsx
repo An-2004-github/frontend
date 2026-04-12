@@ -3,6 +3,36 @@
 import Link from "next/link";
 import { useAuthStore } from "@/store/authStore";
 
+export interface PassengerInfo {
+    type: "adult" | "child" | "infant";
+    gender: string;
+    lastName: string;
+    firstName: string;
+    birthDay: string;
+    birthMonth: string;
+    birthYear: string;
+    nationality: string;
+    passportNumber: string;
+    passportExpDay: string;
+    passportExpMonth: string;
+    passportExpYear: string;
+}
+
+export const emptyPassenger = (type: PassengerInfo["type"] = "adult"): PassengerInfo => ({
+    type,
+    gender: "",
+    lastName: "",
+    firstName: "",
+    birthDay: "",
+    birthMonth: "",
+    birthYear: "",
+    nationality: "",
+    passportNumber: "",
+    passportExpDay: "",
+    passportExpMonth: "",
+    passportExpYear: "",
+});
+
 export interface ContactForm {
     contactName: string;
     contactPhone: string;
@@ -10,21 +40,11 @@ export interface ContactForm {
     bookingForSelf: boolean;
     guestName: string;
     specialRequests: string[];
-    // Flight passenger info
-    passengerGender: string;
-    passengerLastName: string;
-    passengerFirstName: string;
-    passengerBirthDay: string;
-    passengerBirthMonth: string;
-    passengerBirthYear: string;
-    passengerNationality: string;
-    passportNumber: string;
-    passportExpDay: string;
-    passportExpMonth: string;
-    passportExpYear: string;
+    // Flight: danh sách hành khách
+    passengerList: PassengerInfo[];
 }
 
-type BookingType = "hotel" | "flight" | "bus";
+type BookingType = "hotel" | "flight" | "bus" | "train";
 
 const SPECIAL_OPTIONS: Record<BookingType, { key: string; label: string }[]> = {
     hotel: [
@@ -50,6 +70,12 @@ const SPECIAL_OPTIONS: Record<BookingType, { key: string; label: string }[]> = {
         { key: "ac", label: "Điều hòa mát" },
         { key: "no_smoking", label: "Không hút thuốc" },
     ],
+    train: [
+        { key: "window_seat", label: "Ghế cửa sổ" },
+        { key: "lower_berth", label: "Giường tầng dưới" },
+        { key: "no_smoking", label: "Không hút thuốc" },
+        { key: "wheelchair", label: "Hỗ trợ xe lăn" },
+    ],
 };
 
 const MONTHS = [
@@ -59,11 +85,7 @@ const MONTHS = [
 ];
 
 const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, "0"));
-
 const THIS_YEAR = new Date().getFullYear();
-// Năm sinh: từ 100 năm trước đến 12 năm trước (hành khách người lớn)
-const BIRTH_YEARS = Array.from({ length: 89 }, (_, i) => THIS_YEAR - 12 - i);
-// Năm hết hạn hộ chiếu: từ năm nay đến 20 năm tới
 const PASSPORT_EXP_YEARS = Array.from({ length: 21 }, (_, i) => THIS_YEAR + i);
 
 const NATIONALITIES = [
@@ -71,15 +93,38 @@ const NATIONALITIES = [
     "South Korea", "China", "France", "Germany", "Australia", "Singapore",
 ];
 
+const PASSENGER_TYPE_OPTIONS = [
+    { value: "adult", label: "Người lớn (trên 12 tuổi)" },
+    { value: "child", label: "Trẻ em (2 – 11 tuổi)" },
+    { value: "infant", label: "Em bé (dưới 2 tuổi)" },
+];
+
+function getBirthYears(type: PassengerInfo["type"]): number[] {
+    if (type === "adult") return Array.from({ length: 89 }, (_, i) => THIS_YEAR - 12 - i);
+    if (type === "child") return Array.from({ length: 10 }, (_, i) => THIS_YEAR - 2 - i);
+    // infant: dưới 2 tuổi
+    return [THIS_YEAR, THIS_YEAR - 1];
+}
+
+function getPassengerLabel(type: PassengerInfo["type"], index: number): string {
+    const typeLabel = type === "adult" ? "Người lớn" : type === "child" ? "Trẻ em" : "Em bé";
+    return `${typeLabel} ${index + 1}`;
+}
+
 interface Props {
     form: ContactForm;
     errors: Record<string, string>;
     bookingType: BookingType;
     flightRoute?: { fromCity: string; toCity: string };
+    passengerCount?: number;
     onChange: <K extends keyof ContactForm>(field: K, value: ContactForm[K]) => void;
+    onPassengerChange: (index: number, field: keyof PassengerInfo, value: string) => void;
 }
 
-export default function BookingForm({ form, errors, bookingType, flightRoute, onChange }: Props) {
+export default function BookingForm({
+    form, errors, bookingType, flightRoute, passengerCount = 1,
+    onChange, onPassengerChange,
+}: Props) {
     const { user } = useAuthStore();
     const options = SPECIAL_OPTIONS[bookingType];
 
@@ -89,6 +134,11 @@ export default function BookingForm({ form, errors, bookingType, flightRoute, on
             : [...form.specialRequests, key];
         onChange("specialRequests", next);
     };
+
+    // Đảm bảo passengerList có đủ số lượng
+    const passengers = Array.from({ length: passengerCount }, (_, i) =>
+        form.passengerList[i] ?? emptyPassenger("adult")
+    );
 
     return (
         <>
@@ -133,7 +183,19 @@ export default function BookingForm({ form, errors, bookingType, flightRoute, on
                 .bf-mini-box.on { background: #0052cc; border-color: #0052cc; }
 
                 /* Flight specific */
-                .bf-passenger-header { background: #e8f0fe; border-radius: 8px; padding: 0.5rem 0.85rem; font-size: 0.88rem; font-weight: 700; color: #0052cc; margin-bottom: 1rem; }
+                .bf-passenger-header {
+                    display: flex; align-items: center; justify-content: space-between;
+                    background: #e8f0fe; border-radius: 8px;
+                    padding: 0.55rem 0.85rem; margin-bottom: 1rem;
+                }
+                .bf-passenger-header-title { font-size: 0.9rem; font-weight: 700; color: #0052cc; }
+                .bf-passenger-type-badge {
+                    font-size: 0.72rem; font-weight: 600; padding: 0.2rem 0.6rem;
+                    border-radius: 99px; background: #0052cc; color: #fff;
+                }
+                .bf-passenger-type-badge.child { background: #00875a; }
+                .bf-passenger-type-badge.infant { background: #f5a623; color: #1a1208; }
+                .bf-passenger-separator { border: none; border-top: 2px dashed #e8f0fe; margin: 1.5rem 0; }
                 .bf-name-warn { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; }
                 .bf-name-warn-icon { color: #f5a623; margin-right: 0.3rem; }
                 .bf-name-warn p { font-size: 0.8rem; color: #7a5c00; margin: 0; line-height: 1.5; }
@@ -144,7 +206,7 @@ export default function BookingForm({ form, errors, bookingType, flightRoute, on
                 .bf-passport-note { background: #f0f4ff; border-left: 3px solid #0052cc; border-radius: 4px; padding: 0.65rem 0.85rem; margin-bottom: 1rem; font-size: 0.8rem; color: #1a3c6b; line-height: 1.5; }
                 .bf-passport-note a { color: #0052cc; font-weight: 600; text-decoration: none; }
                 .bf-passport-note a:hover { text-decoration: underline; }
-                .bf-child-note { font-size: 0.75rem; color: #6b8cbf; margin-top: 0.35rem; line-height: 1.4; }
+                .bf-child-note { font-size: 0.75rem; color: #6b8cbf; margin-top: 0.4rem; line-height: 1.5; background: #f8faff; border-radius: 6px; padding: 0.5rem 0.7rem; border-left: 3px solid #c8d8ff; }
 
                 /* Flight essentials */
                 .bf-passport-remind { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 10px; padding: 0.7rem 1rem; margin-bottom: 1rem; font-size: 0.82rem; color: #7a5c00; display: flex; align-items: flex-start; gap: 0.5rem; }
@@ -164,6 +226,7 @@ export default function BookingForm({ form, errors, bookingType, flightRoute, on
                     .bf-grid2 { grid-template-columns: 1fr; }
                     .bf-special-grid { grid-template-columns: 1fr 1fr; }
                     .bf-baggage-legs { grid-template-columns: 1fr; }
+                    .bf-date-row { grid-template-columns: 60px 1fr 80px; }
                 }
             `}</style>
 
@@ -239,192 +302,300 @@ export default function BookingForm({ form, errors, bookingType, flightRoute, on
             {bookingType === "flight" && (
                 <div className="bf-card">
                     <div className="bf-title">👤 Thông tin hành khách</div>
-
-                    <div className="bf-passenger-header">Người lớn 1</div>
+                    <div className="bf-sub">
+                        Vui lòng nhập đúng thông tin như trên giấy tờ tùy thân. Tên phải bằng tiếng Anh không dấu.
+                    </div>
 
                     <div className="bf-name-warn">
                         <p>
                             <span className="bf-name-warn-icon">⚠</span>
-                            <strong>Vui lòng chú ý cho những điều sau đây:</strong><br />
-                            Vui lòng nhập tên bằng tiếng Anh không dấu (không có ký tự đặc biệt), chính xác như trên giấy tờ tùy thân.
+                            <strong>Vui lòng chú ý:</strong><br />
+                            Vui lòng nhập tên bằng tiếng Anh không dấu, chính xác như trên giấy tờ tùy thân.
                             Nếu không, bạn có thể bị từ chối lên máy bay hoặc phát sinh thêm chi phí.
                         </p>
                         <a href="#">Xem hướng dẫn về tên</a>
                     </div>
 
-                    {/* Giới tính */}
-                    <div style={{ marginBottom: "1rem" }}>
-                        <label className="bf-label">Giới tính<em>*</em></label>
-                        <div className="bf-select-wrap">
-                            <select
-                                className={`bf-select${errors.passengerGender ? " err" : ""}`}
-                                value={form.passengerGender}
-                                onChange={e => onChange("passengerGender", e.target.value)}
-                            >
-                                <option value=""></option>
-                                <option value="male">Nam (Mr)</option>
-                                <option value="female">Nữ (Ms/Mrs)</option>
-                            </select>
-                        </div>
-                        {errors.passengerGender && <div className="bf-err">{errors.passengerGender}</div>}
-                    </div>
+                    {passengers.map((p, i) => {
+                        const birthYears = getBirthYears(p.type);
+                        const isMinor = p.type === "child" || p.type === "infant";
+                        const badgeClass = p.type === "child" ? "child" : p.type === "infant" ? "infant" : "";
 
-                    {/* Họ | Chữ đệm và tên */}
-                    <div className="bf-grid2" style={{ marginTop: 0 }}>
-                        <div>
-                            <label className="bf-label">Họ (vd: NGUYEN)<em>*</em></label>
-                            <input
-                                className={`bf-input${errors.passengerLastName ? " err" : ""}`}
-                                value={form.passengerLastName}
-                                onChange={e => onChange("passengerLastName", e.target.value.toUpperCase())}
-                                placeholder="NGUYEN"
-                            />
-                            <div className="bf-hint">như trên CMND (không dấu)</div>
-                            {errors.passengerLastName && <div className="bf-err">{errors.passengerLastName}</div>}
-                        </div>
-                        <div>
-                            <label className="bf-label">Chữ đệm và tên (vd: VAN ANH)<em>*</em></label>
-                            <input
-                                className={`bf-input${errors.passengerFirstName ? " err" : ""}`}
-                                value={form.passengerFirstName}
-                                onChange={e => onChange("passengerFirstName", e.target.value.toUpperCase())}
-                                placeholder="VAN ANH"
-                            />
-                            <div className="bf-hint">như trên CMND (không dấu)</div>
-                            {errors.passengerFirstName && <div className="bf-err">{errors.passengerFirstName}</div>}
-                        </div>
-                    </div>
+                        return (
+                            <div key={i}>
+                                {i > 0 && <hr className="bf-passenger-separator" />}
 
-                    {/* Ngày sinh | Quốc tịch */}
-                    <div className="bf-grid2" style={{ marginTop: "1rem" }}>
-                        <div>
-                            <label className="bf-label">Ngày sinh</label>
-                            <div className="bf-date-row">
-                                <div className="bf-select-wrap">
-                                    <select
-                                        className="bf-select"
-                                        value={form.passengerBirthDay}
-                                        onChange={e => onChange("passengerBirthDay", e.target.value)}
-                                    >
-                                        <option value="">Ngày</option>
-                                        {DAYS.map(d => (
-                                            <option key={d} value={d}>{d}</option>
-                                        ))}
-                                    </select>
+                                {/* Header */}
+                                <div className="bf-passenger-header">
+                                    <span className="bf-passenger-header-title">
+                                        Hành khách {i + 1} / {passengerCount}
+                                    </span>
+                                    <span className={`bf-passenger-type-badge ${badgeClass}`}>
+                                        {PASSENGER_TYPE_OPTIONS.find(o => o.value === p.type)?.label}
+                                    </span>
                                 </div>
-                                <div className="bf-select-wrap">
-                                    <select
-                                        className="bf-select"
-                                        value={form.passengerBirthMonth}
-                                        onChange={e => onChange("passengerBirthMonth", e.target.value)}
-                                    >
-                                        <option value="">Tháng</option>
-                                        {MONTHS.map((m, i) => (
-                                            <option key={i} value={String(i + 1).padStart(2, "0")}>{m}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div className="bf-select-wrap">
-                                    <select
-                                        className="bf-select"
-                                        value={form.passengerBirthYear}
-                                        onChange={e => onChange("passengerBirthYear", e.target.value)}
-                                    >
-                                        <option value="">Năm</option>
-                                        {BIRTH_YEARS.map(y => (
-                                            <option key={y} value={String(y)}>{y}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-                            <div className="bf-hint">Hành khách người lớn (trên 12 tuổi)</div>
-                        </div>
-                        <div>
-                            <label className="bf-label">Quốc tịch<em>*</em></label>
-                            <div className="bf-select-wrap">
-                                <select
-                                    className={`bf-select${errors.passengerNationality ? " err" : ""}`}
-                                    value={form.passengerNationality}
-                                    onChange={e => onChange("passengerNationality", e.target.value)}
-                                >
-                                    <option value=""></option>
-                                    {NATIONALITIES.map(n => (
-                                        <option key={n} value={n}>{n}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            {errors.passengerNationality && <div className="bf-err">{errors.passengerNationality}</div>}
-                        </div>
-                    </div>
 
-                    {/* Thông tin hộ chiếu */}
-                    <div className="bf-passport-section">
-                        <div className="bf-title" style={{ fontSize: "0.92rem", marginBottom: "0.75rem" }}>Thông tin hộ chiếu</div>
-                        <div className="bf-passport-note">
-                            Nếu hành khách nào chưa có hộ chiếu hoặc hộ chiếu đã hết hạn, bạn vẫn có thể tiếp tục đặt vé này.{" "}
-                            <a href="#">Tìm hiểu thêm</a>
-                        </div>
-                        <div style={{ marginBottom: "1rem" }}>
-                            <label className="bf-label">Số hộ chiếu<em>*</em></label>
-                            <input
-                                className={`bf-input${errors.passportNumber ? " err" : ""}`}
-                                value={form.passportNumber}
-                                onChange={e => onChange("passportNumber", e.target.value.toUpperCase())}
-                                placeholder="VD: B1234567"
-                            />
-                            <div className="bf-child-note">
-                                Đối với hành khách là trẻ em hoặc trẻ sơ sinh, vui lòng nhập giấy tờ tùy thân của người giám hộ đi cùng trẻ.
-                                (Vui lòng đảm bảo chỉ nhập số trong trường hợp này)
+                                {/* Giới tính */}
+                                <div style={{ marginBottom: "1rem" }}>
+                                    <label className="bf-label">Giới tính<em>*</em></label>
+                                    <div className="bf-select-wrap">
+                                        <select
+                                            className={`bf-select${errors[`passenger_${i}_gender`] ? " err" : ""}`}
+                                            value={p.gender}
+                                            onChange={e => onPassengerChange(i, "gender", e.target.value)}
+                                        >
+                                            <option value=""></option>
+                                            <option value="male">Nam (Mr)</option>
+                                            <option value="female">Nữ (Ms/Mrs)</option>
+                                        </select>
+                                    </div>
+                                    {errors[`passenger_${i}_gender`] && (
+                                        <div className="bf-err">{errors[`passenger_${i}_gender`]}</div>
+                                    )}
+                                </div>
+
+                                {/* Họ | Tên */}
+                                <div className="bf-grid2" style={{ marginTop: 0 }}>
+                                    <div>
+                                        <label className="bf-label">Họ (vd: NGUYEN)<em>*</em></label>
+                                        <input
+                                            className={`bf-input${errors[`passenger_${i}_lastName`] ? " err" : ""}`}
+                                            value={p.lastName}
+                                            onChange={e => onPassengerChange(i, "lastName", e.target.value.toUpperCase())}
+                                            placeholder="NGUYEN"
+                                        />
+                                        <div className="bf-hint">như trên CMND (không dấu)</div>
+                                        {errors[`passenger_${i}_lastName`] && (
+                                            <div className="bf-err">{errors[`passenger_${i}_lastName`]}</div>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="bf-label">Chữ đệm và tên (vd: VAN ANH)<em>*</em></label>
+                                        <input
+                                            className={`bf-input${errors[`passenger_${i}_firstName`] ? " err" : ""}`}
+                                            value={p.firstName}
+                                            onChange={e => onPassengerChange(i, "firstName", e.target.value.toUpperCase())}
+                                            placeholder="VAN ANH"
+                                        />
+                                        <div className="bf-hint">như trên CMND (không dấu)</div>
+                                        {errors[`passenger_${i}_firstName`] && (
+                                            <div className="bf-err">{errors[`passenger_${i}_firstName`]}</div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Ngày sinh | Quốc tịch */}
+                                <div className="bf-grid2" style={{ marginTop: "1rem" }}>
+                                    <div>
+                                        <label className="bf-label">Ngày sinh</label>
+                                        <div className="bf-date-row">
+                                            <div className="bf-select-wrap">
+                                                <select
+                                                    className="bf-select"
+                                                    value={p.birthDay}
+                                                    onChange={e => onPassengerChange(i, "birthDay", e.target.value)}
+                                                >
+                                                    <option value="">Ngày</option>
+                                                    {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="bf-select-wrap">
+                                                <select
+                                                    className="bf-select"
+                                                    value={p.birthMonth}
+                                                    onChange={e => onPassengerChange(i, "birthMonth", e.target.value)}
+                                                >
+                                                    <option value="">Tháng</option>
+                                                    {MONTHS.map((m, mi) => (
+                                                        <option key={mi} value={String(mi + 1).padStart(2, "0")}>{m}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="bf-select-wrap">
+                                                <select
+                                                    className="bf-select"
+                                                    value={p.birthYear}
+                                                    onChange={e => onPassengerChange(i, "birthYear", e.target.value)}
+                                                >
+                                                    <option value="">Năm</option>
+                                                    {birthYears.map(y => <option key={y} value={String(y)}>{y}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="bf-hint">
+                                            {p.type === "adult" && "Trên 12 tuổi"}
+                                            {p.type === "child" && "Từ 2 đến 11 tuổi"}
+                                            {p.type === "infant" && "Dưới 2 tuổi"}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="bf-label">Quốc tịch<em>*</em></label>
+                                        <div className="bf-select-wrap">
+                                            <select
+                                                className={`bf-select${errors[`passenger_${i}_nationality`] ? " err" : ""}`}
+                                                value={p.nationality}
+                                                onChange={e => onPassengerChange(i, "nationality", e.target.value)}
+                                            >
+                                                <option value=""></option>
+                                                {NATIONALITIES.map(n => <option key={n} value={n}>{n}</option>)}
+                                            </select>
+                                        </div>
+                                        {errors[`passenger_${i}_nationality`] && (
+                                            <div className="bf-err">{errors[`passenger_${i}_nationality`]}</div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Thông tin hộ chiếu */}
+                                <div className="bf-passport-section">
+                                    <div className="bf-title" style={{ fontSize: "0.92rem", marginBottom: "0.75rem" }}>
+                                        Thông tin hộ chiếu — {getPassengerLabel(p.type, i)}
+                                    </div>
+                                    <div className="bf-passport-note">
+                                        Nếu hành khách chưa có hộ chiếu hoặc hộ chiếu đã hết hạn, bạn vẫn có thể tiếp tục đặt vé.{" "}
+                                        <a href="#">Tìm hiểu thêm</a>
+                                    </div>
+                                    <div style={{ marginBottom: "1rem" }}>
+                                        <label className="bf-label">Số hộ chiếu<em>*</em></label>
+                                        <input
+                                            className={`bf-input${errors[`passenger_${i}_passportNumber`] ? " err" : ""}`}
+                                            value={p.passportNumber}
+                                            onChange={e => onPassengerChange(i, "passportNumber", e.target.value.toUpperCase())}
+                                            placeholder="VD: B1234567"
+                                        />
+                                        {isMinor && (
+                                            <div className="bf-child-note">
+                                                ℹ️ Đối với hành khách là trẻ em hoặc trẻ sơ sinh, vui lòng nhập giấy tờ tùy thân của người giám hộ đi cùng trẻ.
+                                            </div>
+                                        )}
+                                        {errors[`passenger_${i}_passportNumber`] && (
+                                            <div className="bf-err">{errors[`passenger_${i}_passportNumber`]}</div>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="bf-label">Ngày hết hạn</label>
+                                        <div className="bf-date-row">
+                                            <div className="bf-select-wrap">
+                                                <select
+                                                    className="bf-select"
+                                                    value={p.passportExpDay}
+                                                    onChange={e => onPassengerChange(i, "passportExpDay", e.target.value)}
+                                                >
+                                                    <option value="">Ngày</option>
+                                                    {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="bf-select-wrap">
+                                                <select
+                                                    className="bf-select"
+                                                    value={p.passportExpMonth}
+                                                    onChange={e => onPassengerChange(i, "passportExpMonth", e.target.value)}
+                                                >
+                                                    <option value="">Tháng</option>
+                                                    {MONTHS.map((m, mi) => (
+                                                        <option key={mi} value={String(mi + 1).padStart(2, "0")}>{m}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="bf-select-wrap">
+                                                <select
+                                                    className="bf-select"
+                                                    value={p.passportExpYear}
+                                                    onChange={e => onPassengerChange(i, "passportExpYear", e.target.value)}
+                                                >
+                                                    <option value="">Năm</option>
+                                                    {PASSPORT_EXP_YEARS.map(y => <option key={y} value={String(y)}>{y}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                            {errors.passportNumber && <div className="bf-err">{errors.passportNumber}</div>}
-                        </div>
-                        <div>
-                            <label className="bf-label">Ngày hết hạn<em>*</em></label>
-                            <div className="bf-date-row">
-                                <div className="bf-select-wrap">
-                                    <select
-                                        className="bf-select"
-                                        value={form.passportExpDay}
-                                        onChange={e => onChange("passportExpDay", e.target.value)}
-                                    >
-                                        <option value="">Ngày</option>
-                                        {DAYS.map(d => (
-                                            <option key={d} value={d}>{d}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div className="bf-select-wrap">
-                                    <select
-                                        className="bf-select"
-                                        value={form.passportExpMonth}
-                                        onChange={e => onChange("passportExpMonth", e.target.value)}
-                                    >
-                                        <option value="">Tháng</option>
-                                        {MONTHS.map((m, i) => (
-                                            <option key={i} value={String(i + 1).padStart(2, "0")}>{m}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div className="bf-select-wrap">
-                                    <select
-                                        className="bf-select"
-                                        value={form.passportExpYear}
-                                        onChange={e => onChange("passportExpYear", e.target.value)}
-                                    >
-                                        <option value="">Năm</option>
-                                        {PASSPORT_EXP_YEARS.map(y => (
-                                            <option key={y} value={String(y)}>{y}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                        );
+                    })}
                 </div>
             )}
 
-            {/* Checkbox: đặt cho chính mình — ẩn với máy bay */}
-            {bookingType !== "flight" && (
+            {/* ── BUS / TRAIN: Thông tin hành khách ── */}
+            {(bookingType === "bus" || bookingType === "train") && (
+                <div className="bf-card">
+                    <div className="bf-title">
+                        {bookingType === "bus" ? "🚌 Thông tin hành khách" : "🚆 Thông tin hành khách"}
+                    </div>
+                    <div className="bf-sub">Vui lòng điền đầy đủ thông tin cho từng hành khách.</div>
+
+                    {passengers.map((p, i) => {
+                        const badgeClass = p.type === "child" ? "child" : p.type === "infant" ? "infant" : "";
+                        return (
+                            <div key={i}>
+                                {i > 0 && <hr className="bf-passenger-separator" />}
+
+                                {/* Header */}
+                                <div className="bf-passenger-header">
+                                    <span className="bf-passenger-header-title">
+                                        Hành khách {i + 1} / {passengerCount}
+                                    </span>
+                                    <span className={`bf-passenger-type-badge ${badgeClass}`}>
+                                        {PASSENGER_TYPE_OPTIONS.find(o => o.value === p.type)?.label}
+                                    </span>
+                                </div>
+
+                                {/* Loại hành khách */}
+                                <div style={{ marginBottom: "1rem" }}>
+                                    <label className="bf-label">Loại hành khách<em>*</em></label>
+                                    <div className="bf-select-wrap">
+                                        <select
+                                            className="bf-select"
+                                            value={p.type}
+                                            onChange={e => onPassengerChange(i, "type", e.target.value)}
+                                        >
+                                            {PASSENGER_TYPE_OPTIONS.map(opt => (
+                                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {/* Giới tính | Họ tên */}
+                                <div className="bf-grid2" style={{ marginTop: 0 }}>
+                                    <div>
+                                        <label className="bf-label">Giới tính<em>*</em></label>
+                                        <div className="bf-select-wrap">
+                                            <select
+                                                className={`bf-select${errors[`passenger_${i}_gender`] ? " err" : ""}`}
+                                                value={p.gender}
+                                                onChange={e => onPassengerChange(i, "gender", e.target.value)}
+                                            >
+                                                <option value=""></option>
+                                                <option value="male">Nam</option>
+                                                <option value="female">Nữ</option>
+                                            </select>
+                                        </div>
+                                        {errors[`passenger_${i}_gender`] && (
+                                            <div className="bf-err">{errors[`passenger_${i}_gender`]}</div>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="bf-label">Họ và tên<em>*</em></label>
+                                        <input
+                                            className={`bf-input${errors[`passenger_${i}_firstName`] ? " err" : ""}`}
+                                            value={p.firstName}
+                                            onChange={e => onPassengerChange(i, "firstName", e.target.value)}
+                                            placeholder="Nguyễn Văn A"
+                                        />
+                                        {errors[`passenger_${i}_firstName`] && (
+                                            <div className="bf-err">{errors[`passenger_${i}_firstName`]}</div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Checkbox: đặt cho chính mình — chỉ hiển thị với khách sạn */}
+            {bookingType === "hotel" && (
                 <div className="bf-card">
                     <hr className="bf-divider" />
                     <label className="bf-check-row" onClick={() => onChange("bookingForSelf", !form.bookingForSelf)}>
@@ -453,8 +624,8 @@ export default function BookingForm({ form, errors, bookingType, flightRoute, on
                 </div>
             )}
 
-            {/* Thông tin Khách hàng — ẩn với máy bay */}
-            {bookingType !== "flight" && (
+            {/* Thông tin Khách hàng — chỉ hiển thị với khách sạn */}
+            {bookingType === "hotel" && (
                 <div className="bf-card">
                     <div className="bf-title">👤 Thông tin Khách hàng</div>
                     <div className="bf-sub">Vui lòng điền đầy đủ các thông tin để nhận xác nhận đơn hàng</div>

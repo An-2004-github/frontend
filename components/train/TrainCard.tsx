@@ -1,56 +1,125 @@
-// components/train/TrainCard.tsx
-import Link from "next/link";
+"use client";
+
+import { useState } from "react";
 import { Train } from "@/types/train";
-import { formatPrice, formatTime } from "@/lib/utils";
+import TrainTicketModal from "./TrainTicketModal";
 
 interface Props {
     train: Train;
+    passengers?: number;
 }
 
-export default function TrainCard({ train }: Props) {
+const SEAT_CLASS_LABEL: Record<string, string> = {
+    hard_seat:    "Ngồi cứng",
+    soft_seat:    "Ngồi mềm",
+    hard_sleeper: "Nằm cứng",
+    soft_sleeper: "Nằm mềm",
+};
+
+function formatTime(s: string) {
+    return new Date(s).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+function formatDuration(m: number) {
+    const h = Math.floor(m / 60), mm = m % 60;
+    return `${h}g${mm > 0 ? ` ${mm}p` : ""}`;
+}
+
+export default function TrainCard({ train, passengers = 1 }: Props) {
+    const [showModal, setShowModal] = useState(false);
+
+    const duration = train.duration_minutes ?? 0;
+    const lowestPrice = Math.min(
+        ...(["hard_seat_price", "soft_seat_price", "hard_sleeper_price", "soft_sleeper_price"] as const)
+            .map(k => (train[k] as number | undefined) ?? Infinity)
+    );
+    const displayPrice = isFinite(lowestPrice) ? lowestPrice : train.price;
+
+    const classBadges = (["hard_seat", "soft_seat", "hard_sleeper", "soft_sleeper"] as const).filter(
+        c => ((train[`${c}_count` as keyof Train] as number | undefined) ?? 0) > 0
+    );
+
     return (
-        <div className="border rounded-lg p-5 shadow hover:shadow-md transition-shadow duration-200 bg-white">
-
-            {/* Mã tàu và Giá vé */}
-            <div className="flex justify-between items-center mb-4">
-                <div className="flex items-center gap-2">
-                    <span className="text-xl font-bold text-green-700">
-                        Tàu {train.train_number}
-                    </span>
+        <>
+            <div className="tcard">
+                {/* Header */}
+                <div className="tcard-header">
+                    <span className="tcard-code">{train.train_code}</span>
+                    <div className="tcard-class-badges">
+                        {classBadges.map(c => (
+                            <span key={c} className="tcard-class-badge">
+                                {SEAT_CLASS_LABEL[c]}
+                                {" "}
+                                <span style={{ opacity: 0.7 }}>
+                                    {train[`${c}_count` as keyof Train] as number}
+                                </span>
+                            </span>
+                        ))}
+                    </div>
+                    {(train.available_seats ?? 99) <= 10 && (
+                        <span className="tcard-low-seat">🔥 Sắp hết chỗ</span>
+                    )}
                 </div>
-                <span className="text-lg font-semibold text-orange-500">
-                    {formatPrice(train.price)}
-                </span>
+
+                {/* Route */}
+                <div className="tcard-route">
+                    <div className="tcard-city">
+                        <div className="tcard-time">{formatTime(train.depart_time)}</div>
+                        <div className="tcard-city-name">{train.from_city}</div>
+                        <div className="tcard-station">{train.from_station}</div>
+                    </div>
+
+                    <div className="tcard-middle">
+                        <div className="tcard-duration">{formatDuration(duration)}</div>
+                        <div className="tcard-line">
+                            <div className="tcard-dot" />
+                            <div className="tcard-dashes" />
+                            <span className="tcard-icon">🚆</span>
+                            <div className="tcard-dashes" />
+                            <div className="tcard-dot" />
+                        </div>
+                        <div className="tcard-direct">Tàu thẳng</div>
+                    </div>
+
+                    <div className="tcard-city" style={{ textAlign: "right" }}>
+                        <div className="tcard-time">{formatTime(train.arrive_time)}</div>
+                        <div className="tcard-city-name">{train.to_city}</div>
+                        <div className="tcard-station">{train.to_station}</div>
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="tcard-footer">
+                    <div className="tcard-price-wrap">
+                        {passengers > 1 && (
+                            <div className="tcard-price-per">
+                                {displayPrice.toLocaleString("vi-VN")}₫/khách
+                            </div>
+                        )}
+                        <div className="tcard-price">
+                            <span className="tcard-price-from">Từ</span>
+                            <span className="tcard-price-value">
+                                {(displayPrice * passengers).toLocaleString("vi-VN")}₫
+                            </span>
+                        </div>
+                        {passengers > 1 && (
+                            <div className="tcard-price-total">Tổng {passengers} khách</div>
+                        )}
+                    </div>
+
+                    <button className="tcard-btn" onClick={() => setShowModal(true)}>
+                        Chọn ghế
+                    </button>
+                </div>
             </div>
 
-            {/* Thông tin chặng đi */}
-            <div className="flex justify-between items-center bg-gray-50 p-3 rounded-md mb-4">
-                <div className="text-center w-1/3">
-                    <p className="text-sm text-gray-500">Ga đi</p>
-                    <p className="font-bold text-lg">{train.from_station}</p>
-                    <p className="text-sm">{formatTime(train.depart_time)}</p>
-                </div>
-
-                <div className="text-green-600 font-bold text-2xl w-1/3 text-center">
-                    {' 🚆 '}
-                </div>
-
-                <div className="text-center w-1/3">
-                    <p className="text-sm text-gray-500">Ga đến</p>
-                    <p className="font-bold text-lg">{train.to_station}</p>
-                    <p className="text-sm">{formatTime(train.arrive_time)}</p>
-                </div>
-            </div>
-
-            {/* Nút thao tác */}
-            <div className="flex justify-end">
-                <Link
-                    href={`/trains/${train.train_id}`}
-                    className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition-colors"
-                >
-                    Xem chi tiết
-                </Link>
-            </div>
-        </div>
+            {showModal && (
+                <TrainTicketModal
+                    train={train}
+                    passengers={passengers}
+                    onClose={() => setShowModal(false)}
+                />
+            )}
+        </>
     );
 }

@@ -14,7 +14,9 @@ const SEVEN_DAYS_LATER = new Date(NOW.getTime() + 7 * 86400000);
 export default function PromotionCard({ promo }: Props) {
     const [copied, setCopied] = useState(false);
 
-    const usagePercent = Math.round((promo.used_count / promo.usage_limit) * 100);
+    const usagePercent = promo.usage_limit
+        ? Math.round((promo.used_count / promo.usage_limit) * 100)
+        : 0;
     const isAlmostGone = usagePercent >= 80;
     const isExpiringSoon = new Date(promo.expired_at) <= SEVEN_DAYS_LATER;
     const isInactive = promo.status !== "active";
@@ -80,16 +82,38 @@ export default function PromotionCard({ promo }: Props) {
                     <span>HSD: {new Date(promo.expired_at).toLocaleDateString("vi-VN")}</span>
                 </div>
 
-                <div className="pcard-usage">
-                    <div className="pcard-usage-bar">
-                        <div
-                            className={`pcard-usage-fill${isAlmostGone ? " pcard-usage-fill--hot" : ""}`}
-                            style={{ width: `${usagePercent}%` }}
-                        />
+                {/* Giới hạn mã / tài khoản */}
+                <div className="pcard-limits">
+                    <div className="pcard-limit-item">
+                        <span className="pcard-limit-label">🎫 Giới hạn mã</span>
+                        <span className="pcard-limit-value">
+                            {promo.usage_limit ? `${promo.usage_limit.toLocaleString("vi-VN")} lượt` : "Không giới hạn"}
+                        </span>
                     </div>
-                    <span className="pcard-usage-text">
-                        Đã dùng {promo.used_count}/{promo.usage_limit} lượt
-                    </span>
+                    <div className="pcard-limit-item">
+                        <span className="pcard-limit-label">👤 Mỗi tài khoản</span>
+                        <span className="pcard-limit-value">
+                            {promo.per_user_limit ? `${promo.per_user_limit} lượt` : "Không giới hạn"}
+                        </span>
+                    </div>
+                </div>
+
+                <div className="pcard-usage">
+                    {promo.usage_limit ? (
+                        <>
+                            <div className="pcard-usage-bar">
+                                <div
+                                    className={`pcard-usage-fill${isAlmostGone ? " pcard-usage-fill--hot" : ""}`}
+                                    style={{ width: `${usagePercent}%` }}
+                                />
+                            </div>
+                            <span className="pcard-usage-text">
+                                Đã dùng {promo.used_count}/{promo.usage_limit} lượt
+                            </span>
+                        </>
+                    ) : (
+                        <span className="pcard-usage-text">Đã dùng {promo.used_count} lượt</span>
+                    )}
                 </div>
             </div>
         </div>

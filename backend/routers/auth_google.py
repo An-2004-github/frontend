@@ -7,7 +7,7 @@ from auth import create_access_token
 router = APIRouter(prefix="/api/auth/google", tags=["auth"])
 
 
-@router.post("/")
+@router.post("")
 def login_google(token: str):
     # Verify token với Google
     response = requests.get(

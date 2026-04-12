@@ -6,7 +6,7 @@ router = APIRouter(prefix="/api/flights", tags=["flights"])
 
 
 # Tìm kiếm chuyến bay
-@router.get("/")
+@router.get("")
 def search_flights(
     from_city: str | None = None,
     to_city: str | None = None,
@@ -80,6 +80,32 @@ def get_airlines():
         result = conn.execute(
             text("SELECT DISTINCT airline FROM flights WHERE status = 'active' ORDER BY airline")
         )
+        return [row[0] for row in result]
+
+
+# Lấy điểm đến có chuyến bay từ một thành phố cụ thể (và ngày cụ thể nếu có)
+@router.get("/destinations")
+def get_destinations(from_city: str | None = None, depart_date: str | None = None):
+    conditions = ["status = 'active'"]
+    params = {}
+
+    if from_city:
+        conditions.append("from_city LIKE :from_city")
+        params["from_city"] = f"%{from_city}%"
+
+    if depart_date:
+        conditions.append("DATE(depart_time) = :depart_date")
+        params["depart_date"] = depart_date
+    else:
+        conditions.append("DATE(depart_time) >= CURDATE()")
+
+    query = f"""
+        SELECT DISTINCT to_city FROM flights
+        WHERE {' AND '.join(conditions)}
+        ORDER BY to_city
+    """
+    with engine.connect() as conn:
+        result = conn.execute(text(query), params)
         return [row[0] for row in result]
 
 

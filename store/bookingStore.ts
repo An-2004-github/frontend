@@ -29,6 +29,9 @@ export interface FlightBooking {
     arriveTime: string;
     seatClass: string;
     passengers: number;
+    adultsCount: number;
+    childrenCount: number;
+    infantsCount: number;
     basePrice: number;
     taxAndFees: number;
     totalPrice: number;
@@ -48,7 +51,25 @@ export interface BusBooking {
     totalPrice: number;
 }
 
-export type BookingData = HotelBooking | FlightBooking | BusBooking;
+export interface TrainBooking {
+    type: "train";
+    trainId: number;
+    trainCode: string;
+    fromCity: string;
+    toCity: string;
+    fromStation: string;
+    toStation: string;
+    departTime: string;
+    arriveTime: string;
+    seatClass: string;
+    seatClassName: string;
+    passengers: number;
+    basePrice: number;
+    taxAndFees: number;
+    totalPrice: number;
+}
+
+export type BookingData = HotelBooking | FlightBooking | BusBooking | TrainBooking;
 
 interface BookingStore {
     booking: BookingData | null;

@@ -23,7 +23,7 @@ export default function RootLayout({
   return (
     <html lang="vi">
       <body className={`${inter.className} bg-slate-50 text-slate-900 flex flex-col min-h-screen`}>
-        <GoogleOAuthProvider clientId="432427620604-dk7u0doioej55b63neos8rhm2uu4oe0i.apps.googleusercontent.com">
+        <GoogleOAuthProvider clientId="600520983957-j74rtlmpkj0ia8ifv19uihnn0h8la03o.apps.googleusercontent.com">
 
           {!isAdmin && <Navbar />}
 

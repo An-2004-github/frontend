@@ -20,6 +20,7 @@ export interface Hotel {
     min_price?: number;
     total_rooms?: number;
     available_rooms?: number;
+    max_guest_capacity?: number;
 
     // JOIN từ destinations
     destination_name?: string;

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, UploadFile, File
+import io
 from sqlalchemy import text
 from database import engine
 from auth import get_current_user
@@ -34,6 +35,7 @@ def get_stats(admin_id: int = Depends(get_admin_user)):
         total_hotels   = conn.execute(text("SELECT COUNT(*) FROM hotels")).scalar()
         total_flights  = conn.execute(text("SELECT COUNT(*) FROM flights")).scalar()
         total_buses    = conn.execute(text("SELECT COUNT(*) FROM buses")).scalar()
+        total_trains   = conn.execute(text("SELECT COUNT(*) FROM trains")).scalar()
 
         # Doanh thu 7 ngày gần nhất
         revenue_7d = conn.execute(text("""
@@ -53,6 +55,7 @@ def get_stats(admin_id: int = Depends(get_admin_user)):
         "total_hotels": total_hotels,
         "total_flights": total_flights,
         "total_buses": total_buses,
+        "total_trains": total_trains,
         "revenue_7d": [{"day": str(r.day), "total": float(r.total)} for r in revenue_7d],
     }
 
@@ -197,8 +200,9 @@ def get_all_bookings(admin_id: int = Depends(get_admin_user)):
                 MAX(bi.entity_type) AS entity_type,
                 MAX(CASE bi.entity_type
                     WHEN 'room'   THEN CONCAT(h.name, ' - ', rt.name)
-                    WHEN 'flight' THEN CONCAT(f.airline, ': ', f.from_city, ' → ', f.to_city)
-                    WHEN 'bus'    THEN CONCAT(bs.company, ': ', bs.from_city, ' → ', bs.to_city)
+                    WHEN 'flight' THEN CONCAT(f.airline, ': ', f.from_city, ' \u2192 ', f.to_city)
+                    WHEN 'bus'    THEN CONCAT(bs.company, ': ', bs.from_city, ' \u2192 ', bs.to_city)
+                    WHEN 'train'  THEN CONCAT('Tàu ', t.train_code, ': ', t.from_city, ' \u2192 ', t.to_city)
                     ELSE CONCAT(bi.entity_type, ' #', bi.entity_id)
                 END) AS entity_name
             FROM bookings b
@@ -208,6 +212,7 @@ def get_all_bookings(admin_id: int = Depends(get_admin_user)):
             LEFT JOIN hotels h ON h.hotel_id = rt.hotel_id
             LEFT JOIN flights f ON f.flight_id = bi.entity_id AND bi.entity_type = 'flight'
             LEFT JOIN buses bs ON bs.bus_id = bi.entity_id AND bi.entity_type = 'bus'
+            LEFT JOIN trains t ON t.train_id = bi.entity_id AND bi.entity_type = 'train'
             GROUP BY b.booking_id, b.booking_date, b.status, b.total_price, b.final_amount,
                      u.full_name, u.email
             ORDER BY b.booking_date DESC
@@ -232,6 +237,7 @@ def update_booking_status(booking_id: int, status: str, background_tasks: Backgr
                     u.email, u.full_name,
                     b.final_amount, b.booking_date,
                     bi.entity_type, bi.check_in_date, bi.check_out_date,
+                    bi.quantity, bi.guests,
                     CASE bi.entity_type
                         WHEN 'room'   THEN CONCAT(h.name, ' - ', rt.name)
                         WHEN 'flight' THEN CONCAT(f.airline, ': ', f.from_city, ' → ', f.to_city)
@@ -261,6 +267,8 @@ def update_booking_status(booking_id: int, status: str, background_tasks: Backgr
                     check_in=str(info["check_in_date"]) if info["check_in_date"] else None,
                     check_out=str(info["check_out_date"]) if info["check_out_date"] else None,
                     booking_date=str(info["booking_date"])[:10] if info["booking_date"] else None,
+                    rooms=int(info["quantity"]) if info.get("quantity") else None,
+                    guests=int(info["guests"]) if info.get("guests") else None,
                 )
 
                 # Cập nhật rank + cộng cashback vào ví
@@ -606,10 +614,10 @@ async def admin_approve_withdrawal(
             text("UPDATE users SET wallet = wallet - :amount WHERE user_id = :uid"),
             {"amount": req_dict["amount"], "uid": req_dict["user_id"]}
         )
-        # Cập nhật trạng thái
+        # Cập nhật trạng thái + lưu admin đã duyệt
         conn.execute(
-            text("UPDATE withdrawal_requests SET status = 'completed' WHERE id = :id"),
-            {"id": withdrawal_id}
+            text("UPDATE withdrawal_requests SET status = 'completed', approved_by = :aid WHERE id = :id"),
+            {"id": withdrawal_id, "aid": admin_id}
         )
         # Ghi lịch sử
         conn.execute(text("""
@@ -644,22 +652,68 @@ def admin_reject_withdrawal(withdrawal_id: int, admin_id: int = Depends(get_admi
         if dict(req._mapping)["status"] != "pending":
             raise HTTPException(400, "Yêu cầu này đã được xử lý")
         conn.execute(
-            text("UPDATE withdrawal_requests SET status = 'rejected' WHERE id = :id"),
-            {"id": withdrawal_id}
+            text("UPDATE withdrawal_requests SET status = 'rejected', approved_by = :aid WHERE id = :id"),
+            {"id": withdrawal_id, "aid": admin_id}
         )
     return {"success": True, "message": "Đã từ chối yêu cầu rút tiền"}
+
+
+# ── WALLET MANAGEMENT ─────────────────────────────────────────────
+@router.get("/wallets")
+def admin_list_wallets(admin_id: int = Depends(get_admin_user)):
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT user_id, full_name, email, wallet, created_at
+            FROM users
+            ORDER BY wallet DESC
+        """)).fetchall()
+    return [dict(r._mapping) for r in rows]
+
+
+@router.get("/wallets/{user_id}/transactions")
+def admin_wallet_transactions(user_id: int, admin_id: int = Depends(get_admin_user)):
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT
+                wt.transaction_id,
+                wt.amount,
+                wt.type,
+                wt.description,
+                wt.status,
+                wt.created_at,
+                -- Với giao dịch rút tiền: lấy thông tin admin đã duyệt
+                CASE wt.type
+                    WHEN 'withdrawal' THEN (
+                        SELECT u2.full_name
+                        FROM withdrawal_requests wr2
+                        JOIN users u2 ON u2.user_id = wr2.approved_by
+                        WHERE wr2.user_id = wt.user_id
+                          AND wr2.status IN ('completed','rejected')
+                          AND ABS(wr2.amount - ABS(wt.amount)) < 1
+                          AND wr2.updated_at >= DATE_SUB(wt.created_at, INTERVAL 1 MINUTE)
+                          AND wr2.updated_at <= DATE_ADD(wt.created_at, INTERVAL 1 MINUTE)
+                        LIMIT 1
+                    )
+                    ELSE NULL
+                END AS approved_by_name
+            FROM wallet_transactions wt
+            WHERE wt.user_id = :uid
+            ORDER BY wt.created_at DESC
+        """), {"uid": user_id}).fetchall()
+    return [dict(r._mapping) for r in rows]
 
 
 # ── PROMOTIONS ───────────────────────────────────────────────────
 class PromotionRequest(BaseModel):
     code: str
     description: Optional[str] = None
-    discount_type: str = "percent"           # 'percent' | 'fixed'
+    discount_type: str = "percent"
     discount_percent: Optional[float] = 0
     max_discount: Optional[float] = 0
     min_order_value: Optional[float] = 0
     usage_limit: Optional[int] = 100
-    applies_to: Optional[str] = "all"        # 'all' | 'hotel' | 'flight' | 'bus'
+    per_user_limit: Optional[int] = None
+    applies_to: Optional[str] = "all"
     status: Optional[str] = "active"
     expired_at: Optional[str] = None
 
@@ -685,13 +739,14 @@ def admin_create_promotion(data: PromotionRequest, admin_id: int = Depends(get_a
         result = conn.execute(text("""
             INSERT INTO promotions
                 (code, description, discount_type, discount_percent, max_discount,
-                 min_order_value, usage_limit, applies_to, status, expired_at)
+                 min_order_value, usage_limit, per_user_limit, applies_to, status, expired_at)
             VALUES
-                (:code, :desc, :dtype, :dpct, :maxd, :minv, :ulimit, :applies, :status, :exp)
+                (:code, :desc, :dtype, :dpct, :maxd, :minv, :ulimit, :per_user, :applies, :status, :exp)
         """), {
             "code": code, "desc": data.description, "dtype": data.discount_type,
             "dpct": data.discount_percent or 0, "maxd": data.max_discount or 0,
             "minv": data.min_order_value or 0, "ulimit": data.usage_limit or 100,
+            "per_user": data.per_user_limit,
             "applies": data.applies_to or "all", "status": data.status or "active",
             "exp": data.expired_at,
         })
@@ -713,13 +768,14 @@ def admin_update_promotion(promo_id: int, data: PromotionRequest, admin_id: int 
             UPDATE promotions SET
                 code=:code, description=:desc, discount_type=:dtype,
                 discount_percent=:dpct, max_discount=:maxd,
-                min_order_value=:minv, usage_limit=:ulimit,
+                min_order_value=:minv, usage_limit=:ulimit, per_user_limit=:per_user,
                 applies_to=:applies, status=:status, expired_at=:exp
             WHERE promo_id=:id
         """), {
             "code": code, "desc": data.description, "dtype": data.discount_type,
             "dpct": data.discount_percent or 0, "maxd": data.max_discount or 0,
             "minv": data.min_order_value or 0, "ulimit": data.usage_limit or 100,
+            "per_user": data.per_user_limit,
             "applies": data.applies_to or "all", "status": data.status or "active",
             "exp": data.expired_at, "id": promo_id,
         })
@@ -912,3 +968,326 @@ def reject_modification(mod_id: int, data: dict = {}, admin_id: int = Depends(ge
         )
 
     return {"message": "Đã từ chối yêu cầu"}
+
+
+# ── TRAINS ───────────────────────────────────────────────────────
+class TrainRequest(BaseModel):
+    train_code: str
+    from_city: str
+    to_city: str
+    from_station: str
+    to_station: str
+    depart_time: str
+    arrive_time: str
+    status: Optional[str] = "active"
+
+
+@router.get("/trains")
+def admin_get_trains(admin_id: int = Depends(get_admin_user)):
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT t.*,
+                   TIMESTAMPDIFF(MINUTE, t.depart_time, t.arrive_time) AS duration_minutes,
+                   (SELECT COUNT(*) FROM train_seats ts WHERE ts.train_id = t.train_id AND ts.is_booked = 0) AS available_seats,
+                   (SELECT COUNT(*) FROM train_seats ts WHERE ts.train_id = t.train_id) AS total_seats
+            FROM trains t
+            ORDER BY t.depart_time DESC
+        """)).fetchall()
+    return [dict(r._mapping) for r in rows]
+
+
+@router.post("/trains")
+def admin_create_train(data: TrainRequest, admin_id: int = Depends(get_admin_user)):
+    with engine.begin() as conn:
+        existing = conn.execute(
+            text("SELECT train_id FROM trains WHERE train_code = :code AND DATE(depart_time) = DATE(:depart)"),
+            {"code": data.train_code, "depart": data.depart_time}
+        ).fetchone()
+        if existing:
+            raise HTTPException(400, "Tàu này đã tồn tại trong ngày đó")
+        result = conn.execute(text("""
+            INSERT INTO trains (train_code, from_city, to_city, from_station, to_station,
+                                depart_time, arrive_time, status)
+            VALUES (:code, :from_city, :to_city, :from_st, :to_st, :depart, :arrive, :status)
+        """), {
+            "code": data.train_code, "from_city": data.from_city, "to_city": data.to_city,
+            "from_st": data.from_station, "to_st": data.to_station,
+            "depart": data.depart_time, "arrive": data.arrive_time, "status": data.status,
+        })
+    return {"train_id": result.lastrowid, "message": "Tạo chuyến tàu thành công"}
+
+
+@router.put("/trains/{train_id}")
+def admin_update_train(train_id: int, data: TrainRequest, admin_id: int = Depends(get_admin_user)):
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE trains SET train_code=:code, from_city=:from_city, to_city=:to_city,
+            from_station=:from_st, to_station=:to_st,
+            depart_time=:depart, arrive_time=:arrive, status=:status
+            WHERE train_id=:id
+        """), {
+            "code": data.train_code, "from_city": data.from_city, "to_city": data.to_city,
+            "from_st": data.from_station, "to_st": data.to_station,
+            "depart": data.depart_time, "arrive": data.arrive_time,
+            "status": data.status, "id": train_id,
+        })
+    return {"message": "Cập nhật chuyến tàu thành công"}
+
+
+@router.delete("/trains/{train_id}")
+def admin_delete_train(train_id: int, admin_id: int = Depends(get_admin_user)):
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM train_seats WHERE train_id = :id"), {"id": train_id})
+        conn.execute(text("DELETE FROM trains WHERE train_id = :id"), {"id": train_id})
+    return {"message": "Xóa chuyến tàu thành công"}
+
+
+# ── DOWNLOAD EXCEL TEMPLATE ─────────────────────────────────────────
+from fastapi.responses import StreamingResponse as _StreamingResponse
+
+EXCEL_TEMPLATES = {
+    "hotels": {
+        # Bắt buộc: name | Tùy chọn: address, city, description, amenities
+        "headers": ["name *", "address", "city", "description", "amenities"],
+        "sample": [
+            ["Khách sạn Mặt Trời", "12 Trần Phú, Đà Nẵng", "Đà Nẵng", "Khách sạn 4 sao view biển", "Wifi, Hồ bơi, Gym"],
+            ["Villa Hội An", "45 Nguyễn Thị Minh Khai, Hội An", "Hội An", "Villa cổ kính yên tĩnh", "Wifi, Bể bơi riêng"],
+        ],
+    },
+    "flights": {
+        # Bắt buộc: airline, from_city, to_city, price | Tùy chọn: depart_time, arrive_time, available_seats
+        "headers": ["airline *", "from_city *", "to_city *", "price *", "depart_time", "arrive_time", "available_seats"],
+        "sample": [
+            ["Vietnam Airlines", "Hà Nội", "Đà Nẵng", 850000, "2026-05-01 07:00", "2026-05-01 08:20", 180],
+            ["VietJet Air", "Hồ Chí Minh", "Phú Quốc", 650000, "2026-05-10 09:00", "2026-05-10 10:00", 200],
+        ],
+    },
+    "buses": {
+        # Bắt buộc: company, from_city, to_city, price | Tùy chọn: depart_time, arrive_time, available_seats
+        "headers": ["company *", "from_city *", "to_city *", "price *", "depart_time", "arrive_time", "available_seats"],
+        "sample": [
+            ["Phương Trang", "Hà Nội", "Đà Lạt", 350000, "2026-05-01 19:00", "2026-05-02 09:00", 40],
+            ["Kumho Samco", "Hồ Chí Minh", "Vũng Tàu", 120000, "2026-05-05 08:00", "2026-05-05 10:30", 35],
+        ],
+    },
+    "trains": {
+        # Bắt buộc: train_code, from_city, to_city, from_station, to_station, depart_time, arrive_time, price
+        "headers": ["train_code *", "from_city *", "to_city *", "from_station *", "to_station *", "depart_time *", "arrive_time *", "price *", "status"],
+        "sample": [
+            ["SE1", "Hà Nội", "Hồ Chí Minh", "Ga Hà Nội", "Ga Sài Gòn", "2026-05-01 06:00", "2026-05-02 12:00", 700000, "active"],
+            ["SE3", "Hà Nội", "Đà Nẵng", "Ga Hà Nội", "Ga Đà Nẵng", "2026-05-02 07:30", "2026-05-02 20:30", 420000, "active"],
+        ],
+    },
+    "promotions": {
+        # Bắt buộc: code, discount_percent | Tùy chọn: description, discount_type, max_discount, min_order_value, usage_limit, applies_to
+        "headers": ["code *", "discount_percent *", "description", "discount_type", "max_discount", "min_order_value", "usage_limit", "applies_to"],
+        "sample": [
+            ["SUMMER20", 20, "Giảm 20% mùa hè", "percent", 500000, 1000000, 100, "all"],
+            ["HOTEL50K", 50000, "Giảm 50k khách sạn", "fixed", "", 500000, 50, "hotel"],
+        ],
+    },
+}
+
+@router.get("/template/{section}")
+def download_template(section: str, admin_id: int = Depends(get_admin_user)):
+    """Tải file Excel mẫu cho từng section."""
+    if section not in EXCEL_TEMPLATES:
+        raise HTTPException(400, f"Không có template cho '{section}'")
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        raise HTTPException(500, "Thiếu thư viện openpyxl. Chạy: pip install openpyxl")
+
+    tmpl = EXCEL_TEMPLATES[section]
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = section.capitalize()
+
+    # Header row — màu xanh đậm, chữ trắng (ARGB format: FF + hex)
+    header_fill = PatternFill("solid", fgColor="FF0052CC")
+    header_font = Font(bold=True, color="FFFFFFFF", size=11)
+    for col, h in enumerate(tmpl["headers"], 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+        ws.column_dimensions[cell.column_letter].width = max(18, len(h) + 4)
+
+    # Sample rows — màu xanh nhạt xen kẽ
+    alt_fill = PatternFill("solid", fgColor="FFE8F0FE")
+    for row_idx, sample_row in enumerate(tmpl["sample"], 2):
+        for col_idx, val in enumerate(sample_row, 1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=val)
+            if row_idx % 2 == 0:
+                cell.fill = alt_fill
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    return _StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=template_{section}.xlsx"},
+    )
+
+
+# ── IMPORT FROM EXCEL ───────────────────────────────────────────────
+@router.post("/import/{section}")
+async def import_excel(
+    section: str,
+    file: UploadFile = File(...),
+    admin_id: int = Depends(get_admin_user),
+):
+    ALLOWED = {"hotels", "flights", "buses", "trains", "promotions"}
+    if section not in ALLOWED:
+        raise HTTPException(400, f"Không hỗ trợ import cho section '{section}'")
+    try:
+        import openpyxl
+    except ImportError:
+        raise HTTPException(500, "Thiếu thư viện openpyxl. Chạy: pip install openpyxl")
+
+    content = await file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+        ws = wb.active
+    except Exception:
+        raise HTTPException(400, "File Excel không hợp lệ hoặc bị lỗi")
+
+    headers = [str(cell.value).strip() if cell.value else "" for cell in ws[1]]
+    inserted = 0
+    skipped = 0
+    errors = []
+
+    def get(row_dict, *keys, default=None):
+        for k in keys:
+            v = row_dict.get(k)
+            if v is not None and str(v).strip() != "":
+                return v
+        return default
+
+    with engine.begin() as conn:
+        for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            row_dict = {headers[i]: (row[i] if i < len(row) else None) for i in range(len(headers))}
+            if all(v is None or str(v).strip() == "" for v in row_dict.values()):
+                continue
+            try:
+                # Strip " *" khỏi key (do header có dấu * để đánh dấu bắt buộc)
+                row_dict = {k.replace(" *", "").strip(): v for k, v in row_dict.items()}
+
+                if section == "hotels":
+                    name = get(row_dict, "name")
+                    if not name: skipped += 1; continue
+                    if conn.execute(text("SELECT hotel_id FROM hotels WHERE name=:n LIMIT 1"), {"n": str(name)}).fetchone():
+                        skipped += 1; continue
+                    dest_id = None
+                    city_name = get(row_dict, "city")
+                    if city_name:
+                        r = conn.execute(text("SELECT destination_id FROM destinations WHERE city LIKE :c LIMIT 1"), {"c": f"%{city_name}%"}).fetchone()
+                        if r: dest_id = r[0]
+                    # amenities là JSON array
+                    amen_raw = get(row_dict, "amenities") or ""
+                    import json as _json
+                    amen_json = _json.dumps([a.strip() for a in str(amen_raw).split(",") if a.strip()]) if amen_raw else None
+                    conn.execute(text("""
+                        INSERT INTO hotels (name, address, destination_id, description, amenities)
+                        VALUES (:name, :addr, :dest, :desc, :amen)
+                    """), {
+                        "name": str(name),
+                        "addr": str(get(row_dict, "address") or ""),
+                        "dest": int(dest_id) if dest_id else None,
+                        "desc": str(get(row_dict, "description") or ""),
+                        "amen": amen_json,
+                    })
+                    inserted += 1
+
+                elif section == "flights":
+                    airline   = get(row_dict, "airline")
+                    from_city = get(row_dict, "from_city")
+                    to_city   = get(row_dict, "to_city")
+                    price     = get(row_dict, "price")
+                    if not all([airline, from_city, to_city, price]): skipped += 1; continue
+                    conn.execute(text("""
+                        INSERT INTO flights (airline, from_city, to_city, depart_time, arrive_time, price, available_seats)
+                        VALUES (:airline, :from_c, :to_c, :dep, :arr, :price, :seats)
+                    """), {
+                        "airline": str(airline), "from_c": str(from_city), "to_c": str(to_city),
+                        "dep":   get(row_dict, "depart_time") or None,
+                        "arr":   get(row_dict, "arrive_time") or None,
+                        "price": float(price),
+                        "seats": int(get(row_dict, "available_seats") or 100),
+                    })
+                    inserted += 1
+
+                elif section == "buses":
+                    company   = get(row_dict, "company")
+                    from_city = get(row_dict, "from_city")
+                    to_city   = get(row_dict, "to_city")
+                    price     = get(row_dict, "price")
+                    if not all([company, from_city, to_city, price]): skipped += 1; continue
+                    conn.execute(text("""
+                        INSERT INTO buses (company, from_city, to_city, depart_time, arrive_time, price, available_seats)
+                        VALUES (:company, :from_c, :to_c, :dep, :arr, :price, :seats)
+                    """), {
+                        "company": str(company), "from_c": str(from_city), "to_c": str(to_city),
+                        "dep":   get(row_dict, "depart_time") or None,
+                        "arr":   get(row_dict, "arrive_time") or None,
+                        "price": float(price),
+                        "seats": int(get(row_dict, "available_seats") or 30),
+                    })
+                    inserted += 1
+
+                elif section == "trains":
+                    code      = get(row_dict, "train_code")
+                    from_city = get(row_dict, "from_city")
+                    to_city   = get(row_dict, "to_city")
+                    from_st   = get(row_dict, "from_station")
+                    to_st     = get(row_dict, "to_station")
+                    dep       = get(row_dict, "depart_time")
+                    arr       = get(row_dict, "arrive_time")
+                    price     = get(row_dict, "price")
+                    if not all([code, from_city, to_city, from_st, to_st, dep, arr, price]):
+                        skipped += 1; continue
+                    conn.execute(text("""
+                        INSERT INTO trains (train_code, from_city, to_city, from_station, to_station, depart_time, arrive_time, price, status)
+                        VALUES (:code, :from_c, :to_c, :from_st, :to_st, :dep, :arr, :price, :status)
+                    """), {
+                        "code": str(code), "from_c": str(from_city), "to_c": str(to_city),
+                        "from_st": str(from_st), "to_st": str(to_st),
+                        "dep": str(dep), "arr": str(arr),
+                        "price": float(price),
+                        "status": str(get(row_dict, "status") or "active"),
+                    })
+                    inserted += 1
+
+                elif section == "promotions":
+                    code     = get(row_dict, "code")
+                    discount = get(row_dict, "discount_percent")
+                    if not code or not discount: skipped += 1; continue
+                    if conn.execute(text("SELECT promo_id FROM promotions WHERE code=:c LIMIT 1"), {"c": str(code)}).fetchone():
+                        skipped += 1; continue
+                    conn.execute(text("""
+                        INSERT INTO promotions (code, description, discount_type, discount_percent,
+                                               max_discount, min_order_value, usage_limit, applies_to, status)
+                        VALUES (:code, :desc, :dtype, :dpct, :maxd, :minv, :ulim, :apto, :status)
+                    """), {
+                        "code":  str(code),
+                        "desc":  str(get(row_dict, "description", "Mô tả") or ""),
+                        "dtype": str(get(row_dict, "discount_type") or "percent"),
+                        "dpct":  float(discount),
+                        "maxd":  float(get(row_dict, "max_discount") or 0) or None,
+                        "minv":  float(get(row_dict, "min_order_value") or 0) or None,
+                        "ulim":  int(get(row_dict, "usage_limit") or 100),
+                        "apto":  str(get(row_dict, "applies_to") or "all"),
+                        "status": str(get(row_dict, "status") or "active"),
+                    })
+                    inserted += 1
+
+            except Exception as e:
+                errors.append(f"Hàng {row_idx}: {str(e)[:120]}")
+                if len(errors) >= 20:
+                    break
+
+    return {"inserted": inserted, "skipped": skipped, "errors": errors}
+
