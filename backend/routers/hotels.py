@@ -193,7 +193,10 @@ def check_availability(
                         WHEN b.status IN ('pending','confirmed')
                             AND bi.check_in_date < :check_out
                             AND bi.check_out_date > :check_in
-                        THEN 1 END)) AS available_rooms
+                        THEN 1 END)) AS available_rooms,
+                    (SELECT GROUP_CONCAT(img.image_url ORDER BY img.image_id SEPARATOR ',')
+                     FROM images img
+                     WHERE img.entity_type = 'room_type' AND img.entity_id = rt.room_type_id) AS image_url
                 FROM room_types rt
                 LEFT JOIN booking_items bi
                     ON bi.entity_type = 'room' AND bi.entity_id = rt.room_type_id
@@ -207,3 +210,18 @@ def check_availability(
             {"hotel_id": hotel_id, "check_in": check_in, "check_out": check_out}
         ).fetchall()
         return [dict(r._mapping) for r in result]
+
+
+# ── Public: danh sách địa điểm (dùng cho trang chủ) ─────────────
+@router.get("/destinations")
+def get_destinations():
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT d.destination_id, d.city, d.name, d.description,
+                   (SELECT img.image_url FROM images img
+                    WHERE img.entity_type = 'destination' AND img.entity_id = d.destination_id
+                    LIMIT 1) AS image_url
+            FROM destinations d
+            ORDER BY d.city ASC
+        """)).fetchall()
+    return [dict(r._mapping) for r in rows]

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from typing import Optional
 from email_service import send_booking_confirmation_email
 from rank_utils import get_rank, get_cashback_rate
+from routers.notifications import create_notification
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -302,16 +303,18 @@ def update_booking_status(booking_id: int, status: str, background_tasks: Backgr
     return {"message": "Cập nhật trạng thái thành công"}
 
 
-# ── Helper: lưu ảnh vào bảng images ─────────────────────────────
+# ── Helper: lưu nhiều ảnh vào bảng images (tối đa 3) ────────────
 def _save_image(conn, entity_type: str, entity_id: int, image_url: Optional[str]):
-    """Xóa ảnh cũ rồi insert ảnh mới vào bảng images."""
+    """Nhận chuỗi URL phân cách bằng dấu phẩy, xóa ảnh cũ rồi insert tối đa 3 ảnh mới."""
     conn.execute(text(
         "DELETE FROM images WHERE entity_type=:et AND entity_id=:eid"
     ), {"et": entity_type, "eid": entity_id})
     if image_url:
-        conn.execute(text(
-            "INSERT INTO images (entity_type, entity_id, image_url) VALUES (:et, :eid, :url)"
-        ), {"et": entity_type, "eid": entity_id, "url": image_url})
+        urls = [u.strip() for u in image_url.split(",") if u.strip()][:3]
+        for url in urls:
+            conn.execute(text(
+                "INSERT INTO images (entity_type, entity_id, image_url) VALUES (:et, :eid, :url)"
+            ), {"et": entity_type, "eid": entity_id, "url": url})
 
 
 # ── HOTEL ROOM TYPES ─────────────────────────────────────────────
@@ -327,8 +330,18 @@ def admin_get_rooms(hotel_id: int, admin_id: int = Depends(get_admin_user)):
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT rt.*,
-                   (SELECT img.image_url FROM images img
-                    WHERE img.entity_type='room_type' AND img.entity_id=rt.room_type_id LIMIT 1) AS image_url
+                   GREATEST(0, rt.total_rooms - COALESCE((
+                       SELECT COUNT(*)
+                       FROM booking_items bi
+                       JOIN bookings b ON b.booking_id = bi.booking_id
+                       WHERE bi.entity_type = 'room'
+                         AND bi.entity_id = rt.room_type_id
+                         AND b.status IN ('pending','confirmed')
+                         AND bi.check_out_date >= CURDATE()
+                   ), 0)) AS available_rooms,
+                   (SELECT GROUP_CONCAT(img.image_url ORDER BY img.image_id SEPARATOR ',')
+                    FROM images img
+                    WHERE img.entity_type='room_type' AND img.entity_id=rt.room_type_id) AS image_url
             FROM room_types rt
             WHERE rt.hotel_id = :hid
             ORDER BY rt.price_per_night ASC
@@ -390,8 +403,23 @@ def admin_get_hotels(admin_id: int = Depends(get_admin_user)):
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT h.*, d.city AS dest_city,
-                   (SELECT img.image_url FROM images img
-                    WHERE img.entity_type='hotel' AND img.entity_id=h.hotel_id LIMIT 1) AS image_url
+                   (SELECT GROUP_CONCAT(img.image_url ORDER BY img.image_id SEPARATOR ',')
+                    FROM images img
+                    WHERE img.entity_type='hotel' AND img.entity_id=h.hotel_id) AS image_url,
+                   (SELECT COALESCE(SUM(rt.total_rooms), 0)
+                    FROM room_types rt WHERE rt.hotel_id = h.hotel_id) AS total_rooms,
+                   (SELECT GREATEST(0,
+                        COALESCE(SUM(rt.total_rooms), 0) - (
+                            SELECT COUNT(*)
+                            FROM booking_items bi2
+                            JOIN bookings b2 ON b2.booking_id = bi2.booking_id
+                            JOIN room_types rt2 ON rt2.room_type_id = bi2.entity_id
+                            WHERE bi2.entity_type = 'room'
+                            AND rt2.hotel_id = h.hotel_id
+                            AND b2.status IN ('pending','confirmed')
+                            AND bi2.check_out_date >= CURDATE()
+                        ))
+                    FROM room_types rt WHERE rt.hotel_id = h.hotel_id) AS available_rooms
             FROM hotels h
             LEFT JOIN destinations d ON d.destination_id = h.destination_id
             ORDER BY h.hotel_id DESC
@@ -444,17 +472,32 @@ class FlightRequest(BaseModel):
     depart_time: str
     arrive_time: str
     price: float
-    available_seats: Optional[int] = 100
     image_url: Optional[str] = None
+    status: Optional[str] = "active"
 
 
 @router.get("/flights")
 def admin_get_flights(admin_id: int = Depends(get_admin_user)):
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE flights SET status = 'completed'
+            WHERE status = 'active' AND depart_time < NOW()
+        """))
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT f.*,
                    (SELECT img.image_url FROM images img
-                    WHERE img.entity_type='flight' AND img.entity_id=f.flight_id LIMIT 1) AS image_url
+                    WHERE img.entity_type='flight' AND img.entity_id=f.flight_id LIMIT 1) AS image_url,
+                   (SELECT COUNT(*) FROM flight_seats fs
+                    WHERE fs.flight_id = f.flight_id AND fs.is_booked = 0) AS avail_total,
+                   (SELECT COUNT(*) FROM flight_seats fs
+                    WHERE fs.flight_id = f.flight_id) AS total_seats,
+                   (SELECT COUNT(*) FROM flight_seats fs
+                    WHERE fs.flight_id = f.flight_id AND fs.is_booked = 0 AND fs.seat_class = 'economy') AS avail_economy,
+                   (SELECT COUNT(*) FROM flight_seats fs
+                    WHERE fs.flight_id = f.flight_id AND fs.is_booked = 0 AND fs.seat_class = 'business') AS avail_business,
+                   (SELECT COUNT(*) FROM flight_seats fs
+                    WHERE fs.flight_id = f.flight_id AND fs.is_booked = 0 AND fs.seat_class = 'first') AS avail_first
             FROM flights f
             ORDER BY f.flight_id DESC
         """)).fetchall()
@@ -465,12 +508,12 @@ def admin_get_flights(admin_id: int = Depends(get_admin_user)):
 def admin_create_flight(data: FlightRequest, admin_id: int = Depends(get_admin_user)):
     with engine.begin() as conn:
         result = conn.execute(text("""
-            INSERT INTO flights (airline, from_city, to_city, depart_time, arrive_time, price, available_seats)
-            VALUES (:airline, :from_city, :to_city, :depart, :arrive, :price, :seats)
+            INSERT INTO flights (airline, from_city, to_city, depart_time, arrive_time, price)
+            VALUES (:airline, :from_city, :to_city, :depart, :arrive, :price)
         """), {
             "airline": data.airline, "from_city": data.from_city, "to_city": data.to_city,
             "depart": data.depart_time, "arrive": data.arrive_time,
-            "price": data.price, "seats": data.available_seats,
+            "price": data.price,
         })
         flight_id = result.lastrowid
         _save_image(conn, "flight", flight_id, data.image_url)
@@ -483,11 +526,12 @@ def admin_update_flight(flight_id: int, data: FlightRequest, admin_id: int = Dep
         conn.execute(text("""
             UPDATE flights SET airline=:airline, from_city=:from_city, to_city=:to_city,
             depart_time=:depart, arrive_time=:arrive, price=:price,
-            available_seats=:seats WHERE flight_id=:id
+            status=:status WHERE flight_id=:id
         """), {
             "airline": data.airline, "from_city": data.from_city, "to_city": data.to_city,
             "depart": data.depart_time, "arrive": data.arrive_time,
-            "price": data.price, "seats": data.available_seats, "id": flight_id
+            "price": data.price,
+            "status": data.status or "active", "id": flight_id
         })
         _save_image(conn, "flight", flight_id, data.image_url)
     return {"message": "Cập nhật chuyến bay thành công"}
@@ -497,6 +541,7 @@ def admin_update_flight(flight_id: int, data: FlightRequest, admin_id: int = Dep
 def admin_delete_flight(flight_id: int, admin_id: int = Depends(get_admin_user)):
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM images WHERE entity_type='flight' AND entity_id=:id"), {"id": flight_id})
+        conn.execute(text("DELETE FROM flight_seats WHERE flight_id = :id"), {"id": flight_id})
         conn.execute(text("DELETE FROM flights WHERE flight_id = :id"), {"id": flight_id})
     return {"message": "Xóa chuyến bay thành công"}
 
@@ -509,17 +554,32 @@ class BusRequest(BaseModel):
     depart_time: str
     arrive_time: str
     price: float
-    available_seats: Optional[int] = 45
     image_url: Optional[str] = None
+    status: Optional[str] = "active"
 
 
 @router.get("/buses")
 def admin_get_buses(admin_id: int = Depends(get_admin_user)):
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE buses SET status = 'completed'
+            WHERE status = 'active' AND depart_time < NOW()
+        """))
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT b.*,
                    (SELECT img.image_url FROM images img
-                    WHERE img.entity_type='bus' AND img.entity_id=b.bus_id LIMIT 1) AS image_url
+                    WHERE img.entity_type='bus' AND img.entity_id=b.bus_id LIMIT 1) AS image_url,
+                   (SELECT COUNT(*) FROM bus_seats bs
+                    WHERE bs.bus_id = b.bus_id AND bs.is_booked = 0) AS avail_total,
+                   (SELECT COUNT(*) FROM bus_seats bs
+                    WHERE bs.bus_id = b.bus_id) AS total_seats,
+                   (SELECT COUNT(*) FROM bus_seats bs
+                    WHERE bs.bus_id = b.bus_id AND bs.is_booked = 0 AND bs.seat_class = 'standard') AS avail_standard,
+                   (SELECT COUNT(*) FROM bus_seats bs
+                    WHERE bs.bus_id = b.bus_id AND bs.is_booked = 0 AND bs.seat_class = 'vip') AS avail_vip,
+                   (SELECT COUNT(*) FROM bus_seats bs
+                    WHERE bs.bus_id = b.bus_id AND bs.is_booked = 0 AND bs.seat_class = 'sleeper') AS avail_sleeper
             FROM buses b
             ORDER BY b.bus_id DESC
         """)).fetchall()
@@ -530,12 +590,12 @@ def admin_get_buses(admin_id: int = Depends(get_admin_user)):
 def admin_create_bus(data: BusRequest, admin_id: int = Depends(get_admin_user)):
     with engine.begin() as conn:
         result = conn.execute(text("""
-            INSERT INTO buses (company, from_city, to_city, depart_time, arrive_time, price, available_seats)
-            VALUES (:company, :from_city, :to_city, :depart, :arrive, :price, :seats)
+            INSERT INTO buses (company, from_city, to_city, depart_time, arrive_time, price)
+            VALUES (:company, :from_city, :to_city, :depart, :arrive, :price)
         """), {
             "company": data.company, "from_city": data.from_city, "to_city": data.to_city,
             "depart": data.depart_time, "arrive": data.arrive_time,
-            "price": data.price, "seats": data.available_seats,
+            "price": data.price,
         })
         bus_id = result.lastrowid
         _save_image(conn, "bus", bus_id, data.image_url)
@@ -548,11 +608,12 @@ def admin_update_bus(bus_id: int, data: BusRequest, admin_id: int = Depends(get_
         conn.execute(text("""
             UPDATE buses SET company=:company, from_city=:from_city, to_city=:to_city,
             depart_time=:depart, arrive_time=:arrive, price=:price,
-            available_seats=:seats WHERE bus_id=:id
+            status=:status WHERE bus_id=:id
         """), {
             "company": data.company, "from_city": data.from_city, "to_city": data.to_city,
             "depart": data.depart_time, "arrive": data.arrive_time,
-            "price": data.price, "seats": data.available_seats, "id": bus_id
+            "price": data.price,
+            "status": data.status or "active", "id": bus_id
         })
         _save_image(conn, "bus", bus_id, data.image_url)
     return {"message": "Cập nhật xe khách thành công"}
@@ -562,8 +623,34 @@ def admin_update_bus(bus_id: int, data: BusRequest, admin_id: int = Depends(get_
 def admin_delete_bus(bus_id: int, admin_id: int = Depends(get_admin_user)):
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM images WHERE entity_type='bus' AND entity_id=:id"), {"id": bus_id})
+        conn.execute(text("DELETE FROM bus_seats WHERE bus_id = :id"), {"id": bus_id})
         conn.execute(text("DELETE FROM buses WHERE bus_id = :id"), {"id": bus_id})
     return {"message": "Xóa xe khách thành công"}
+
+
+# ── REVIEWS ──────────────────────────────────────────────────────
+@router.get("/reviews")
+def admin_get_reviews(admin_id: int = Depends(get_admin_user)):
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT r.*,
+                   u.full_name, u.email,
+                   CASE
+                       WHEN r.entity_type = 'hotel' THEN (SELECT h.name FROM hotels h WHERE h.hotel_id = r.entity_id)
+                       ELSE NULL
+                   END AS entity_name
+            FROM reviews r
+            LEFT JOIN users u ON u.user_id = r.user_id
+            ORDER BY r.created_at DESC
+        """)).fetchall()
+    return [dict(row._mapping) for row in rows]
+
+
+@router.delete("/reviews/{review_id}")
+def admin_delete_review(review_id: int, admin_id: int = Depends(get_admin_user)):
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM reviews WHERE review_id = :id"), {"id": review_id})
+    return {"message": "Xóa đánh giá thành công"}
 
 
 # ── WITHDRAWAL REQUESTS ──────────────────────────────────────────
@@ -593,7 +680,7 @@ async def admin_approve_withdrawal(
 
     with engine.begin() as conn:
         req = conn.execute(
-            text("SELECT wr.*, u.full_name, u.email FROM withdrawal_requests wr JOIN users u ON u.user_id = wr.user_id WHERE wr.id = :id"),
+            text("SELECT wr.*, u.full_name, u.email FROM withdrawal_requests wr JOIN users u ON u.user_id = wr.user_id WHERE wr.wr_id = :id"),
             {"id": withdrawal_id}
         ).fetchone()
         if not req:
@@ -616,7 +703,7 @@ async def admin_approve_withdrawal(
         )
         # Cập nhật trạng thái + lưu admin đã duyệt
         conn.execute(
-            text("UPDATE withdrawal_requests SET status = 'completed', approved_by = :aid WHERE id = :id"),
+            text("UPDATE withdrawal_requests SET status = 'completed', approved_by = :aid WHERE wr_id = :id"),
             {"id": withdrawal_id, "aid": admin_id}
         )
         # Ghi lịch sử
@@ -644,7 +731,7 @@ async def admin_approve_withdrawal(
 def admin_reject_withdrawal(withdrawal_id: int, admin_id: int = Depends(get_admin_user)):
     with engine.begin() as conn:
         req = conn.execute(
-            text("SELECT status FROM withdrawal_requests WHERE id = :id"),
+            text("SELECT status FROM withdrawal_requests WHERE wr_id = :id"),
             {"id": withdrawal_id}
         ).fetchone()
         if not req:
@@ -652,7 +739,7 @@ def admin_reject_withdrawal(withdrawal_id: int, admin_id: int = Depends(get_admi
         if dict(req._mapping)["status"] != "pending":
             raise HTTPException(400, "Yêu cầu này đã được xử lý")
         conn.execute(
-            text("UPDATE withdrawal_requests SET status = 'rejected', approved_by = :aid WHERE id = :id"),
+            text("UPDATE withdrawal_requests SET status = 'rejected', approved_by = :aid WHERE wr_id = :id"),
             {"id": withdrawal_id, "aid": admin_id}
         )
     return {"success": True, "message": "Đã từ chối yêu cầu rút tiền"}
@@ -750,7 +837,22 @@ def admin_create_promotion(data: PromotionRequest, admin_id: int = Depends(get_a
             "applies": data.applies_to or "all", "status": data.status or "active",
             "exp": data.expired_at,
         })
-    return {"promo_id": result.lastrowid, "message": "Tạo mã giảm giá thành công"}
+        promo_id = result.lastrowid
+
+        # Gửi thông báo đến tất cả user
+        discount_str = (
+            f"{data.discount_percent}%" if data.discount_type == "percent"
+            else f"{int(data.max_discount or 0):,}₫"
+        )
+        title = f"🎁 Mã giảm giá mới: {code}"
+        content = f"Giảm {discount_str}{' - ' + data.description if data.description else ''}. Hạn dùng đến {str(data.expired_at)[:10]}."
+        user_ids = conn.execute(
+            text("SELECT user_id FROM users")
+        ).fetchall()
+        for row in user_ids:
+            create_notification(conn, row.user_id, type="promotion", title=title, content=content, related_id=promo_id)
+
+    return {"promo_id": promo_id, "message": "Tạo mã giảm giá thành công"}
 
 
 @router.put("/promotions/{promo_id}")
@@ -807,12 +909,13 @@ def admin_toggle_promotion(promo_id: int, admin_id: int = Depends(get_admin_user
 
 # ── BANNERS ──────────────────────────────────────────────────────
 class BannerRequest(BaseModel):
-    title: str
+    title: Optional[str] = None
     subtitle: Optional[str] = None
     image_url: str
     link_url: Optional[str] = None
     display_order: Optional[int] = 0
     is_active: Optional[int] = 1
+    page_display: Optional[str] = "home"
     start_date: Optional[str] = None
     end_date: Optional[str] = None
 
@@ -830,12 +933,13 @@ def admin_get_banners(admin_id: int = Depends(get_admin_user)):
 def admin_create_banner(data: BannerRequest, admin_id: int = Depends(get_admin_user)):
     with engine.begin() as conn:
         result = conn.execute(text("""
-            INSERT INTO banners (title, subtitle, image_url, link_url, display_order, is_active, start_date, end_date)
-            VALUES (:title, :subtitle, :image_url, :link_url, :order, :active, :start, :end)
+            INSERT INTO banners (title, subtitle, image_url, link_url, display_order, is_active, page_display, start_date, end_date)
+            VALUES (:title, :subtitle, :image_url, :link_url, :order, :active, :page_display, :start, :end)
         """), {
             "title": data.title, "subtitle": data.subtitle,
             "image_url": data.image_url, "link_url": data.link_url,
             "order": data.display_order or 0, "active": data.is_active if data.is_active is not None else 1,
+            "page_display": data.page_display or "home",
             "start": data.start_date or None, "end": data.end_date or None,
         })
     return {"banner_id": result.lastrowid, "message": "Tạo banner thành công"}
@@ -848,12 +952,13 @@ def admin_update_banner(banner_id: int, data: BannerRequest, admin_id: int = Dep
             UPDATE banners SET
                 title=:title, subtitle=:subtitle, image_url=:image_url,
                 link_url=:link_url, display_order=:order,
-                is_active=:active, start_date=:start, end_date=:end
+                is_active=:active, page_display=:page_display, start_date=:start, end_date=:end
             WHERE banner_id=:id
         """), {
             "title": data.title, "subtitle": data.subtitle,
             "image_url": data.image_url, "link_url": data.link_url,
             "order": data.display_order or 0, "active": data.is_active if data.is_active is not None else 1,
+            "page_display": data.page_display or "home",
             "start": data.start_date or None, "end": data.end_date or None, "id": banner_id,
         })
     return {"message": "Cập nhật banner thành công"}
@@ -880,6 +985,64 @@ def admin_toggle_banner(banner_id: int, admin_id: int = Depends(get_admin_user))
             {"v": new_val, "id": banner_id}
         )
     return {"is_active": new_val}
+
+
+# ── DESTINATIONS MANAGEMENT ─────────────────────────────────────
+class DestinationRequest(BaseModel):
+    city: str
+    name: str
+    description: Optional[str] = None
+    image_url: Optional[str] = None
+
+
+@router.get("/destinations")
+def admin_get_destinations(admin_id: int = Depends(get_admin_user)):
+    with engine.connect() as conn:
+        # Migration: xóa các cột cũ không còn dùng nữa
+        for col in ["image_url", "avg_rating", "review_count", "img_url"]:
+            try:
+                conn.execute(text(f"ALTER TABLE destinations DROP COLUMN {col}"))
+                conn.commit()
+            except Exception:
+                pass
+        rows = conn.execute(text("""
+            SELECT d.*,
+                   (SELECT img.image_url FROM images img
+                    WHERE img.entity_type = 'destination' AND img.entity_id = d.destination_id
+                    LIMIT 1) AS image_url
+            FROM destinations d
+            ORDER BY d.city ASC
+        """)).fetchall()
+    return [dict(r._mapping) for r in rows]
+
+
+@router.post("/destinations")
+def admin_create_destination(data: DestinationRequest, admin_id: int = Depends(get_admin_user)):
+    with engine.begin() as conn:
+        result = conn.execute(text(
+            "INSERT INTO destinations (city, name, description) VALUES (:city, :name, :desc)"
+        ), {"city": data.city, "name": data.name, "desc": data.description})
+        dest_id = result.lastrowid
+        _save_image(conn, "destination", dest_id, data.image_url)
+    return {"destination_id": dest_id, "message": "Tạo địa điểm thành công"}
+
+
+@router.put("/destinations/{dest_id}")
+def admin_update_destination(dest_id: int, data: DestinationRequest, admin_id: int = Depends(get_admin_user)):
+    with engine.begin() as conn:
+        conn.execute(text(
+            "UPDATE destinations SET city=:city, name=:name, description=:desc WHERE destination_id=:id"
+        ), {"city": data.city, "name": data.name, "desc": data.description, "id": dest_id})
+        _save_image(conn, "destination", dest_id, data.image_url)
+    return {"message": "Cập nhật địa điểm thành công"}
+
+
+@router.delete("/destinations/{dest_id}")
+def admin_delete_destination(dest_id: int, admin_id: int = Depends(get_admin_user)):
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM images WHERE entity_type='destination' AND entity_id=:id"), {"id": dest_id})
+        conn.execute(text("DELETE FROM destinations WHERE destination_id=:id"), {"id": dest_id})
+    return {"message": "Xóa địa điểm thành công"}
 
 
 # ── BOOKING MODIFICATIONS MANAGEMENT ───────────────────────────
@@ -984,12 +1147,21 @@ class TrainRequest(BaseModel):
 
 @router.get("/trains")
 def admin_get_trains(admin_id: int = Depends(get_admin_user)):
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE trains SET status = 'completed'
+            WHERE status = 'active' AND depart_time < NOW()
+        """))
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT t.*,
                    TIMESTAMPDIFF(MINUTE, t.depart_time, t.arrive_time) AS duration_minutes,
-                   (SELECT COUNT(*) FROM train_seats ts WHERE ts.train_id = t.train_id AND ts.is_booked = 0) AS available_seats,
-                   (SELECT COUNT(*) FROM train_seats ts WHERE ts.train_id = t.train_id) AS total_seats
+                   (SELECT COUNT(*) FROM train_seats ts WHERE ts.train_id = t.train_id AND ts.is_booked = 0) AS avail_total,
+                   (SELECT COUNT(*) FROM train_seats ts WHERE ts.train_id = t.train_id) AS total_seats,
+                   (SELECT COUNT(*) FROM train_seats ts WHERE ts.train_id = t.train_id AND ts.is_booked = 0 AND ts.seat_class = 'hard_seat') AS avail_hard_seat,
+                   (SELECT COUNT(*) FROM train_seats ts WHERE ts.train_id = t.train_id AND ts.is_booked = 0 AND ts.seat_class = 'soft_seat') AS avail_soft_seat,
+                   (SELECT COUNT(*) FROM train_seats ts WHERE ts.train_id = t.train_id AND ts.is_booked = 0 AND ts.seat_class = 'hard_sleeper') AS avail_hard_sleeper,
+                   (SELECT COUNT(*) FROM train_seats ts WHERE ts.train_id = t.train_id AND ts.is_booked = 0 AND ts.seat_class = 'soft_sleeper') AS avail_soft_sleeper
             FROM trains t
             ORDER BY t.depart_time DESC
         """)).fetchall()
@@ -1055,16 +1227,16 @@ EXCEL_TEMPLATES = {
         ],
     },
     "flights": {
-        # Bắt buộc: airline, from_city, to_city, price | Tùy chọn: depart_time, arrive_time, available_seats
-        "headers": ["airline *", "from_city *", "to_city *", "price *", "depart_time", "arrive_time", "available_seats"],
+        # Bắt buộc: airline, from_city, to_city, price | Tùy chọn: depart_time, arrive_time
+        "headers": ["airline *", "from_city *", "to_city *", "price *", "depart_time", "arrive_time"],
         "sample": [
             ["Vietnam Airlines", "Hà Nội", "Đà Nẵng", 850000, "2026-05-01 07:00", "2026-05-01 08:20", 180],
             ["VietJet Air", "Hồ Chí Minh", "Phú Quốc", 650000, "2026-05-10 09:00", "2026-05-10 10:00", 200],
         ],
     },
     "buses": {
-        # Bắt buộc: company, from_city, to_city, price | Tùy chọn: depart_time, arrive_time, available_seats
-        "headers": ["company *", "from_city *", "to_city *", "price *", "depart_time", "arrive_time", "available_seats"],
+        # Bắt buộc: company, from_city, to_city, price | Tùy chọn: depart_time, arrive_time
+        "headers": ["company *", "from_city *", "to_city *", "price *", "depart_time", "arrive_time"],
         "sample": [
             ["Phương Trang", "Hà Nội", "Đà Lạt", 350000, "2026-05-01 19:00", "2026-05-02 09:00", 40],
             ["Kumho Samco", "Hồ Chí Minh", "Vũng Tàu", 120000, "2026-05-05 08:00", "2026-05-05 10:30", 35],
@@ -1209,14 +1381,13 @@ async def import_excel(
                     price     = get(row_dict, "price")
                     if not all([airline, from_city, to_city, price]): skipped += 1; continue
                     conn.execute(text("""
-                        INSERT INTO flights (airline, from_city, to_city, depart_time, arrive_time, price, available_seats)
-                        VALUES (:airline, :from_c, :to_c, :dep, :arr, :price, :seats)
+                        INSERT INTO flights (airline, from_city, to_city, depart_time, arrive_time, price)
+                        VALUES (:airline, :from_c, :to_c, :dep, :arr, :price)
                     """), {
                         "airline": str(airline), "from_c": str(from_city), "to_c": str(to_city),
                         "dep":   get(row_dict, "depart_time") or None,
                         "arr":   get(row_dict, "arrive_time") or None,
                         "price": float(price),
-                        "seats": int(get(row_dict, "available_seats") or 100),
                     })
                     inserted += 1
 
@@ -1227,14 +1398,13 @@ async def import_excel(
                     price     = get(row_dict, "price")
                     if not all([company, from_city, to_city, price]): skipped += 1; continue
                     conn.execute(text("""
-                        INSERT INTO buses (company, from_city, to_city, depart_time, arrive_time, price, available_seats)
-                        VALUES (:company, :from_c, :to_c, :dep, :arr, :price, :seats)
+                        INSERT INTO buses (company, from_city, to_city, depart_time, arrive_time, price)
+                        VALUES (:company, :from_c, :to_c, :dep, :arr, :price)
                     """), {
                         "company": str(company), "from_c": str(from_city), "to_c": str(to_city),
                         "dep":   get(row_dict, "depart_time") or None,
                         "arr":   get(row_dict, "arrive_time") or None,
                         "price": float(price),
-                        "seats": int(get(row_dict, "available_seats") or 30),
                     })
                     inserted += 1
 

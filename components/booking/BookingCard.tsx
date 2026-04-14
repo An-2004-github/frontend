@@ -322,7 +322,14 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                         )}
 
                         {/* Dropdown danh sách mã */}
-                        {dropdownOpen && !promoResult && (() => {
+                        {dropdownOpen && !promoResult && availablePromos.length === 0 && (
+                            <div className="bc-promo-dropdown">
+                                <div style={{ padding: "1rem", textAlign: "center", color: "#6b8cbf", fontSize: "0.85rem" }}>
+                                    Không có mã khuyến mãi khả dụng
+                                </div>
+                            </div>
+                        )}
+                        {dropdownOpen && !promoResult && availablePromos.length > 0 && (() => {
                             // Sắp xếp: applicable trước, trong mỗi nhóm sort theo giảm nhiều nhất
                             const calcDiscount = (p: Promotion) =>
                                 p.discount_type === "percent"
@@ -342,7 +349,7 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                             return (
                                 <div className="bc-promo-dropdown">
                                     <div className="bc-promo-dropdown-header">
-                                        {availablePromos.length} mã có thể dùng cho đơn hàng này
+                                        {availablePromos.length} mã khả dụng cho đơn hàng này
                                     </div>
                                     <div className="bc-promo-dropdown-list">
                                         {visible.map(promo => {

@@ -25,6 +25,8 @@ interface InvoiceData {
     status: string;
     total_price: number;
     final_amount: number;
+    discount_amount: number;
+    promo: { code: string; description?: string } | null;
     items: BookingItem[];
     user: { full_name: string; email: string; phone?: string };
 }
@@ -280,12 +282,31 @@ export default function InvoicePage() {
                         )}
 
                         {/* Tổng tiền */}
-                        <div className="inv-total" style={{ borderTop: "2px dashed #e8f0fe" }}>
-                            <div>
-                                <div className="inv-total-label">Tổng thanh toán</div>
-                                <div style={{ fontSize: "0.78rem", color: "#6b8cbf", marginTop: "0.2rem" }}>Đã bao gồm tất cả phí dịch vụ</div>
+                        <div style={{ padding: "1.25rem 2rem", borderTop: "2px dashed #e8f0fe" }}>
+                            <div className="inv-row">
+                                <span className="inv-label">Giá gốc</span>
+                                <span className="inv-value">{fmt(invoice.total_price)}</span>
                             </div>
-                            <div className="inv-total-value">{fmt(invoice.final_amount ?? invoice.total_price)}</div>
+                            {invoice.promo && (
+                                <div className="inv-row">
+                                    <span className="inv-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                        🎟️ Mã giảm giá
+                                        <span style={{ background: "#e8f0fe", color: "#0052cc", borderRadius: 99, padding: "1px 8px", fontSize: "0.75rem", fontWeight: 700 }}>
+                                            {invoice.promo.code}
+                                        </span>
+                                    </span>
+                                    <span className="inv-value" style={{ color: "#00875a" }}>
+                                        -{fmt(invoice.discount_amount)}
+                                    </span>
+                                </div>
+                            )}
+                            <div className="inv-total" style={{ padding: "1rem 0 0", borderTop: "1px solid #f0f4ff", marginTop: "0.5rem" }}>
+                                <div>
+                                    <div className="inv-total-label">Tổng thanh toán</div>
+                                    <div style={{ fontSize: "0.78rem", color: "#6b8cbf", marginTop: "0.2rem" }}>Đã bao gồm tất cả phí dịch vụ</div>
+                                </div>
+                                <div className="inv-total-value">{fmt(invoice.final_amount ?? invoice.total_price)}</div>
+                            </div>
                         </div>
 
                         {/* Actions */}

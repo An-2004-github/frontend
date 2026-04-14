@@ -22,6 +22,8 @@ interface BookingDetail {
     status: string;
     total_price: number;
     final_amount: number;
+    discount_amount?: number;
+    promo?: { code: string; description?: string } | null;
     items: BookingItem[];
     user?: { full_name: string; email: string };
 }
@@ -177,9 +179,24 @@ export default function BookingDetailPage() {
                     <div className="bd-section">
                         <div className="bd-section-title">Chi tiết thanh toán</div>
                         <div className="bd-row">
-                            <span className="bd-row-label">Giá dịch vụ</span>
+                            <span className="bd-row-label">Giá gốc</span>
                             <span className="bd-row-value">{(booking.total_price).toLocaleString("vi-VN")}₫</span>
                         </div>
+                        {booking.discount_amount != null && booking.discount_amount > 0 && (
+                            <div className="bd-row">
+                                <span className="bd-row-label">
+                                    🎟️ Mã giảm giá
+                                    {booking.promo?.code && (
+                                        <span style={{ marginLeft: "0.4rem", background: "#e8f0fe", color: "#0052cc", borderRadius: 6, padding: "1px 7px", fontSize: "0.75rem", fontWeight: 700 }}>
+                                            {booking.promo.code}
+                                        </span>
+                                    )}
+                                </span>
+                                <span className="bd-row-value" style={{ color: "#00875a" }}>
+                                    −{(booking.discount_amount).toLocaleString("vi-VN")}₫
+                                </span>
+                            </div>
+                        )}
                         <div className="bd-row">
                             <span className="bd-row-label">Trạng thái</span>
                             <span className="bd-row-value" style={{ color: status.color, fontWeight: 700 }}>
@@ -206,24 +223,29 @@ export default function BookingDetailPage() {
                             💳 Thanh toán ngay
                         </button>
                     )}
-                    {booking.status === "confirmed" && (
-                        <>
-                            <button
-                                className="bd-btn"
-                                style={{ background: "#fff3e0", color: "#e67e22", border: "1.5px solid #f39c12" }}
-                                onClick={() => setModifyMode("reschedule")}
-                            >
-                                🔄 Đổi lịch
-                            </button>
-                            <button
-                                className="bd-btn"
-                                style={{ background: "#fff0ee", color: "#c0392b", border: "1.5px solid #e74c3c" }}
-                                onClick={() => setModifyMode("cancel")}
-                            >
-                                ❌ Hủy {item?.entity_type === "room" ? "phòng" : "vé"}
-                            </button>
-                        </>
-                    )}
+                    {booking.status === "confirmed" && (() => {
+                        const checkIn = booking.items?.[0]?.check_in_date;
+                        const isPast = checkIn ? new Date(checkIn) < new Date(new Date().toDateString()) : false;
+                        if (isPast) return null;
+                        return (
+                            <>
+                                <button
+                                    className="bd-btn"
+                                    style={{ background: "#fff3e0", color: "#e67e22", border: "1.5px solid #f39c12" }}
+                                    onClick={() => setModifyMode("reschedule")}
+                                >
+                                    🔄 Đổi lịch
+                                </button>
+                                <button
+                                    className="bd-btn"
+                                    style={{ background: "#fff0ee", color: "#c0392b", border: "1.5px solid #e74c3c" }}
+                                    onClick={() => setModifyMode("cancel")}
+                                >
+                                    ❌ Hủy {item?.entity_type === "room" ? "phòng" : "vé"}
+                                </button>
+                            </>
+                        );
+                    })()}
                 </div>
             </div>
 

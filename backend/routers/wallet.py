@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/wallet", tags=["wallet"])
 with engine.begin() as _conn:
     _conn.execute(text("""
         CREATE TABLE IF NOT EXISTS withdrawal_requests (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+            wr_id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL,
             amount DECIMAL(15,2) NOT NULL,
             bank_name VARCHAR(100) NOT NULL,
@@ -96,8 +96,10 @@ async def sepay_webhook(request: Request):
         if data.get("transferType") != "in":
             return {"success": True, "message": "Bỏ qua giao dịch ra"}
 
-        amount  = float(data.get("transferAmount", 0))
-        content = data.get("content", "") or data.get("transferDescription", "")
+        amount        = float(data.get("transferAmount", 0))
+        content       = data.get("content", "") or data.get("transferDescription", "")
+        txn_ref       = data.get("referenceNumber") or data.get("id") or None
+        bank_account  = data.get("accountNumber") or None
 
         if amount <= 0:
             return {"success": True, "message": "Số tiền không hợp lệ"}
@@ -149,6 +151,22 @@ async def sepay_webhook(request: Request):
                         "uid": user_id,
                         "amount": -amount,
                         "desc": f"Thanh toán đặt chỗ #{booking_id} qua chuyển khoản",
+                    }
+                )
+                conn.execute(
+                    text("""
+                        INSERT INTO payment_transactions
+                            (booking_id, user_id, method, amount, status, transaction_ref, bank_account, transfer_content)
+                        VALUES
+                            (:bid, :uid, 'qr_transfer', :amount, 'success', :ref, :bank, :content)
+                    """),
+                    {
+                        "bid": booking_id,
+                        "uid": user_id,
+                        "amount": amount,
+                        "ref": txn_ref,
+                        "bank": bank_account,
+                        "content": content,
                     }
                 )
             print(f"✅ Xác nhận booking #{booking_id} cho user_id={user_id} ({amount:,.0f}₫)")
@@ -247,7 +265,7 @@ def request_withdrawal(body: WithdrawRequest, user_id: int = Depends(get_current
 
         # Chỉ cho tạo 1 yêu cầu pending tại 1 thời điểm
         existing = conn.execute(
-            text("SELECT id FROM withdrawal_requests WHERE user_id = :uid AND status = 'pending'"),
+            text("SELECT wr_id FROM withdrawal_requests WHERE user_id = :uid AND status = 'pending'"),
             {"uid": user_id}
         ).fetchone()
         if existing:

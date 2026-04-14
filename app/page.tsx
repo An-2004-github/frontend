@@ -3,6 +3,8 @@ import Image from "next/image";
 import SearchBar from "@/components/search/SearchBar";
 import BannerSlider from "@/components/BannerSlider";
 import DestinationRecommendations from "@/components/recommendation/DestinationRecommendations";
+import DestinationsSection from "@/components/DestinationsSection";
+import HeroBackground from "@/components/HeroBackground";
 
 export default function Home() {
   return (
@@ -10,15 +12,9 @@ export default function Home() {
 
       {/* 1. HERO BANNER & SEARCH BAR */}
       <section className="relative h-[550px] md:h-[600px] flex items-center justify-center w-full">
-        {/* Ảnh nền lấy từ thư mục public/images/bg.jpg của bạn */}
+        {/* Ảnh nền linh động từ Admin Banner (display_order = 1) */}
         <div className="absolute inset-0 z-0">
-          <Image
-            src="/images/bg.jpg"
-            alt="Travel Background"
-            fill
-            priority
-            className="object-cover"
-          />
+          <HeroBackground />
           {/* Lớp phủ màu đen trong suốt để làm nổi bật chữ */}
           <div className="absolute inset-0 bg-black/40 bg-gradient-to-t from-black/60 to-transparent"></div>
         </div>
@@ -74,7 +70,12 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 3. GỢI Ý ĐỊA ĐIỂM (NCF Recommendation) */}
+        {/* 3. ĐIỂM ĐẾN NỔI BẬT */}
+        <section className="animate-fade-in" style={{ animationDelay: '0.3s' }}>
+          <DestinationsSection />
+        </section>
+
+        {/* 4. GỢI Ý ĐỊA ĐIỂM (NCF Recommendation) */}
         <section className="animate-fade-in" style={{ animationDelay: '0.4s' }}>
           <DestinationRecommendations />
         </section>

@@ -44,6 +44,8 @@ export default function HotelDetailPage() {
     const [loading, setLoading] = useState(true);
     const [activeImg, setActiveImg] = useState(0);
     const [reviewRefreshKey, setReviewRefreshKey] = useState(0);
+    const [photoRoom, setPhotoRoom] = useState<AvailableRoom | null>(null);
+    const [photoIdx, setPhotoIdx] = useState(0);
 
     const [checkIn, setCheckIn] = useState(() => searchParams.get("check_in") || TODAY);
     const [checkOut, setCheckOut] = useState(() => {
@@ -412,7 +414,23 @@ export default function HotelDetailPage() {
                                                 onClick={() => room.available_rooms >= rooms && setSelectedRoom(room)}
                                                 style={room.available_rooms < rooms ? { opacity: 0.5, cursor: "not-allowed" } : {}}
                                             >
-                                                <div className="hdp-room-name">{room.name}</div>
+                                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                                                    <div className="hdp-room-name">{room.name}</div>
+                                                    {room.image_url && (
+                                                        <button
+                                                            onClick={e => { e.stopPropagation(); setPhotoRoom(room); }}
+                                                            style={{
+                                                                flexShrink: 0, marginLeft: 8,
+                                                                padding: "0.2rem 0.6rem", fontSize: "0.75rem", fontWeight: 600,
+                                                                background: "#eef4ff", color: "#0052cc",
+                                                                border: "1px solid #c8d8ff", borderRadius: 99,
+                                                                cursor: "pointer", whiteSpace: "nowrap",
+                                                            }}
+                                                        >
+                                                            🖼 Xem ảnh
+                                                        </button>
+                                                    )}
+                                                </div>
                                                 <div className="hdp-room-meta">
                                                     <span className="hdp-room-guests">👤 Tối đa {room.max_guests} khách/phòng</span>
                                                     <span className="hdp-room-price">{Number(room.price_per_night).toLocaleString("vi-VN")}₫/phòng/đêm</span>
@@ -462,6 +480,114 @@ export default function HotelDetailPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Modal ảnh phòng */}
+            {photoRoom && (() => {
+                const imgs = (photoRoom.image_url ?? "").split(",").map(u => u.trim()).filter(Boolean);
+                const cur  = imgs[photoIdx] ?? imgs[0];
+                return (
+                    <div
+                        onClick={() => { setPhotoRoom(null); setPhotoIdx(0); }}
+                        style={{
+                            position: "fixed", inset: 0, zIndex: 2000,
+                            background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            padding: "1rem",
+                        }}
+                    >
+                        <div
+                            onClick={e => e.stopPropagation()}
+                            style={{
+                                background: "#fff", borderRadius: 18, overflow: "hidden",
+                                maxWidth: 600, width: "100%",
+                                boxShadow: "0 24px 64px rgba(0,0,0,0.35)",
+                            }}
+                        >
+                            {/* Header */}
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "1rem 1.25rem", borderBottom: "1px solid #e8f0fe" }}>
+                                <div>
+                                    <div style={{ fontWeight: 700, fontSize: "1rem", color: "#1a3c6b" }}>{photoRoom.name}</div>
+                                    <div style={{ fontSize: "0.8rem", color: "#6b8cbf", marginTop: 2 }}>
+                                        👤 Tối đa {photoRoom.max_guests} khách · {Number(photoRoom.price_per_night).toLocaleString("vi-VN")}₫/đêm
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => { setPhotoRoom(null); setPhotoIdx(0); }}
+                                    style={{ background: "none", border: "none", fontSize: "1.5rem", cursor: "pointer", color: "#6b8cbf", lineHeight: 1 }}
+                                >×</button>
+                            </div>
+
+                            {/* Ảnh chính */}
+                            <div style={{ position: "relative", width: "100%", height: 340, background: "#000" }}>
+                                <Image
+                                    src={cur}
+                                    alt={photoRoom.name}
+                                    fill
+                                    style={{ objectFit: "cover" }}
+                                    unoptimized
+                                />
+                                {/* Nút prev/next */}
+                                {imgs.length > 1 && (
+                                    <>
+                                        <button
+                                            onClick={() => setPhotoIdx(i => (i - 1 + imgs.length) % imgs.length)}
+                                            style={{
+                                                position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
+                                                background: "rgba(0,0,0,0.45)", color: "#fff", border: "none",
+                                                borderRadius: "50%", width: 36, height: 36, fontSize: "1.1rem",
+                                                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                                            }}
+                                        >‹</button>
+                                        <button
+                                            onClick={() => setPhotoIdx(i => (i + 1) % imgs.length)}
+                                            style={{
+                                                position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+                                                background: "rgba(0,0,0,0.45)", color: "#fff", border: "none",
+                                                borderRadius: "50%", width: 36, height: 36, fontSize: "1.1rem",
+                                                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                                            }}
+                                        >›</button>
+                                        {/* Dots */}
+                                        <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 6 }}>
+                                            {imgs.map((_, i) => (
+                                                <div
+                                                    key={i}
+                                                    onClick={() => setPhotoIdx(i)}
+                                                    style={{
+                                                        width: 8, height: 8, borderRadius: "50%", cursor: "pointer",
+                                                        background: i === photoIdx ? "#fff" : "rgba(255,255,255,0.45)",
+                                                        transition: "background 0.2s",
+                                                    }}
+                                                />
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+
+                            {/* Thumbnails */}
+                            {imgs.length > 1 && (
+                                <div style={{ display: "flex", gap: 8, padding: "0.75rem 1rem", borderTop: "1px solid #e8f0fe" }}>
+                                    {imgs.map((url, i) => (
+                                        <div
+                                            key={i}
+                                            onClick={() => setPhotoIdx(i)}
+                                            style={{
+                                                position: "relative", width: 72, height: 52, borderRadius: 8,
+                                                overflow: "hidden", cursor: "pointer", flexShrink: 0,
+                                                border: `2px solid ${i === photoIdx ? "#0052cc" : "#e8f0fe"}`,
+                                                transition: "border-color 0.15s",
+                                            }}
+                                        >
+                                            <Image src={url} alt={`ảnh ${i + 1}`} fill style={{ objectFit: "cover" }} unoptimized />
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            })()}
         </>
     );
 }

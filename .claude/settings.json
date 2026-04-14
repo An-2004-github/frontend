@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -c ':*)"
+      "Bash(python -c ':*)",
+      "Bash(awk '{print $1}')",
+      "Bash(cat)",
+      "Read(//tmp/**)",
+      "Bash(grep -n \"f.available_seats\\\\|b.available_seats\\\\|t.available_seats\" /c/Users/ADMIN/Documents/DATN/frontend/backend/routers/*.py)"
     ]
   }
 }

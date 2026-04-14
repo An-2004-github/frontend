@@ -5,7 +5,8 @@ from database import engine
 from auth import get_current_user
 from pydantic import BaseModel
 from email_service import send_booking_confirmation_email, send_cancel_confirmation_email
-from datetime import date as ddate
+from datetime import date as ddate, datetime as dt
+from routers.notifications import create_notification
 
 router = APIRouter(prefix="/api/bookings", tags=["bookings"])
 
@@ -33,6 +34,24 @@ def _apply_cashback(conn, user_id: int, booking_id: int, amount: float):
         """), {"uid": user_id, "amt": cashback,
                "desc": f"Cashback {round(get_cashback_rate(new_rank)*100, 1)}% đơn #{booking_id}"})
     return cashback
+
+# ── Auto-create payment_transactions table ──────────────────────
+with engine.begin() as _conn:
+    _conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS payment_transactions (
+            payment_id       INT AUTO_INCREMENT PRIMARY KEY,
+            booking_id       INT NOT NULL,
+            user_id          INT NOT NULL,
+            method           ENUM('wallet','qr_transfer','combined') NOT NULL,
+            amount           DECIMAL(10,2) NOT NULL,
+            status           ENUM('pending','success','failed') DEFAULT 'success',
+            transaction_ref  VARCHAR(100) NULL,
+            bank_account     VARCHAR(50)  NULL,
+            transfer_content VARCHAR(255) NULL,
+            paid_at          DATETIME DEFAULT NOW(),
+            created_at       DATETIME DEFAULT NOW()
+        )
+    """))
 
 # ── Auto-create booking_modifications table ─────────────────────
 with engine.begin() as _conn:
@@ -68,6 +87,7 @@ class BookingRequest(BaseModel):
     passengers:     int = 1
     seat_class:     str | None = None
     total_price:    float
+    final_price:    float | None = None   # giá sau khi áp mã giảm giá
     promo_id:       int | None = None
 
 
@@ -102,6 +122,9 @@ def get_my_bookings(user_id: int = Depends(get_current_user)):
 
                 FROM bookings b
                 JOIN booking_items bi ON bi.booking_id = b.booking_id
+                    AND bi.item_id = (
+                        SELECT MIN(item_id) FROM booking_items WHERE booking_id = b.booking_id
+                    )
                 LEFT JOIN room_types rt ON rt.room_type_id = bi.entity_id AND bi.entity_type = 'room'
                 LEFT JOIN hotels h ON h.hotel_id = rt.hotel_id
                 LEFT JOIN flights f ON f.flight_id = bi.entity_id AND bi.entity_type = 'flight'
@@ -123,6 +146,29 @@ def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user
     quantity = data.passengers if data.entity_type in ("flight", "bus", "train") else data.guests
 
     with engine.begin() as conn:
+        # Kiểm tra đã qua giờ khởi hành chưa
+        if data.entity_type == "flight":
+            depart = conn.execute(
+                text("SELECT depart_time FROM flights WHERE flight_id = :id"),
+                {"id": data.entity_id}
+            ).scalar()
+            if depart and depart < dt.now():
+                raise HTTPException(400, "Chuyến bay này đã khởi hành, không thể đặt vé.")
+        elif data.entity_type == "bus":
+            depart = conn.execute(
+                text("SELECT depart_time FROM buses WHERE bus_id = :id"),
+                {"id": data.entity_id}
+            ).scalar()
+            if depart and depart < dt.now():
+                raise HTTPException(400, "Chuyến xe này đã khởi hành, không thể đặt vé.")
+        elif data.entity_type == "train":
+            depart = conn.execute(
+                text("SELECT depart_time FROM trains WHERE train_id = :id"),
+                {"id": data.entity_id}
+            ).scalar()
+            if depart and depart < dt.now():
+                raise HTTPException(400, "Chuyến tàu này đã khởi hành, không thể đặt vé.")
+
         # Kiểm tra đủ ghế trước khi đặt (cho flight)
         if data.entity_type == "flight" and data.seat_class:
             avail = conn.execute(
@@ -153,13 +199,23 @@ def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user
                     f"Không đủ ghế. Chỉ còn {avail} ghế trống."
                 )
 
+        # Tính discount_amount và final_amount
+        discount_amount = round(data.total_price - data.final_price, 2) if data.final_price is not None else 0.0
+        final_amount = data.final_price if data.final_price is not None else data.total_price
+
         # Tạo booking
         result = conn.execute(
             text("""
-                INSERT INTO bookings (user_id, booking_date, status, total_price, final_amount)
-                VALUES (:user_id, NOW(), 'pending', :total_price, :total_price)
+                INSERT INTO bookings (user_id, booking_date, status, total_price, final_amount, promo_id, discount_amount)
+                VALUES (:user_id, NOW(), 'pending', :total_price, :final_amount, :promo_id, :discount_amount)
             """),
-            {"user_id": user_id, "total_price": data.total_price}
+            {
+                "user_id": user_id,
+                "total_price": data.total_price,
+                "final_amount": final_amount,
+                "promo_id": data.promo_id,
+                "discount_amount": discount_amount,
+            }
         )
         booking_id = result.lastrowid
 
@@ -255,7 +311,7 @@ def _get_booking_email_info(conn, booking_id: int, user_id: int):
             u.email, u.full_name,
             b.final_amount, b.booking_date,
             bi.entity_type, bi.check_in_date, bi.check_out_date,
-            bi.quantity, bi.guests,
+            bi.quantity,
             CASE bi.entity_type
                 WHEN 'room'   THEN CONCAT(h.name, ' - ', rt.name)
                 WHEN 'flight' THEN CONCAT(f.airline, ': ', f.from_city, ' → ', f.to_city)
@@ -292,7 +348,9 @@ def pay_with_wallet(booking_id: int, background_tasks: BackgroundTasks, user_id:
         if booking_dict["status"] != "pending":
             raise HTTPException(400, "Booking này không thể thanh toán")
 
-        amount = float(booking_dict["final_amount"])
+        amount = float(booking_dict["final_amount"] or booking_dict.get("total_price") or 0)
+        if amount <= 0:
+            raise HTTPException(400, "Số tiền thanh toán không hợp lệ")
 
         # Lấy số dư ví từ bảng users
         user_row = conn.execute(
@@ -333,8 +391,30 @@ def pay_with_wallet(booking_id: int, background_tasks: BackgroundTasks, user_id:
             }
         )
 
+        # Ghi nhận giao dịch thanh toán
+        conn.execute(text("""
+            INSERT INTO payment_transactions (booking_id, user_id, method, amount, status)
+            VALUES (:bid, :uid, 'wallet', :amount, 'success')
+        """), {"bid": booking_id, "uid": user_id, "amount": amount})
+
         cashback = _apply_cashback(conn, user_id, booking_id, amount)
         email_info = _get_booking_email_info(conn, booking_id, user_id)
+        # Tạo notification xác nhận đặt chỗ
+        create_notification(
+            conn, user_id,
+            type="booking_confirm",
+            title="Đặt chỗ đã được xác nhận ✅",
+            content=f"Đặt chỗ #{booking_id} của bạn đã thanh toán thành công.",
+            related_id=booking_id,
+        )
+        if cashback > 0:
+            create_notification(
+                conn, user_id,
+                type="wallet_credit",
+                title="Bạn nhận được cashback 💰",
+                content=f"Ví của bạn được cộng {cashback:,.0f}₫ cashback từ đặt chỗ #{booking_id}.",
+                related_id=booking_id,
+            )
 
     # Gửi email xác nhận (ngoài transaction)
     if email_info:
@@ -350,7 +430,7 @@ def pay_with_wallet(booking_id: int, background_tasks: BackgroundTasks, user_id:
             check_out=str(email_info["check_out_date"]) if email_info["check_out_date"] else None,
             booking_date=str(email_info["booking_date"])[:10] if email_info["booking_date"] else None,
             rooms=int(email_info["quantity"]) if email_info.get("quantity") else None,
-            guests=int(email_info["guests"]) if email_info.get("guests") else None,
+            guests=None,
         )
 
     new_balance = balance - amount
@@ -411,8 +491,30 @@ def pay_combined(booking_id: int, data: PayCombinedRequest, background_tasks: Ba
         )
 
         final_amount = float(booking_dict["final_amount"])
+
+        # Ghi nhận giao dịch thanh toán kết hợp
+        conn.execute(text("""
+            INSERT INTO payment_transactions (booking_id, user_id, method, amount, status)
+            VALUES (:bid, :uid, 'combined', :amount, 'success')
+        """), {"bid": booking_id, "uid": user_id, "amount": final_amount})
+
         cashback = _apply_cashback(conn, user_id, booking_id, final_amount)
         email_info = _get_booking_email_info(conn, booking_id, user_id)
+        create_notification(
+            conn, user_id,
+            type="booking_confirm",
+            title="Đặt chỗ đã được xác nhận ✅",
+            content=f"Đặt chỗ #{booking_id} của bạn đã thanh toán thành công.",
+            related_id=booking_id,
+        )
+        if cashback > 0:
+            create_notification(
+                conn, user_id,
+                type="wallet_credit",
+                title="Bạn nhận được cashback 💰",
+                content=f"Ví của bạn được cộng {cashback:,.0f}₫ cashback từ đặt chỗ #{booking_id}.",
+                related_id=booking_id,
+            )
 
     # Gửi email xác nhận (ngoài transaction)
     if email_info:
@@ -428,7 +530,7 @@ def pay_combined(booking_id: int, data: PayCombinedRequest, background_tasks: Ba
             check_out=str(email_info["check_out_date"]) if email_info["check_out_date"] else None,
             booking_date=str(email_info["booking_date"])[:10] if email_info["booking_date"] else None,
             rooms=int(email_info["quantity"]) if email_info.get("quantity") else None,
-            guests=int(email_info["guests"]) if email_info.get("guests") else None,
+            guests=None,
         )
 
     msg = "Thanh toán thành công"
@@ -507,12 +609,22 @@ def get_booking(booking_id: int, user_id: int = Depends(get_current_user)):
             d = dict(i._mapping)
             d["check_in_date"] = d.get("check_in_date_calc") or d.get("check_in_date")
             d["check_out_date"] = d.get("check_out_date_calc") or d.get("check_out_date")
-            # Remove the calc fields
             d.pop("check_in_date_calc", None)
             d.pop("check_out_date_calc", None)
             result["items"].append(d)
-            
+
         result["user"] = dict(user_row._mapping) if user_row else {}
+
+        # Thông tin mã giảm giá (nếu có)
+        if result.get("promo_id"):
+            promo = conn.execute(
+                text("SELECT code, description FROM promotions WHERE promo_id = :pid"),
+                {"pid": result["promo_id"]}
+            ).fetchone()
+            result["promo"] = dict(promo._mapping) if promo else None
+        else:
+            result["promo"] = None
+
         return result
 
 
@@ -664,6 +776,17 @@ def reschedule_booking(booking_id: int, data: RescheduleRequest, user_id: int = 
         if not booking:
             raise HTTPException(404, "Booking không tồn tại hoặc không thể đổi lịch")
 
+        # Kiểm tra đã quá ngày chưa
+        item_check = conn.execute(
+            text("SELECT check_in_date FROM booking_items WHERE booking_id = :id LIMIT 1"), {"id": booking_id}
+        ).fetchone()
+        if item_check:
+            ci_raw = dict(item_check._mapping).get("check_in_date")
+            if ci_raw:
+                ci_date = ci_raw if isinstance(ci_raw, ddate) else ddate.fromisoformat(str(ci_raw))
+                if ci_date < ddate.today():
+                    raise HTTPException(400, "Không thể đổi lịch booking đã quá ngày sử dụng")
+
         old_price  = float(dict(booking._mapping)["final_amount"])
         new_price  = float(data.new_price)
         price_diff = round(new_price - old_price, 2)
@@ -813,6 +936,13 @@ def preview_cancel_booking(booking_id: int, user_id: int = Depends(get_current_u
         item_d = dict(item._mapping)
         entity_type = item_d["entity_type"]
 
+        # Kiểm tra đã quá ngày chưa
+        check_in_raw = item_d.get("check_in_date")
+        if check_in_raw:
+            svc_date = check_in_raw if isinstance(check_in_raw, ddate) else ddate.fromisoformat(str(check_in_raw))
+            if svc_date < ddate.today():
+                raise HTTPException(400, "Không thể hủy booking đã quá ngày sử dụng")
+
         user_row = conn.execute(
             text("SELECT COALESCE(user_rank, 'bronze') AS user_rank FROM users WHERE user_id = :uid"),
             {"uid": user_id}
@@ -891,9 +1021,15 @@ def cancel_booking(booking_id: int, data: CancelRequest, background_tasks: Backg
         """), {"bid": booking_id}).fetchone()
         service_name = dict(svc_name_row._mapping)["service_name"] if svc_name_row else f"Đặt chỗ #{booking_id}"
 
+        # Kiểm tra đã quá ngày chưa
+        check_in_raw = item_d.get("check_in_date")
+        if check_in_raw:
+            svc_date_c = check_in_raw if isinstance(check_in_raw, ddate) else ddate.fromisoformat(str(check_in_raw))
+            if svc_date_c < ddate.today():
+                raise HTTPException(400, "Không thể hủy booking đã quá ngày sử dụng")
+
         # Calculate cancel fee theo rank
         cancel_fee = 0.0
-        check_in_raw = item_d.get("check_in_date")
         if check_in_raw:
             try:
                 svc_date = check_in_raw if isinstance(check_in_raw, ddate) else ddate.fromisoformat(str(check_in_raw))
@@ -946,6 +1082,13 @@ def cancel_booking(booking_id: int, data: CancelRequest, background_tasks: Backg
                    "cf": cancel_fee, "ra": refund_amount})
 
             message = f"Đặt chỗ đã hủy. {refund_amount:,.0f}₫ đã được hoàn vào ví của bạn."
+            create_notification(
+                conn, user_id,
+                type="booking_cancel",
+                title="Đặt chỗ đã được hủy ❌",
+                content=f"Đặt chỗ #{booking_id} đã hủy. {refund_amount:,.0f}₫ đã hoàn vào ví.",
+                related_id=booking_id,
+            )
         else:
             # Ngân hàng → chờ admin xử lý
             conn.execute(text("""
@@ -956,6 +1099,13 @@ def cancel_booking(booking_id: int, data: CancelRequest, background_tasks: Backg
                    "cf": cancel_fee, "ra": refund_amount,
                    "rm": data.refund_method, "bi": data.bank_info})
             message = "Đặt chỗ đã được hủy. Tiền sẽ được hoàn về ngân hàng trong vòng 2–5 ngày."
+            create_notification(
+                conn, user_id,
+                type="booking_cancel",
+                title="Đặt chỗ đã được hủy ❌",
+                content=f"Đặt chỗ #{booking_id} đã hủy. Hoàn {refund_amount:,.0f}₫ về ngân hàng trong 2–5 ngày.",
+                related_id=booking_id,
+            )
 
     # Gửi email thông báo hủy (ngoài transaction)
     if user_email:

@@ -3,21 +3,14 @@ const nextConfig = {
   images: {
     remotePatterns: [
       {
+        // Cho phép tất cả hostname HTTPS (ảnh Cloudinary, upload từ admin, v.v.)
         protocol: "https",
-        hostname: "images.unsplash.com",
-      },
-      // Thêm các domain khác nếu dùng
-      {
-        protocol: "https",
-        hostname: "**.googleapis.com",
+        hostname: "**",
       },
       {
-        protocol: "https",
-        hostname: "**.cloudinary.com",
-      },
-      {
-        protocol: "https",
-        hostname: "img.vietqr.io",
+        // Cho phép ảnh HTTP cục bộ (localhost dev)
+        protocol: "http",
+        hostname: "**",
       },
     ],
   },

@@ -38,6 +38,7 @@ export default function TrainCard({ train, passengers = 1 }: Props) {
     const classBadges = (["hard_seat", "soft_seat", "hard_sleeper", "soft_sleeper"] as const).filter(
         c => ((train[`${c}_count` as keyof Train] as number | undefined) ?? 0) > 0
     );
+    const isPast = new Date(train.depart_time) < new Date();
 
     return (
         <>
@@ -107,8 +108,13 @@ export default function TrainCard({ train, passengers = 1 }: Props) {
                         )}
                     </div>
 
-                    <button className="tcard-btn" onClick={() => setShowModal(true)}>
-                        Chọn ghế
+                    <button
+                        className="tcard-btn"
+                        disabled={isPast}
+                        style={isPast ? { opacity: 0.45, cursor: "not-allowed", background: "#aaa" } : undefined}
+                        onClick={() => { if (!isPast) setShowModal(true); }}
+                    >
+                        {isPast ? "Đã khởi hành" : "Chọn ghế"}
                     </button>
                 </div>
             </div>

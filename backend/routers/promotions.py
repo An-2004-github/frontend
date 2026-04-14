@@ -1,20 +1,37 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy import text
 from database import engine
-from auth import get_current_user
+from auth import get_current_user, get_optional_user
 
 router = APIRouter(prefix="/api/promotions", tags=["promotions"])
 
 
-# Lấy tất cả promotions (có filter theo applies_to)
+# Lấy tất cả promotions (có filter theo applies_to, loại bỏ mã user đã dùng)
 @router.get("")
-def get_promotions(applies_to: str | None = None):
-    conditions = ["status = 'active'", "expired_at > NOW()"]
-    params = {}
+def get_promotions(
+    applies_to: str | None = None,
+    user_id: int | None = Depends(get_optional_user),
+):
+    conditions = ["status = 'active'", "expired_at > NOW()", "used_count < usage_limit"]
+    params: dict = {}
 
     if applies_to and applies_to != "all":
         conditions.append("(applies_to = :applies_to OR applies_to = 'all')")
         params["applies_to"] = applies_to
+
+    # Loại bỏ mã mà user đã dùng hết lượt per-user
+    if user_id:
+        conditions.append("""
+            promo_id NOT IN (
+                SELECT puu.promo_id FROM promo_user_usages puu
+                JOIN promotions p2 ON p2.promo_id = puu.promo_id
+                WHERE puu.user_id = :uid
+                  AND p2.per_user_limit IS NOT NULL
+                GROUP BY puu.promo_id, p2.per_user_limit
+                HAVING COUNT(*) >= p2.per_user_limit
+            )
+        """)
+        params["uid"] = user_id
 
     query = f"""
         SELECT * FROM promotions

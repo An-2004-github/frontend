@@ -21,6 +21,9 @@ export default function Navbar() {
     const pathname = usePathname();
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [notifOpen, setNotifOpen] = useState(false);
+    const [notifs, setNotifs] = useState<{ notification_id: number; type: string; title: string; content: string; is_read: number; created_at: string; related_id?: number }[]>([]);
 
     useEffect(() => {
         if (!user) return;
@@ -37,6 +40,31 @@ export default function Navbar() {
         return () => window.removeEventListener("focus", onFocus);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.user_id]);
+
+    // Lấy số thông báo chưa đọc
+    useEffect(() => {
+        if (!user) return;
+        const fetchUnread = () => {
+            api.get("/api/notifications/unread-count").then(res => {
+                setUnreadCount(res.data.count ?? 0);
+            }).catch(() => {});
+        };
+        fetchUnread();
+        const interval = setInterval(fetchUnread, 60000); // cập nhật mỗi 1 phút
+        return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.user_id]);
+
+    const openNotifDropdown = () => {
+        if (notifOpen) { setNotifOpen(false); return; }
+        setNotifOpen(true);
+        api.get("/api/notifications?limit=8").then(res => {
+            setNotifs(res.data.items ?? []);
+            setUnreadCount(0);
+            // Đánh dấu tất cả đã đọc
+            api.put("/api/notifications/read-all").catch(() => {});
+        }).catch(() => {});
+    };
 
     return (
         <>
@@ -158,6 +186,63 @@ export default function Navbar() {
                 .navbar-dropdown-item.danger:hover { background: #fff0ee; color: #c0392b; }
                 .navbar-dropdown-divider { height: 1px; background: #e8f0fe; margin: 0.35rem 0; }
 
+                /* Bell notification */
+                .navbar-bell-wrap { position: relative; }
+                .navbar-bell-btn {
+                    width: 38px; height: 38px; border-radius: 50%;
+                    background: #f0f4ff; border: 1.5px solid #e0e8ff;
+                    display: flex; align-items: center; justify-content: center;
+                    cursor: pointer; font-size: 1.1rem; position: relative;
+                    transition: background 0.18s;
+                }
+                .navbar-bell-btn:hover { background: #e0ecff; }
+                .navbar-bell-badge {
+                    position: absolute; top: -4px; right: -4px;
+                    background: #e53e3e; color: #fff;
+                    font-size: 0.6rem; font-weight: 700;
+                    min-width: 16px; height: 16px; border-radius: 99px;
+                    display: flex; align-items: center; justify-content: center;
+                    padding: 0 3px; border: 2px solid #fff;
+                }
+                .navbar-notif-dropdown {
+                    position: absolute; top: calc(100% + 8px); right: 0;
+                    width: 340px; background: #fff;
+                    border: 1px solid #e8f0fe; border-radius: 14px;
+                    box-shadow: 0 8px 32px rgba(0,82,204,0.13);
+                    z-index: 300; overflow: hidden;
+                }
+                .navbar-notif-header {
+                    display: flex; justify-content: space-between; align-items: center;
+                    padding: 0.75rem 1rem; border-bottom: 1px solid #f0f4ff;
+                    font-family: 'Nunito', sans-serif; font-size: 0.88rem; font-weight: 700; color: #1a3c6b;
+                }
+                .navbar-notif-view-all {
+                    font-size: 0.78rem; color: #0052cc; text-decoration: none; font-weight: 600;
+                }
+                .navbar-notif-view-all:hover { text-decoration: underline; }
+                .navbar-notif-list { max-height: 320px; overflow-y: auto; }
+                .navbar-notif-list::-webkit-scrollbar { width: 4px; }
+                .navbar-notif-list::-webkit-scrollbar-thumb { background: #c8d8ff; border-radius: 4px; }
+                .navbar-notif-item {
+                    display: flex; gap: 0.75rem; padding: 0.75rem 1rem;
+                    border-bottom: 1px solid #f8faff; cursor: pointer;
+                    transition: background 0.15s;
+                }
+                .navbar-notif-item:last-child { border-bottom: none; }
+                .navbar-notif-item:hover { background: #f4f8ff; }
+                .navbar-notif-item.unread { background: #f0f6ff; }
+                .navbar-notif-icon {
+                    width: 36px; height: 36px; border-radius: 10px;
+                    display: flex; align-items: center; justify-content: center;
+                    font-size: 1.1rem; flex-shrink: 0;
+                }
+                .navbar-notif-body { flex: 1; min-width: 0; }
+                .navbar-notif-title { font-size: 0.82rem; font-weight: 600; color: #1a3c6b; margin-bottom: 0.15rem; }
+                .navbar-notif-content { font-size: 0.76rem; color: #6b8cbf; line-height: 1.35;
+                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                .navbar-notif-time { font-size: 0.7rem; color: #aab4cc; margin-top: 0.2rem; }
+                .navbar-notif-empty { padding: 2rem; text-align: center; color: #6b8cbf; font-size: 0.85rem; }
+
                 /* Admin toggle btn */
                 .navbar-btn-admin {
                     display: flex; align-items: center; gap: 0.4rem;
@@ -261,25 +346,68 @@ export default function Navbar() {
 
                     {/* Auth */}
                     <div className="navbar-auth">
-                        {(!user || user.provider === "guest") ? (
+                        {!user ? (
                             <>
                                 <Link href="/login" className="navbar-btn-outline">Đăng nhập</Link>
                                 <Link href="/register" className="navbar-btn-solid">Đăng ký</Link>
                             </>
                         ) : (
                             <>
-                                {/* Admin toggle button */}
-                                {user.role === "ADMIN" && (
-                                    pathname.startsWith("/admin") ? (
-                                        <Link href="/" className="navbar-btn-admin to-shop">
-                                            🛒 Trang mua hàng
-                                        </Link>
-                                    ) : (
-                                        <Link href="/admin" className="navbar-btn-admin to-admin">
-                                            ⚙️ Trang admin
-                                        </Link>
-                                    )
-                                )}
+
+                                {/* Bell notification */}
+                                <div className="navbar-bell-wrap">
+                                    <button className="navbar-bell-btn" onClick={openNotifDropdown} title="Thông báo">
+                                        🔔
+                                        {unreadCount > 0 && (
+                                            <span className="navbar-bell-badge">{unreadCount > 9 ? "9+" : unreadCount}</span>
+                                        )}
+                                    </button>
+                                    {notifOpen && (
+                                        <>
+                                            <div style={{ position: "fixed", inset: 0, zIndex: 299 }} onClick={() => setNotifOpen(false)} />
+                                            <div className="navbar-notif-dropdown">
+                                                <div className="navbar-notif-header">
+                                                    <span>🔔 Thông báo</span>
+                                                    <Link href="/profile/notifications" className="navbar-notif-view-all" onClick={() => setNotifOpen(false)}>
+                                                        Xem tất cả →
+                                                    </Link>
+                                                </div>
+                                                <div className="navbar-notif-list">
+                                                    {notifs.length === 0 ? (
+                                                        <div className="navbar-notif-empty">Chưa có thông báo nào</div>
+                                                    ) : notifs.map(n => {
+                                                        const icons: Record<string, string> = {
+                                                            booking_confirm: "✅",
+                                                            booking_cancel: "❌",
+                                                            wallet_credit: "💰",
+                                                            promotion: "🎁",
+                                                        };
+                                                        const colors: Record<string, string> = {
+                                                            booking_confirm: "#e8f5e9",
+                                                            booking_cancel: "#fff0ee",
+                                                            wallet_credit: "#fff8e1",
+                                                            promotion: "#f0f4ff",
+                                                        };
+                                                        const icon = icons[n.type] ?? "🔔";
+                                                        const bg = colors[n.type] ?? "#f0f4ff";
+                                                        const time = new Date(n.created_at).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+                                                        return (
+                                                            <div key={n.notification_id} className={`navbar-notif-item${n.is_read ? "" : " unread"}`}
+                                                                onClick={() => { setNotifOpen(false); if (n.related_id) window.location.href = `/invoice/${n.related_id}`; }}>
+                                                                <div className="navbar-notif-icon" style={{ background: bg }}>{icon}</div>
+                                                                <div className="navbar-notif-body">
+                                                                    <div className="navbar-notif-title">{n.title}</div>
+                                                                    <div className="navbar-notif-content">{n.content}</div>
+                                                                    <div className="navbar-notif-time">{time}</div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
 
                                 {/* Wallet */}
                                 <div className="navbar-wallet">
@@ -319,6 +447,19 @@ export default function Navbar() {
                                         <Link href="/profile/wallet" className="navbar-dropdown-item" onClick={() => setDropdownOpen(false)}>
                                             💰 Ví của tôi
                                         </Link>
+                                        {user.role === "ADMIN" && (
+                                            <>
+                                                <div className="navbar-dropdown-divider" />
+                                                <Link
+                                                    href={pathname.startsWith("/admin") ? "/" : "/admin"}
+                                                    className="navbar-dropdown-item"
+                                                    onClick={() => setDropdownOpen(false)}
+                                                    style={{ color: "#7c3aed", fontWeight: 600 }}
+                                                >
+                                                    {pathname.startsWith("/admin") ? "🛒 Trang mua hàng" : "⚙️ Trang admin"}
+                                                </Link>
+                                            </>
+                                        )}
                                         <div className="navbar-dropdown-divider" />
                                         <button
                                             className="navbar-dropdown-item danger"

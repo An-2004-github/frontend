@@ -5,6 +5,16 @@ import Image from "next/image";
 import { Promotion } from "@/types/promotion";
 import { promotionService } from "@/services/promotionService";
 import PromotionList from "@/components/promotion/promotionList";
+import api from "@/lib/axios";
+
+interface Banner {
+    banner_id: number;
+    title: string;
+    subtitle?: string;
+    image_url: string;
+    link_url?: string;
+    display_order: number;
+}
 
 const CATEGORIES = [
     { key: "hotel", label: "Khách sạn", icon: "🏨" },
@@ -19,17 +29,22 @@ export default function PromotionsPage() {
     const [error, setError] = useState<string | null>(null);
     const [activeCategory, setActiveCategory] = useState("hotel");
     const [copiedWelcome, setCopiedWelcome] = useState(false);
+    const [banners, setBanners] = useState<Banner[]>([]);
 
     const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const tabsRef = useRef<HTMLDivElement>(null);
 
-    // Fetch promotions
+    // Fetch promotions & banners
     useEffect(() => {
         const load = async () => {
             try {
                 setLoading(true);
-                const data = await promotionService.getPromotions();
+                const [data, bannerData] = await Promise.all([
+                    promotionService.getPromotions(),
+                    api.get("/api/banners?page=promotion").then(r => r.data).catch(() => []),
+                ]);
                 setPromotions(data);
+                setBanners(bannerData);
             } catch (err) {
                 console.error(err);
                 setError("Không thể tải dữ liệu. Vui lòng thử lại.");
@@ -470,9 +485,19 @@ export default function PromotionsPage() {
                 </div>
 
                 {/* Banners */}
-                <div className="pp-banners">
-                    <Image src="/images/banner-nghi-le-4-30.jpg" alt="Nghỉ lễ 30/4 - 1/5" className="pp-banner-img" width={1100} height={580} style={{ width: "100%", height: "auto" }} />
-                </div>
+                {banners.length > 0 && (
+                    <div className="pp-banners">
+                        {banners.map(b => (
+                            b.link_url ? (
+                                <a key={b.banner_id} href={b.link_url} target="_blank" rel="noopener noreferrer">
+                                    <Image src={b.image_url} alt={b.title ?? ""} className="pp-banner-img" width={1100} height={580} style={{ width: "100%", height: "auto" }} />
+                                </a>
+                            ) : (
+                                <Image key={b.banner_id} src={b.image_url} alt={b.title ?? ""} className="pp-banner-img" width={1100} height={580} style={{ width: "100%", height: "auto" }} />
+                            )
+                        ))}
+                    </div>
+                )}
 
                 {/* WELCOME30 highlight */}
                 <div className="pp-welcome-wrap">

@@ -51,12 +51,8 @@ def get_trending(limit: int = 8, days: int = 30):
                 COALESCE(AVG(h.avg_rating), 0)   AS avg_rating,
                 MIN(rt.price_per_night)           AS min_price,
                 (SELECT image_url FROM images
-                 WHERE entity_type = 'hotel'
-                   AND entity_id = (
-                       SELECT hotel_id FROM hotels
-                       WHERE destination_id = d.destination_id
-                       ORDER BY avg_rating DESC LIMIT 1
-                   )
+                 WHERE entity_type = 'destination'
+                   AND entity_id = d.destination_id
                  LIMIT 1) AS image_url,
 
                 -- điểm bookings (weight 3)
@@ -150,8 +146,8 @@ def _load_destinations(keyword: str | None) -> list[dict]:
                     COALESCE(AVG(h.avg_rating), 0) AS avg_rating,
                     MIN(rt.price_per_night) AS min_price,
                     (SELECT image_url FROM images
-                     WHERE entity_type = 'hotel'
-                       AND entity_id = (SELECT hotel_id FROM hotels WHERE destination_id = d.destination_id ORDER BY avg_rating DESC LIMIT 1)
+                     WHERE entity_type = 'destination'
+                       AND entity_id = d.destination_id
                      LIMIT 1) AS image_url
                 FROM destinations d
                 LEFT JOIN hotels h ON h.destination_id = d.destination_id
@@ -166,8 +162,8 @@ def _load_destinations(keyword: str | None) -> list[dict]:
                     COALESCE(AVG(h.avg_rating), 0) AS avg_rating,
                     MIN(rt.price_per_night) AS min_price,
                     (SELECT image_url FROM images
-                     WHERE entity_type = 'hotel'
-                       AND entity_id = (SELECT hotel_id FROM hotels WHERE destination_id = d.destination_id ORDER BY avg_rating DESC LIMIT 1)
+                     WHERE entity_type = 'destination'
+                       AND entity_id = d.destination_id
                      LIMIT 1) AS image_url
                 FROM destinations d
                 LEFT JOIN hotels h ON h.destination_id = d.destination_id

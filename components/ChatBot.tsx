@@ -123,22 +123,8 @@ function renderInline(text: string): React.ReactNode[] {
     return parts.map((part, j) => {
         const link = part.match(/^\[(.*?)\]\((.*?)\)$/);
         if (link) {
-            const href = normalizeHref(link[2]);
-            return (
-                <a key={j} href={href}
-                    target={href.startsWith("/") ? "_self" : "_blank"}
-                    rel="noopener noreferrer"
-                    style={{
-                        color: "#0052cc", fontWeight: 600, textDecoration: "none",
-                        background: "#eef4ff", borderRadius: 6,
-                        padding: "0.1rem 0.5rem", display: "inline-block",
-                        margin: "1px 2px", fontSize: "0.8rem",
-                        border: "1px solid #c8d8ff",
-                    }}
-                    onMouseEnter={e => (e.currentTarget.style.background = "#d8eaff")}
-                    onMouseLeave={e => (e.currentTarget.style.background = "#eef4ff")}
-                >{link[1]}</a>
-            );
+            // Render link text as plain bold text — destinations shown as chips below
+            return <strong key={j} style={{ color: "#1a3c6b" }}>{link[1]}</strong>;
         }
         if (/^\*\*(.*?)\*\*$/.test(part)) return <strong key={j}>{part.slice(2, -2)}</strong>;
         if (/^`[^`]+`$/.test(part)) return (
@@ -512,6 +498,30 @@ export default function ChatBot() {
                                             </button>
                                         )}
                                     </div>
+                                    {/* Địa điểm cụ thể (tên riêng) trích từ link /hotels?search= */}
+                                    {msg.role === "model" && !streaming && (() => {
+                                        const cities = extractCities(msg.text).filter(c => /^\p{Lu}/u.test(c));
+                                        if (!cities.length) return null;
+                                        return (
+                                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                                                {cities.map(city => (
+                                                    <a
+                                                        key={city}
+                                                        href={`/hotels?search=${encodeURIComponent(city)}`}
+                                                        style={{
+                                                            fontSize: "0.75rem", fontWeight: 600,
+                                                            color: "#0052cc", background: "#eef4ff",
+                                                            border: "1px solid #c8d8ff", borderRadius: 99,
+                                                            padding: "0.15rem 0.65rem", textDecoration: "none",
+                                                            display: "inline-block",
+                                                        }}
+                                                    >
+                                                        📍 {city}
+                                                    </a>
+                                                ))}
+                                            </div>
+                                        );
+                                    })()}
                                     <div className="cb-ts">{fmtTime(msg.ts)}</div>
                                 </div>
                             </div>

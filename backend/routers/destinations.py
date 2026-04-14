@@ -19,13 +19,16 @@ def get_destinations(limit: int | None = None, country: str | None = None):
 
     query = f"""
         SELECT
-            d.*,
-            COUNT(h.hotel_id) AS hotel_count
+            d.destination_id, d.city, d.name, d.description,
+            COUNT(h.hotel_id) AS hotel_count,
+            (SELECT img.image_url FROM images img
+             WHERE img.entity_type = 'destination' AND img.entity_id = d.destination_id
+             LIMIT 1) AS image_url
         FROM destinations d
         LEFT JOIN hotels h ON h.destination_id = d.destination_id
         {where}
-        GROUP BY d.destination_id
-        ORDER BY d.avg_rating DESC
+        GROUP BY d.destination_id, d.city, d.name, d.description
+        ORDER BY hotel_count DESC, d.city ASC
     """
 
     if limit:
@@ -41,7 +44,14 @@ def get_destinations(limit: int | None = None, country: str | None = None):
 def get_destination(destination_id: int):
     with engine.connect() as conn:
         result = conn.execute(
-            text("SELECT * FROM destinations WHERE destination_id = :id"),
+            text("""
+                SELECT d.*,
+                       (SELECT img.image_url FROM images img
+                        WHERE img.entity_type = 'destination' AND img.entity_id = d.destination_id
+                        LIMIT 1) AS image_url
+                FROM destinations d
+                WHERE d.destination_id = :id
+            """),
             {"id": destination_id}
         ).fetchone()
 

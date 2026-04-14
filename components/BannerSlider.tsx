@@ -41,7 +41,7 @@ export default function BannerSlider() {
         <div style={{ position: "relative", width: "100%", height: "100%" }}>
             <Image
                 src={banner.image_url}
-                alt={banner.title}
+                alt={banner.title ?? ""}
                 fill
                 className="object-cover"
                 unoptimized

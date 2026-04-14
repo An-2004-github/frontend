@@ -4,8 +4,10 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/axios";
 import { useAuthStore } from "@/store/authStore";
+import CloudinaryUpload from "@/components/CloudinaryUpload";
+import CloudinaryMultiUpload from "@/components/CloudinaryMultiUpload";
 
-type Section = "dashboard" | "bookings" | "hotels" | "flights" | "buses" | "trains" | "users" | "wallets" | "promotions" | "banners" | "modifications";
+type Section = "dashboard" | "bookings" | "hotels" | "flights" | "buses" | "trains" | "users" | "wallets" | "promotions" | "banners" | "modifications" | "reviews";
 
 interface Stats {
     total_users: number; total_bookings: number; confirmed_bookings: number;
@@ -31,6 +33,7 @@ function Modal({ title, fields, values, onChange, onSave, onClose, saving }: {
     title: string;
     fields: { key: string; label: string; type?: string; required?: boolean; options?: { value: string; label: string }[] }[];
     values: Record<string, string>;
+    // values is also used for image fields — onChange sets the URL directly
     onChange: (k: string, v: string) => void;
     onSave: () => void;
     onClose: () => void;
@@ -52,34 +55,51 @@ function Modal({ title, fields, values, onChange, onSave, onClose, saving }: {
                 </div>
                 {fields.map(f => (
                     <div key={f.key} style={{ marginBottom: "1rem" }}>
-                        <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#6b8cbf", marginBottom: 4, textTransform: "uppercase" }}>
-                            {f.label}{f.required && " *"}
-                        </label>
-                        {f.type === "textarea" ? (
-                            <textarea
+                        {f.type === "images" ? (
+                            <CloudinaryMultiUpload
+                                label={f.label + (f.required ? " *" : "")}
                                 value={values[f.key] || ""}
-                                onChange={e => onChange(f.key, e.target.value)}
-                                rows={3}
-                                style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1.5px solid #e8f0fe", borderRadius: 8, fontSize: "0.88rem", resize: "vertical", boxSizing: "border-box", fontFamily: "inherit" }}
+                                onChange={csv => onChange(f.key, csv)}
+                                max={3}
                             />
-                        ) : f.type === "select" ? (
-                            <select
+                        ) : f.type === "image" ? (
+                            <CloudinaryUpload
+                                label={f.label + (f.required ? " *" : "")}
                                 value={values[f.key] || ""}
-                                onChange={e => onChange(f.key, e.target.value)}
-                                style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1.5px solid #e8f0fe", borderRadius: 8, fontSize: "0.88rem", boxSizing: "border-box", background: "#fff" }}
-                            >
-                                <option value="">-- Chọn --</option>
-                                {f.options?.map(opt => (
-                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                ))}
-                            </select>
+                                onChange={url => onChange(f.key, url)}
+                            />
                         ) : (
-                            <input
-                                type={f.type || "text"}
-                                value={values[f.key] || ""}
-                                onChange={e => onChange(f.key, e.target.value)}
-                                style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1.5px solid #e8f0fe", borderRadius: 8, fontSize: "0.88rem", boxSizing: "border-box" }}
-                            />
+                            <>
+                                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#6b8cbf", marginBottom: 4, textTransform: "uppercase" }}>
+                                    {f.label}{f.required && " *"}
+                                </label>
+                                {f.type === "textarea" ? (
+                                    <textarea
+                                        value={values[f.key] || ""}
+                                        onChange={e => onChange(f.key, e.target.value)}
+                                        rows={3}
+                                        style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1.5px solid #e8f0fe", borderRadius: 8, fontSize: "0.88rem", resize: "vertical", boxSizing: "border-box", fontFamily: "inherit" }}
+                                    />
+                                ) : f.type === "select" ? (
+                                    <select
+                                        value={values[f.key] || ""}
+                                        onChange={e => onChange(f.key, e.target.value)}
+                                        style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1.5px solid #e8f0fe", borderRadius: 8, fontSize: "0.88rem", boxSizing: "border-box", background: "#fff" }}
+                                    >
+                                        <option value="">-- Chọn --</option>
+                                        {f.options?.map(opt => (
+                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <input
+                                        type={f.type || "text"}
+                                        value={values[f.key] || ""}
+                                        onChange={e => onChange(f.key, e.target.value)}
+                                        style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1.5px solid #e8f0fe", borderRadius: 8, fontSize: "0.88rem", boxSizing: "border-box" }}
+                                    />
+                                )}
+                            </>
                         )}
                     </div>
                 ))}
@@ -170,11 +190,11 @@ function WalletSection() {
 
     const typeLabel: Record<string, string> = { deposit: "Nạp tiền", withdrawal: "Rút tiền", payment: "Thanh toán", refund: "Hoàn tiền", cashback: "Cashback" };
     const typeColor: Record<string, string> = { deposit: "#00875a", withdrawal: "#c0392b", payment: "#b8860b", refund: "#0052cc", cashback: "#7b2d8b" };
-    const typeBg: Record<string, string>    = { deposit: "#e6f9f0", withdrawal: "#fff0f0", payment: "#fffbe6", refund: "#e8f0fe", cashback: "#f3e8ff" };
+    const typeBg: Record<string, string> = { deposit: "#e6f9f0", withdrawal: "#fff0f0", payment: "#fffbe6", refund: "#e8f0fe", cashback: "#f3e8ff" };
 
     const wdStatusColor: Record<string, string> = { pending: "#b8860b", completed: "#00875a", rejected: "#c0392b" };
-    const wdStatusLabel: Record<string, string>  = { pending: "Chờ xử lý", completed: "Đã hoàn tất", rejected: "Bị từ chối" };
-    const wdStatusBg: Record<string, string>     = { pending: "#fffbe6", completed: "#e6f9f0", rejected: "#fff0f0" };
+    const wdStatusLabel: Record<string, string> = { pending: "Chờ xử lý", completed: "Đã hoàn tất", rejected: "Bị từ chối" };
+    const wdStatusBg: Record<string, string> = { pending: "#fffbe6", completed: "#e6f9f0", rejected: "#fff0f0" };
 
     const filteredWallets = wallets.filter(w =>
         String(w.full_name || "").toLowerCase().includes(walletSearch.toLowerCase()) ||
@@ -387,10 +407,21 @@ export default function AdminPage() {
     const [modal, setModal] = useState<{ mode: "create" | "edit"; row?: Record<string, unknown> } | null>(null);
     const [formValues, setFormValues] = useState<Record<string, string>>({});
     const [saving, setSaving] = useState(false);
+    const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [importing, setImporting] = useState(false);
     const excelInputRef = useRef<HTMLInputElement>(null);
     const [search, setSearch] = useState("");
+    const [bannerTab, setBannerTab] = useState<"banners" | "destinations">("banners");
+    const [destData, setDestData] = useState<Record<string, unknown>[]>([]);
+    const [destLoading, setDestLoading] = useState(false);
+    const [destModal, setDestModal] = useState<{ mode: "create" | "edit"; row?: Record<string, unknown> } | null>(null);
+    const [destFormValues, setDestFormValues] = useState<Record<string, string>>({});
+    const [destSaving, setDestSaving] = useState(false);
+    const [destSearch, setDestSearch] = useState("");
+    const [reviewData, setReviewData] = useState<Record<string, unknown>[]>([]);
+    const [reviewLoading, setReviewLoading] = useState(false);
+    const [reviewSearch, setReviewSearch] = useState("");
 
     // Hotel detail / room types
     const [selectedHotel, setSelectedHotel] = useState<Record<string, unknown> | null>(null);
@@ -443,6 +474,50 @@ export default function AdminPage() {
 
     useEffect(() => { loadSection(section); setSearch(""); setSelectedHotel(null); }, [section, loadSection]);
 
+    const loadDestData = useCallback(async () => {
+        setDestLoading(true);
+        try { const r = await api.get("/api/admin/destinations"); setDestData(r.data); }
+        catch { setDestData([]); }
+        finally { setDestLoading(false); }
+    }, []);
+    useEffect(() => { if (section === "banners" && bannerTab === "destinations") loadDestData(); }, [section, bannerTab, loadDestData]);
+
+    const loadReviews = useCallback(async () => {
+        setReviewLoading(true);
+        try { const r = await api.get("/api/admin/reviews"); setReviewData(r.data); }
+        catch { setReviewData([]); }
+        finally { setReviewLoading(false); }
+    }, []);
+    useEffect(() => { if (section === "reviews") loadReviews(); }, [section, loadReviews]);
+
+    const destFieldDefs = [
+        { key: "city", label: "Thành phố", required: true },
+        { key: "name", label: "Tên địa điểm", required: true },
+        { key: "description", label: "Mô tả", type: "textarea" },
+        { key: "image_url", label: "Ảnh đại diện", type: "image" },
+    ];
+
+    const handleDestSave = async () => {
+        if (!destFormValues.city?.trim() || !destFormValues.name?.trim()) {
+            alert("Vui lòng điền Thành phố và Tên địa điểm"); return;
+        }
+        setDestSaving(true);
+        try {
+            const payload = { city: destFormValues.city, name: destFormValues.name, description: destFormValues.description || null, image_url: destFormValues.image_url || null };
+            if (destModal?.mode === "create") await api.post("/api/admin/destinations", payload);
+            else await api.put(`/api/admin/destinations/${destModal?.row?.destination_id}`, payload);
+            setDestModal(null);
+            loadDestData();
+        } catch { alert("Lưu thất bại"); }
+        finally { setDestSaving(false); }
+    };
+
+    const handleDestDelete = async (row: Record<string, unknown>) => {
+        if (!confirm(`Xóa địa điểm "${row.name}"?`)) return;
+        try { await api.delete(`/api/admin/destinations/${row.destination_id}`); loadDestData(); }
+        catch { alert("Xóa thất bại"); }
+    };
+
     const loadRooms = useCallback(async (hotelId: number) => {
         setRoomLoading(true);
         try {
@@ -461,7 +536,7 @@ export default function AdminPage() {
         { key: "name", label: "Tên loại phòng", required: true },
         { key: "price_per_night", label: "Giá/đêm (₫)", type: "number", required: true },
         { key: "max_guests", label: "Số khách tối đa", type: "number" },
-        { key: "image_url", label: "URL ảnh phòng" },
+        { key: "image_url", label: "Ảnh phòng (tối đa 3)", type: "images" },
     ];
 
     const handleRoomSave = async () => {
@@ -510,7 +585,7 @@ export default function AdminPage() {
             },
             { key: "description", label: "Mô tả", type: "textarea" },
             { key: "amenities", label: "Tiện ích (phân cách bằng dấu phẩy)" },
-            { key: "image_url", label: "URL ảnh" },
+            { key: "image_url", label: "Ảnh khách sạn (tối đa 3)", type: "images" },
         ],
         flights: [
             { key: "airline", label: "Hãng bay", required: true },
@@ -520,7 +595,8 @@ export default function AdminPage() {
             { key: "arrive_time", label: "Giờ đến", type: "datetime-local" },
             { key: "price", label: "Giá (₫)", type: "number", required: true },
             { key: "available_seats", label: "Số ghế", type: "number" },
-            { key: "image_url", label: "URL ảnh" },
+            { key: "status", label: "Trạng thái", type: "select", options: [{ value: "active", label: "Đang chạy" }, { value: "cancelled", label: "Đã hủy" }] },
+            { key: "image_url", label: "Ảnh", type: "image" },
         ],
         buses: [
             { key: "company", label: "Nhà xe", required: true },
@@ -530,7 +606,8 @@ export default function AdminPage() {
             { key: "arrive_time", label: "Giờ đến", type: "datetime-local" },
             { key: "price", label: "Giá (₫)", type: "number", required: true },
             { key: "available_seats", label: "Số ghế", type: "number" },
-            { key: "image_url", label: "URL ảnh" },
+            { key: "status", label: "Trạng thái", type: "select", options: [{ value: "active", label: "Đang chạy" }, { value: "cancelled", label: "Đã hủy" }] },
+            { key: "image_url", label: "Ảnh", type: "image" },
         ],
         trains: [
             { key: "train_code", label: "Mã tàu (VD: SE1)", required: true },
@@ -545,10 +622,11 @@ export default function AdminPage() {
     };
 
     const bannerFieldDefs = [
-        { key: "title", label: "Tiêu đề", required: true },
+        { key: "title", label: "Tiêu đề" },
         { key: "subtitle", label: "Mô tả phụ" },
-        { key: "image_url", label: "URL ảnh banner", required: true },
+        { key: "image_url", label: "Ảnh banner", type: "image", required: true },
         { key: "link_url", label: "URL liên kết (khi click)" },
+        { key: "page_display", label: "Vị trí hiển thị", type: "select", required: true, options: [{ value: "home", label: "Trang chủ" }, { value: "promotion", label: "Trang Khuyến mãi" }] },
         { key: "display_order", label: "Thứ tự hiển thị", type: "number" },
         { key: "start_date", label: "Ngày bắt đầu", type: "date" },
         { key: "end_date", label: "Ngày kết thúc", type: "date" },
@@ -607,7 +685,7 @@ export default function AdminPage() {
         if (section === "hotels" && destinations.length === 0) loadDestinations();
         if (section === "users") setFormValues({ role: "USER" });
         else if (section === "promotions") setFormValues({ discount_type: "percent", applies_to: "all", status: "active", usage_limit: "100" });
-        else if (section === "banners") setFormValues({ is_active: "1", display_order: "0" });
+        else if (section === "banners") setFormValues({ is_active: "1", display_order: "0", page_display: "home" });
         else setFormValues({});
         setModal({ mode: "create" });
     };
@@ -700,31 +778,32 @@ export default function AdminPage() {
                     ? { full_name: formValues.full_name, email: formValues.email, phone: formValues.phone || null, role: formValues.role || "USER", new_password: formValues.new_password || null }
                     : { full_name: formValues.full_name, email: formValues.email, password: formValues.password, phone: formValues.phone || null, role: formValues.role || "USER" }
                 : section === "promotions"
-                ? {
-                    code: formValues.code,
-                    description: formValues.description || null,
-                    discount_type: formValues.discount_type || "percent",
-                    discount_percent: Number(formValues.discount_percent) || 0,
-                    max_discount: Number(formValues.max_discount) || 0,
-                    min_order_value: Number(formValues.min_order_value) || 0,
-                    usage_limit: Number(formValues.usage_limit) || 100,
-                    applies_to: formValues.applies_to || "all",
-                    status: formValues.status || "active",
-                    expired_at: formValues.expired_at || null,
-                    per_user_limit: formValues.per_user_limit ? Number(formValues.per_user_limit) : null,
-                  }
-                : section === "banners"
-                ? {
-                    title: formValues.title,
-                    subtitle: formValues.subtitle || null,
-                    image_url: formValues.image_url,
-                    link_url: formValues.link_url || null,
-                    display_order: Number(formValues.display_order) || 0,
-                    is_active: formValues.is_active === "0" ? 0 : 1,
-                    start_date: formValues.start_date || null,
-                    end_date: formValues.end_date || null,
-                  }
-                : buildPayload();
+                    ? {
+                        code: formValues.code,
+                        description: formValues.description || null,
+                        discount_type: formValues.discount_type || "percent",
+                        discount_percent: Number(formValues.discount_percent) || 0,
+                        max_discount: Number(formValues.max_discount) || 0,
+                        min_order_value: Number(formValues.min_order_value) || 0,
+                        usage_limit: Number(formValues.usage_limit) || 100,
+                        applies_to: formValues.applies_to || "all",
+                        status: formValues.status || "active",
+                        expired_at: formValues.expired_at || null,
+                        per_user_limit: formValues.per_user_limit ? Number(formValues.per_user_limit) : null,
+                    }
+                    : section === "banners"
+                        ? {
+                            title: formValues.title,
+                            subtitle: formValues.subtitle || null,
+                            image_url: formValues.image_url,
+                            link_url: formValues.link_url || null,
+                            page_display: formValues.page_display || "home",
+                            display_order: Number(formValues.display_order) || 0,
+                            is_active: formValues.is_active === "0" ? 0 : 1,
+                            start_date: formValues.start_date || null,
+                            end_date: formValues.end_date || null,
+                        }
+                        : buildPayload();
             if (modal?.mode === "create") {
                 await api.post(`/api/admin/${section}`, payload);
             } else {
@@ -742,19 +821,29 @@ export default function AdminPage() {
         } finally { setSaving(false); }
     };
 
+    const showToast = (message: string, type: "success" | "error" = "success") => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), 3000);
+    };
+
     const handleDelete = async (row: Record<string, unknown>) => {
         if (!confirm("Xác nhận xóa?")) return;
         try {
             await api.delete(`/api/admin/${section}/${row[idKey[section]]}`);
             loadSection(section);
-        } catch { alert("Xóa thất bại"); }
+            showToast("Xóa thành công!");
+        } catch { showToast("Xóa thất bại", "error"); }
     };
 
-    const handleStatusChange = async (bookingId: number, status: string) => {
+
+
+    const handleReviewDelete = async (reviewId: number) => {
+        if (!confirm("Xác nhận xóa đánh giá này?")) return;
         try {
-            await api.put(`/api/admin/bookings/${bookingId}/status`, null, { params: { status } });
-            loadSection("bookings");
-        } catch { alert("Cập nhật thất bại"); }
+            await api.delete(`/api/admin/reviews/${reviewId}`);
+            setReviewData(prev => prev.filter(r => Number(r.review_id) !== reviewId));
+            showToast("Đã xóa đánh giá!");
+        } catch { showToast("Xóa thất bại", "error"); }
     };
 
     const handleRoleChange = async (userId: number, role: string) => {
@@ -802,19 +891,42 @@ export default function AdminPage() {
         }
     };
 
-    const navItems: { key: Section; icon: string; label: string }[] = [
-        { key: "dashboard", icon: "📊", label: "Tổng quan" },
-        { key: "bookings", icon: "🗂️", label: "Đặt chỗ" },
-        { key: "hotels", icon: "🏨", label: "Khách sạn" },
-        { key: "flights", icon: "✈️", label: "Chuyến bay" },
-        { key: "buses", icon: "🚌", label: "Xe khách" },
-        { key: "trains", icon: "🚆", label: "Tàu hỏa" },
-        { key: "users", icon: "👥", label: "Người dùng" },
-        { key: "wallets", icon: "👛", label: "Quản lý ví" },
-        { key: "promotions", icon: "🎟️", label: "Mã giảm giá" },
-        { key: "banners", icon: "🖼️", label: "Banner" },
-        { key: "modifications", icon: "🔄", label: "Đổi/Hủy lịch" },
+    const navGroups = [
+        {
+            title: "Tổng quan",
+            items: [
+                { key: "dashboard", icon: "📊", label: "Dashboard" },
+                { key: "reviews", icon: "⭐", label: "Đánh giá" },
+                { key: "promotions", icon: "🎟️", label: "Mã giảm giá" },
+                { key: "banners", icon: "🖼️", label: "Banner & Địa điểm" },
+            ]
+        },
+        {
+            title: "Dịch vụ",
+            items: [
+                { key: "hotels", icon: "🏨", label: "Khách sạn" },
+                { key: "flights", icon: "✈️", label: "Chuyến bay" },
+                { key: "buses", icon: "🚌", label: "Xe khách" },
+                { key: "trains", icon: "🚆", label: "Tàu hỏa" },
+            ]
+        },
+        {
+            title: "User",
+            items: [
+                { key: "users", icon: "👥", label: "Người dùng" },
+                { key: "wallets", icon: "👛", label: "Ví" },
+            ]
+        },
+        {
+            title: "Quản lý đặt chỗ",
+            items: [
+                { key: "bookings", icon: "🗂️", label: "Đặt chỗ" },
+                { key: "modifications", icon: "🔄", label: "Đổi/Hủy lịch" },
+            ]
+        }
     ];
+
+    const navItems = navGroups.flatMap(g => g.items) as { key: Section; icon: string; label: string }[];
 
     const statCards = stats ? [
         { icon: "👥", label: "Người dùng", value: stats.total_users, color: "#0052cc" },
@@ -833,7 +945,24 @@ export default function AdminPage() {
 
     return (
         <>
+            {toast && (
+                <div style={{
+                    position: "fixed", bottom: 28, right: 28, zIndex: 9999,
+                    background: toast.type === "success" ? "#00875a" : "#c0392b",
+                    color: "#fff", padding: "0.85rem 1.4rem", borderRadius: 12,
+                    fontWeight: 600, fontSize: "0.95rem", boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
+                    display: "flex", alignItems: "center", gap: 10,
+                    animation: "fadeInUp 0.25s ease",
+                }}>
+                    <span>{toast.type === "success" ? "✓" : "✕"}</span>
+                    {toast.message}
+                </div>
+            )}
             <style>{`
+                @keyframes fadeInUp {
+                    from { opacity: 0; transform: translateY(16px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
                 @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&family=DM+Sans:wght@300;400;500&display=swap');
                 * { box-sizing: border-box; }
                 body { margin: 0; }
@@ -855,6 +984,12 @@ export default function AdminPage() {
                 .adm-logo span { color: #d4a050; }
                 .adm-logo-sub { font-size: 0.65rem; color: rgba(255,255,255,0.35); font-weight: 400; letter-spacing: 2px; text-transform: uppercase; display: block; margin-top: 2px; }
                 .adm-nav { flex: 1; padding: 1rem 0; overflow-y: auto; }
+                .adm-nav-group-title {
+                    padding: 0 1.25rem; font-size: 0.72rem; font-weight: 700;
+                    text-transform: uppercase; letter-spacing: 0.5px;
+                    color: rgba(255,255,255,0.4); margin-bottom: 0.4rem; margin-top: 1.25rem;
+                }
+                .adm-nav-group:first-child .adm-nav-group-title { margin-top: 0; }
                 .adm-nav-item {
                     display: flex; align-items: center; gap: 0.75rem;
                     padding: 0.75rem 1.25rem; font-size: 0.9rem; font-weight: 500;
@@ -1029,14 +1164,19 @@ export default function AdminPage() {
                     <span className="adm-logo-sub">Admin Panel</span>
                 </div>
                 <nav className="adm-nav">
-                    {navItems.map(item => (
-                        <div
-                            key={item.key}
-                            className={`adm-nav-item${section === item.key ? " active" : ""}`}
-                            onClick={() => setSection(item.key)}
-                        >
-                            <span className="icon">{item.icon}</span>
-                            {item.label}
+                    {navGroups.map((group, gIdx) => (
+                        <div key={gIdx} className="adm-nav-group" style={{ marginBottom: "0.5rem" }}>
+                            <div className="adm-nav-group-title">{group.title}</div>
+                            {group.items.map(item => (
+                                <div
+                                    key={item.key}
+                                    className={`adm-nav-item${section === item.key ? " active" : ""}`}
+                                    onClick={() => setSection(item.key as Section)}
+                                >
+                                    <span className="icon">{item.icon}</span>
+                                    {item.label}
+                                </div>
+                            ))}
                         </div>
                     ))}
                 </nav>
@@ -1179,8 +1319,9 @@ export default function AdminPage() {
                                     { key: "users", icon: "👥", label: "Quản lý người dùng" },
                                     { key: "withdrawals", icon: "💸", label: "Quản lý rút tiền" },
                                     { key: "promotions", icon: "🎟️", label: "Mã giảm giá" },
-                                    { key: "banners", icon: "🖼️", label: "Quản lý banner" },
+                                    { key: "banners", icon: "🖼️", label: "Banner & Địa điểm" },
                                     { key: "modifications", icon: "🔄", label: "Yêu cầu đổi/hủy lịch" },
+                                    { key: "reviews", icon: "⭐", label: "Quản lý đánh giá" },
                                 ].map(item => (
                                     <div
                                         key={item.key}
@@ -1203,6 +1344,96 @@ export default function AdminPage() {
                         </>
                     )}
 
+                    {/* ── REVIEWS ── */}
+                    {section === "reviews" && (
+                        <div className="adm-table-card">
+                            <div className="adm-table-header">
+                                <div className="adm-table-title">⭐ Quản lý đánh giá</div>
+                                <input
+                                    className="adm-search"
+                                    placeholder="🔍 Tìm theo người dùng, khách sạn..."
+                                    value={reviewSearch}
+                                    onChange={e => setReviewSearch(e.target.value)}
+                                />
+                            </div>
+                            <div className="adm-table-wrap">
+                                {reviewLoading ? <div className="adm-loading">Đang tải...</div> : (() => {
+                                    const q = reviewSearch.toLowerCase();
+                                    const filtered = reviewData.filter(r =>
+                                        String(r.full_name || "").toLowerCase().includes(q) ||
+                                        String(r.entity_name || "").toLowerCase().includes(q) ||
+                                        String(r.comment || "").toLowerCase().includes(q)
+                                    );
+                                    if (filtered.length === 0) return <div className="adm-empty">Chưa có đánh giá nào</div>;
+                                    return (
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th>#</th>
+                                                    <th>Người dùng</th>
+                                                    <th>Loại</th>
+                                                    <th>Đối tượng</th>
+                                                    <th style={{ textAlign: "center" }}>Sao</th>
+                                                    <th>Nội dung</th>
+                                                    <th>Ngày</th>
+                                                    <th>Thao tác</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {filtered.map((r, i) => {
+                                                    const rating = Number(r.rating ?? 0);
+                                                    const entityLabel: Record<string, string> = { hotel: "Khách sạn", DESTINATION: "Địa điểm" };
+                                                    return (
+                                                        <tr key={String(r.review_id ?? i)}>
+                                                            <td style={{ color: "#6b8cbf" }}>#{String(r.review_id)}</td>
+                                                            <td>
+                                                                <div style={{ fontWeight: 600 }}>{String(r.full_name || "—")}</div>
+                                                                <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{String(r.email || "")}</div>
+                                                            </td>
+                                                            <td>
+                                                                <span style={{
+                                                                    padding: "2px 8px", borderRadius: 99, fontSize: "0.75rem", fontWeight: 600,
+                                                                    background: r.entity_type === "hotel" ? "#e8f0fe" : "#f0f4ff",
+                                                                    color: r.entity_type === "hotel" ? "#0052cc" : "#6b8cbf",
+                                                                }}>
+                                                                    {entityLabel[String(r.entity_type)] || String(r.entity_type)}
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ fontWeight: 600, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                                {String(r.entity_name || `#${r.entity_id}`)}
+                                                            </td>
+                                                            <td style={{ textAlign: "center" }}>
+                                                                <span style={{
+                                                                    display: "inline-flex", alignItems: "center", gap: 3,
+                                                                    fontWeight: 700, fontSize: "0.9rem",
+                                                                    color: rating >= 4 ? "#00875a" : rating >= 3 ? "#b8860b" : "#c0392b",
+                                                                }}>
+                                                                    {"★".repeat(rating)}{"☆".repeat(5 - rating)}
+                                                                    <span style={{ marginLeft: 3 }}>{rating}</span>
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ maxWidth: 220, fontSize: "0.85rem", color: "#3a5f9a" }}>
+                                                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={String(r.comment || "")}>
+                                                                    {String(r.comment || "—")}
+                                                                </div>
+                                                            </td>
+                                                            <td style={{ fontSize: "0.78rem", color: "#6b8cbf", whiteSpace: "nowrap" }}>
+                                                                {r.created_at ? new Date(String(r.created_at)).toLocaleDateString("vi-VN") : "—"}
+                                                            </td>
+                                                            <td>
+                                                                <button className="adm-action-btn adm-del-btn" onClick={() => handleReviewDelete(Number(r.review_id))}>🗑 Xóa</button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    );
+                                })()}
+                            </div>
+                        </div>
+                    )}
+
                     {/* ── BOOKINGS ── */}
                     {section === "bookings" && (
                         <div className="adm-table-card">
@@ -1218,7 +1449,7 @@ export default function AdminPage() {
                                         <thead>
                                             <tr>
                                                 <th>#</th><th>Khách hàng</th><th>Dịch vụ</th>
-                                                <th>Tổng tiền</th><th>Ngày đặt</th><th>Trạng thái</th><th>Thao tác</th>
+                                                <th>Tổng tiền</th><th>Ngày đặt</th><th>Trạng thái</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1236,18 +1467,6 @@ export default function AdminPage() {
                                                     <td style={{ fontWeight: 700, color: "#0052cc" }}>{fmt(Number(row.final_amount))}</td>
                                                     <td style={{ color: "#6b8cbf", fontSize: "0.8rem" }}>
                                                         {row.booking_date ? new Date(String(row.booking_date)).toLocaleDateString("vi-VN") : "—"}
-                                                    </td>
-                                                    <td>
-                                                        <select
-                                                            className="adm-select"
-                                                            value={String(row.status)}
-                                                            style={{ color: statusColor[String(row.status)] || "#1a3c6b" }}
-                                                            onChange={e => handleStatusChange(Number(row.booking_id), e.target.value)}
-                                                        >
-                                                            <option value="pending">Chờ thanh toán</option>
-                                                            <option value="confirmed">Đã xác nhận</option>
-                                                            <option value="cancelled">Đã huỷ</option>
-                                                        </select>
                                                     </td>
                                                     <td>
                                                         <span
@@ -1283,21 +1502,38 @@ export default function AdminPage() {
                             <div className="adm-table-wrap">
                                 {loading ? <div className="adm-loading">Đang tải...</div> : filteredData.length === 0 ? <div className="adm-empty">Chưa có khách sạn nào</div> : (
                                     <table>
-                                        <thead><tr><th>#</th><th>Tên</th><th>Thành phố</th><th>Địa chỉ</th><th>Thao tác</th></tr></thead>
+                                        <thead><tr><th>#</th><th>Tên</th><th>Thành phố</th><th>Địa chỉ</th><th style={{ textAlign: "center" }}>Phòng trống</th><th>Thao tác</th></tr></thead>
                                         <tbody>
-                                            {filteredData.map((row, i) => (
+                                            {filteredData.map((row, i) => {
+                                                const avail = Number(row.available_rooms ?? 0);
+                                                const total = Number(row.total_rooms ?? 0);
+                                                return (
                                                 <tr key={String(row.hotel_id ?? i)}>
                                                     <td style={{ color: "#6b8cbf" }}>#{String(row.hotel_id)}</td>
                                                     <td style={{ fontWeight: 600 }}>{String(row.name)}</td>
                                                     <td>{String(row.dest_city || row.city || "—")}</td>
                                                     <td style={{ color: "#6b8cbf", fontSize: "0.8rem", maxWidth: 180 }}>{String(row.address || "—")}</td>
+                                                    <td style={{ textAlign: "center" }}>
+                                                        <span style={{
+                                                            display: "inline-block",
+                                                            padding: "3px 10px",
+                                                            borderRadius: 20,
+                                                            fontWeight: 700,
+                                                            fontSize: "0.85rem",
+                                                            background: avail === 0 ? "#fff0f0" : avail < total * 0.3 ? "#fffbe6" : "#e6f9f0",
+                                                            color: avail === 0 ? "#c0392b" : avail < total * 0.3 ? "#b8860b" : "#00875a",
+                                                        }}>
+                                                            {avail}/{total}
+                                                        </span>
+                                                    </td>
                                                     <td>
                                                         <button className="adm-action-btn adm-detail-btn" onClick={() => openHotelDetail(row)}>🏠 Chi tiết</button>
                                                         <button className="adm-action-btn adm-edit-btn" onClick={() => openEdit(row)}>✏️ Sửa</button>
                                                         <button className="adm-action-btn adm-del-btn" onClick={() => handleDelete(row)}>🗑 Xóa</button>
                                                     </td>
                                                 </tr>
-                                            ))}
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 )}
@@ -1340,46 +1576,73 @@ export default function AdminPage() {
                                 </div>
                                 <div className="adm-table-wrap">
                                     {roomLoading ? <div className="adm-loading">Đang tải...</div> :
-                                    roomData.length === 0 ? <div className="adm-empty">Chưa có loại phòng nào. Hãy thêm mới!</div> : (
-                                        <table>
-                                            <thead>
-                                                <tr>
-                                                    <th>#</th>
-                                                    <th>Tên loại phòng</th>
-                                                    <th>Giá/đêm</th>
-                                                    <th>Khách tối đa</th>
-                                                    <th>Thao tác</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {roomData.map((room, i) => (
-                                                    <tr key={String(room.room_type_id ?? i)}>
-                                                        <td style={{ color: "#6b8cbf" }}>#{String(room.room_type_id)}</td>
-                                                        <td>
-                                                            <div style={{ fontWeight: 600 }}>{String(room.name)}</div>
-                                                            {!!room.image_url && (
-                                                                <div style={{ fontSize: "0.7rem", color: "#6b8cbf", marginTop: 2 }}>🖼 Có ảnh</div>
-                                                            )}
-                                                        </td>
-                                                        <td style={{ color: "#0052cc", fontWeight: 700 }}>{fmt(Number(room.price_per_night))}</td>
-                                                        <td style={{ textAlign: "center" }}>👤 {String(room.max_guests || 2)}</td>
-                                                        <td>
-                                                            <button
-                                                                className="adm-action-btn adm-edit-btn"
-                                                                onClick={() => {
-                                                                    const vals: Record<string, string> = {};
-                                                                    Object.entries(room).forEach(([k, v]) => { vals[k] = v != null ? String(v) : ""; });
-                                                                    setRoomFormValues(vals);
-                                                                    setRoomModal({ mode: "edit", row: room });
-                                                                }}
-                                                            >✏️ Sửa</button>
-                                                            <button className="adm-action-btn adm-del-btn" onClick={() => handleRoomDelete(room)}>🗑 Xóa</button>
-                                                        </td>
+                                        roomData.length === 0 ? <div className="adm-empty">Chưa có loại phòng nào. Hãy thêm mới!</div> : (
+                                            <table>
+                                                <thead>
+                                                    <tr>
+                                                        <th>#</th>
+                                                        <th>Ảnh</th>
+                                                        <th>Tên loại phòng</th>
+                                                        <th>Giá/đêm</th>
+                                                        <th>Khách tối đa</th>
+                                                        <th style={{ textAlign: "center" }}>Phòng trống</th>
+                                                        <th>Thao tác</th>
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    )}
+                                                </thead>
+                                                <tbody>
+                                                    {roomData.map((room, i) => {
+                                                        const avail = Number(room.available_rooms ?? 0);
+                                                        const total = Number(room.total_rooms ?? 0);
+                                                        return (
+                                                        <tr key={String(room.room_type_id ?? i)}>
+                                                            <td style={{ color: "#6b8cbf" }}>#{String(room.room_type_id)}</td>
+                                                            <td>
+                                                                {room.image_url ? (
+                                                                    <img
+                                                                        src={String(room.image_url)}
+                                                                        alt={String(room.name)}
+                                                                        style={{ width: 72, height: 52, objectFit: "cover", borderRadius: 6, border: "1px solid #e8f0fe", display: "block" }}
+                                                                    />
+                                                                ) : (
+                                                                    <div style={{ width: 72, height: 52, background: "#f0f4ff", borderRadius: 6, border: "1px solid #e8f0fe", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem" }}>🏨</div>
+                                                                )}
+                                                            </td>
+                                                            <td>
+                                                                <div style={{ fontWeight: 600 }}>{String(room.name)}</div>
+                                                            </td>
+                                                            <td style={{ color: "#0052cc", fontWeight: 700 }}>{fmt(Number(room.price_per_night))}</td>
+                                                            <td style={{ textAlign: "center" }}>👤 {String(room.max_guests || 2)}</td>
+                                                            <td style={{ textAlign: "center" }}>
+                                                                <span style={{
+                                                                    display: "inline-block",
+                                                                    padding: "3px 10px",
+                                                                    borderRadius: 20,
+                                                                    fontWeight: 700,
+                                                                    fontSize: "0.85rem",
+                                                                    background: avail === 0 ? "#fff0f0" : avail < total * 0.3 ? "#fffbe6" : "#e6f9f0",
+                                                                    color: avail === 0 ? "#c0392b" : avail < total * 0.3 ? "#b8860b" : "#00875a",
+                                                                }}>
+                                                                    {avail}/{total}
+                                                                </span>
+                                                            </td>
+                                                            <td>
+                                                                <button
+                                                                    className="adm-action-btn adm-edit-btn"
+                                                                    onClick={() => {
+                                                                        const vals: Record<string, string> = {};
+                                                                        Object.entries(room).forEach(([k, v]) => { vals[k] = v != null ? String(v) : ""; });
+                                                                        setRoomFormValues(vals);
+                                                                        setRoomModal({ mode: "edit", row: room });
+                                                                    }}
+                                                                >✏️ Sửa</button>
+                                                                <button className="adm-action-btn adm-del-btn" onClick={() => handleRoomDelete(room)}>🗑 Xóa</button>
+                                                            </td>
+                                                        </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        )}
                                 </div>
                             </div>
                         </>
@@ -1402,9 +1665,16 @@ export default function AdminPage() {
                             <div className="adm-table-wrap">
                                 {loading ? <div className="adm-loading">Đang tải...</div> : filteredData.length === 0 ? <div className="adm-empty">Chưa có chuyến bay nào</div> : (
                                     <table>
-                                        <thead><tr><th>#</th><th>Hãng bay</th><th>Tuyến</th><th>Khởi hành</th><th>Đến</th><th>Giá</th><th>Ghế</th><th>Thao tác</th></tr></thead>
+                                        <thead><tr><th>#</th><th>Hãng bay</th><th>Tuyến</th><th>Khởi hành</th><th>Đến</th><th>Giá</th><th style={{ textAlign: "center" }}>Ghế trống</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
                                         <tbody>
-                                            {filteredData.map((row, i) => (
+                                            {filteredData.map((row, i) => {
+                                                const avail = Number(row.avail_total ?? row.available_seats ?? 0);
+                                                const total = Number(row.total_seats ?? 0);
+                                                const eco = Number(row.avail_economy ?? 0);
+                                                const biz = Number(row.avail_business ?? 0);
+                                                const first = Number(row.avail_first ?? 0);
+                                                const status = String(row.status ?? "active");
+                                                return (
                                                 <tr key={String(row.flight_id ?? i)}>
                                                     <td style={{ color: "#6b8cbf" }}>#{String(row.flight_id)}</td>
                                                     <td style={{ fontWeight: 600 }}>{String(row.airline)}</td>
@@ -1412,13 +1682,42 @@ export default function AdminPage() {
                                                     <td style={{ fontSize: "0.8rem" }}>{row.depart_time ? new Date(String(row.depart_time)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—"}</td>
                                                     <td style={{ fontSize: "0.8rem" }}>{row.arrive_time ? new Date(String(row.arrive_time)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—"}</td>
                                                     <td style={{ color: "#0052cc", fontWeight: 700 }}>{fmt(Number(row.price))}</td>
-                                                    <td>{String(row.available_seats)}</td>
+                                                    <td style={{ textAlign: "center" }}>
+                                                        <span style={{
+                                                            display: "inline-block",
+                                                            padding: "3px 10px",
+                                                            borderRadius: 20,
+                                                            fontWeight: 700,
+                                                            fontSize: "0.85rem",
+                                                            background: avail === 0 ? "#fff0f0" : avail < total * 0.3 ? "#fffbe6" : "#e6f9f0",
+                                                            color: avail === 0 ? "#c0392b" : avail < total * 0.3 ? "#b8860b" : "#00875a",
+                                                            marginBottom: 3,
+                                                        }}>
+                                                            {avail}/{total}
+                                                        </span>
+                                                        {total > 0 && (
+                                                            <div style={{ fontSize: "0.72rem", color: "#6b8cbf", lineHeight: 1.5 }}>
+                                                                {eco > 0 && <span style={{ marginRight: 4 }}>🪑 Eco: {eco}</span>}
+                                                                {biz > 0 && <span style={{ marginRight: 4 }}>💼 Biz: {biz}</span>}
+                                                                {first > 0 && <span>👑 First: {first}</span>}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td>
+                                                        <span className="adm-badge" style={{
+                                                            background: status === "active" ? "#e6f9f0" : status === "cancelled" ? "#fff0f0" : "#f0f4ff",
+                                                            color: status === "active" ? "#00875a" : status === "cancelled" ? "#c0392b" : "#6b8cbf",
+                                                        }}>
+                                                            {status === "active" ? "Đang chạy" : status === "cancelled" ? "Đã hủy" : "Đã hoàn thành"}
+                                                        </span>
+                                                    </td>
                                                     <td>
                                                         <button className="adm-action-btn adm-edit-btn" onClick={() => openEdit(row)}>✏️ Sửa</button>
                                                         <button className="adm-action-btn adm-del-btn" onClick={() => handleDelete(row)}>🗑 Xóa</button>
                                                     </td>
                                                 </tr>
-                                            ))}
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 )}
@@ -1443,9 +1742,16 @@ export default function AdminPage() {
                             <div className="adm-table-wrap">
                                 {loading ? <div className="adm-loading">Đang tải...</div> : filteredData.length === 0 ? <div className="adm-empty">Chưa có xe khách nào</div> : (
                                     <table>
-                                        <thead><tr><th>#</th><th>Nhà xe</th><th>Tuyến</th><th>Khởi hành</th><th>Đến</th><th>Giá</th><th>Ghế</th><th>Thao tác</th></tr></thead>
+                                        <thead><tr><th>#</th><th>Nhà xe</th><th>Tuyến</th><th>Khởi hành</th><th>Đến</th><th>Giá</th><th style={{ textAlign: "center" }}>Ghế trống</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
                                         <tbody>
-                                            {filteredData.map((row, i) => (
+                                            {filteredData.map((row, i) => {
+                                                const avail = Number(row.avail_total ?? row.available_seats ?? 0);
+                                                const total = Number(row.total_seats ?? 0);
+                                                const std = Number(row.avail_standard ?? 0);
+                                                const vip = Number(row.avail_vip ?? 0);
+                                                const sleeper = Number(row.avail_sleeper ?? 0);
+                                                const status = String(row.status ?? "active");
+                                                return (
                                                 <tr key={String(row.bus_id ?? i)}>
                                                     <td style={{ color: "#6b8cbf" }}>#{String(row.bus_id)}</td>
                                                     <td style={{ fontWeight: 600 }}>{String(row.company)}</td>
@@ -1453,13 +1759,42 @@ export default function AdminPage() {
                                                     <td style={{ fontSize: "0.8rem" }}>{row.depart_time ? new Date(String(row.depart_time)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—"}</td>
                                                     <td style={{ fontSize: "0.8rem" }}>{row.arrive_time ? new Date(String(row.arrive_time)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—"}</td>
                                                     <td style={{ color: "#0052cc", fontWeight: 700 }}>{fmt(Number(row.price))}</td>
-                                                    <td>{String(row.available_seats)}</td>
+                                                    <td style={{ textAlign: "center" }}>
+                                                        <span style={{
+                                                            display: "inline-block",
+                                                            padding: "3px 10px",
+                                                            borderRadius: 20,
+                                                            fontWeight: 700,
+                                                            fontSize: "0.85rem",
+                                                            background: avail === 0 ? "#fff0f0" : avail < total * 0.3 ? "#fffbe6" : "#e6f9f0",
+                                                            color: avail === 0 ? "#c0392b" : avail < total * 0.3 ? "#b8860b" : "#00875a",
+                                                            marginBottom: 3,
+                                                        }}>
+                                                            {avail}/{total}
+                                                        </span>
+                                                        {total > 0 && (
+                                                            <div style={{ fontSize: "0.72rem", color: "#6b8cbf", lineHeight: 1.5 }}>
+                                                                {std > 0 && <span style={{ marginRight: 4 }}>🪑 Thường: {std}</span>}
+                                                                {vip > 0 && <span style={{ marginRight: 4 }}>⭐ VIP: {vip}</span>}
+                                                                {sleeper > 0 && <span>🛏 Nằm: {sleeper}</span>}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td>
+                                                        <span className="adm-badge" style={{
+                                                            background: status === "active" ? "#e6f9f0" : status === "cancelled" ? "#fff0f0" : "#f0f4ff",
+                                                            color: status === "active" ? "#00875a" : status === "cancelled" ? "#c0392b" : "#6b8cbf",
+                                                        }}>
+                                                            {status === "active" ? "Đang chạy" : status === "cancelled" ? "Đã hủy" : "Đã hoàn thành"}
+                                                        </span>
+                                                    </td>
                                                     <td>
                                                         <button className="adm-action-btn adm-edit-btn" onClick={() => openEdit(row)}>✏️ Sửa</button>
                                                         <button className="adm-action-btn adm-del-btn" onClick={() => handleDelete(row)}>🗑 Xóa</button>
                                                     </td>
                                                 </tr>
-                                            ))}
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 )}
@@ -1491,7 +1826,14 @@ export default function AdminPage() {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {filteredData.map((row, i) => (
+                                            {filteredData.map((row, i) => {
+                                                const avail = Number(row.avail_total ?? row.available_seats ?? 0);
+                                                const total = Number(row.total_seats ?? 0);
+                                                const hardSeat = Number(row.avail_hard_seat ?? 0);
+                                                const softSeat = Number(row.avail_soft_seat ?? 0);
+                                                const hardSleeper = Number(row.avail_hard_sleeper ?? 0);
+                                                const softSleeper = Number(row.avail_soft_sleeper ?? 0);
+                                                return (
                                                 <tr key={String(row.train_id ?? i)}>
                                                     <td style={{ color: "#6b8cbf" }}>#{String(row.train_id)}</td>
                                                     <td>
@@ -1505,15 +1847,34 @@ export default function AdminPage() {
                                                     </td>
                                                     <td style={{ fontSize: "0.8rem" }}>{row.depart_time ? new Date(String(row.depart_time)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—"}</td>
                                                     <td style={{ fontSize: "0.8rem" }}>{row.arrive_time ? new Date(String(row.arrive_time)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—"}</td>
-                                                    <td style={{ textAlign: "center", fontWeight: 600, color: Number(row.available_seats) <= 10 ? "#c0392b" : "#00875a" }}>
-                                                        {String(row.available_seats ?? "—")} / {String(row.total_seats ?? "—")}
+                                                    <td style={{ textAlign: "center" }}>
+                                                        <span style={{
+                                                            display: "inline-block",
+                                                            padding: "3px 10px",
+                                                            borderRadius: 20,
+                                                            fontWeight: 700,
+                                                            fontSize: "0.85rem",
+                                                            background: avail === 0 ? "#fff0f0" : avail < total * 0.3 ? "#fffbe6" : "#e6f9f0",
+                                                            color: avail === 0 ? "#c0392b" : avail < total * 0.3 ? "#b8860b" : "#00875a",
+                                                            marginBottom: 3,
+                                                        }}>
+                                                            {avail}/{total}
+                                                        </span>
+                                                        {total > 0 && (
+                                                            <div style={{ fontSize: "0.72rem", color: "#6b8cbf", lineHeight: 1.5 }}>
+                                                                {hardSeat > 0 && <span style={{ marginRight: 4 }}>🪑 Cứng: {hardSeat}</span>}
+                                                                {softSeat > 0 && <span style={{ marginRight: 4 }}>💺 Mềm: {softSeat}</span>}
+                                                                {hardSleeper > 0 && <span style={{ marginRight: 4 }}>🛏 Nằm cứng: {hardSleeper}</span>}
+                                                                {softSleeper > 0 && <span>🛌 Nằm mềm: {softSleeper}</span>}
+                                                            </div>
+                                                        )}
                                                     </td>
                                                     <td>
                                                         <span className="adm-badge" style={{
-                                                            background: row.status === "active" ? "#e6f9f0" : "#fff0f0",
-                                                            color: row.status === "active" ? "#00875a" : "#c0392b",
+                                                            background: row.status === "active" ? "#e6f9f0" : row.status === "cancelled" ? "#fff0f0" : "#f0f4ff",
+                                                            color: row.status === "active" ? "#00875a" : row.status === "cancelled" ? "#c0392b" : "#6b8cbf",
                                                         }}>
-                                                            {row.status === "active" ? "Đang chạy" : row.status === "cancelled" ? "Đã hủy" : String(row.status)}
+                                                            {row.status === "active" ? "Đang chạy" : row.status === "cancelled" ? "Đã hủy" : row.status === "completed" ? "Đã hoàn thành" : "Không hoạt động"}
                                                         </span>
                                                     </td>
                                                     <td>
@@ -1521,7 +1882,8 @@ export default function AdminPage() {
                                                         <button className="adm-action-btn adm-del-btn" onClick={() => handleDelete(row)}>🗑 Xóa</button>
                                                     </td>
                                                 </tr>
-                                            ))}
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 )}
@@ -1542,7 +1904,7 @@ export default function AdminPage() {
                             <div className="adm-table-wrap">
                                 {loading ? <div className="adm-loading">Đang tải...</div> : filteredData.length === 0 ? <div className="adm-empty">Không có người dùng</div> : (
                                     <table>
-                                        <thead><tr><th>#</th><th>Họ tên</th><th>Email</th><th>SĐT</th><th>Ví</th><th>Role</th><th>Đăng ký</th><th>Thao tác</th></tr></thead>
+                                        <thead><tr><th>#</th><th>Họ tên</th><th>Email</th><th>SĐT</th><th>Role</th><th>Đăng ký</th><th>Thao tác</th></tr></thead>
                                         <tbody>
                                             {filteredData.map((row, i) => (
                                                 <tr key={String(row.user_id ?? i)}>
@@ -1550,7 +1912,7 @@ export default function AdminPage() {
                                                     <td style={{ fontWeight: 600 }}>{String(row.full_name || "—")}</td>
                                                     <td style={{ color: "#6b8cbf", fontSize: "0.82rem" }}>{String(row.email)}</td>
                                                     <td>{String(row.phone || "—")}</td>
-                                                    <td style={{ color: "#00875a", fontWeight: 600 }}>{fmt(Number(row.wallet || 0))}</td>
+
                                                     <td>
                                                         <select
                                                             className="adm-select"
@@ -1584,9 +1946,9 @@ export default function AdminPage() {
                     {/* ── PROMOTIONS ── */}
                     {section === "promotions" && (() => {
                         const promoStatusColor: Record<string, string> = { active: "#00875a", inactive: "#c0392b" };
-                        const promoStatusBg: Record<string, string>    = { active: "#e6f9f0", inactive: "#fff0f0" };
-                        const promoStatusLabel: Record<string, string>  = { active: "Đang hoạt động", inactive: "Tắt" };
-                        const appliesToLabel: Record<string, string>    = { all: "Tất cả", hotel: "Khách sạn", flight: "Chuyến bay", bus: "Xe khách" };
+                        const promoStatusBg: Record<string, string> = { active: "#e6f9f0", inactive: "#fff0f0" };
+                        const promoStatusLabel: Record<string, string> = { active: "Đang hoạt động", inactive: "Tắt" };
+                        const appliesToLabel: Record<string, string> = { all: "Tất cả", hotel: "Khách sạn", flight: "Chuyến bay", bus: "Xe khách" };
                         return (
                             <div className="adm-table-card">
                                 <div className="adm-table-header">
@@ -1601,89 +1963,89 @@ export default function AdminPage() {
                                 </div>
                                 <div className="adm-table-wrap">
                                     {loading ? <div className="adm-loading">Đang tải...</div> :
-                                    filteredData.length === 0 ? <div className="adm-empty">Chưa có mã giảm giá nào</div> : (
-                                        <table>
-                                            <thead>
-                                                <tr>
-                                                    <th>#</th>
-                                                    <th>Mã</th>
-                                                    <th>Giảm giá</th>
-                                                    <th>Tối thiểu</th>
-                                                    <th>Áp dụng</th>
-                                                    <th>Đã dùng</th>
-                                                    <th>Hạn dùng</th>
-                                                    <th>Trạng thái</th>
-                                                    <th>Thao tác</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {filteredData.map((row, i) => {
-                                                    const isExpired = !!row.expired_at && new Date(String(row.expired_at)) < new Date();
-                                                    return (
-                                                        <tr key={String(row.promo_id ?? i)}>
-                                                            <td style={{ color: "#6b8cbf" }}>#{String(row.promo_id)}</td>
-                                                            <td>
-                                                                <div style={{ fontWeight: 800, fontFamily: "Nunito, sans-serif", fontSize: "0.95rem", color: "#0052cc", letterSpacing: 1 }}>
-                                                                    {String(row.code)}
-                                                                </div>
-                                                                {!!row.description && (
-                                                                    <div style={{ fontSize: "0.72rem", color: "#6b8cbf", marginTop: 2 }}>{String(row.description)}</div>
-                                                                )}
-                                                            </td>
-                                                            <td>
-                                                                {String(row.discount_type) === "percent" ? (
-                                                                    <span style={{ fontWeight: 700, color: "#00875a" }}>
-                                                                        -{Number(row.discount_percent)}%
-                                                                        {Number(row.max_discount) > 0 && (
-                                                                            <span style={{ fontWeight: 400, fontSize: "0.75rem", color: "#6b8cbf" }}> (tối đa {Number(row.max_discount).toLocaleString("vi-VN")}₫)</span>
-                                                                        )}
+                                        filteredData.length === 0 ? <div className="adm-empty">Chưa có mã giảm giá nào</div> : (
+                                            <table>
+                                                <thead>
+                                                    <tr>
+                                                        <th>#</th>
+                                                        <th>Mã</th>
+                                                        <th>Giảm giá</th>
+                                                        <th>Tối thiểu</th>
+                                                        <th>Áp dụng</th>
+                                                        <th>Đã dùng</th>
+                                                        <th>Hạn dùng</th>
+                                                        <th>Trạng thái</th>
+                                                        <th>Thao tác</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {filteredData.map((row, i) => {
+                                                        const isExpired = !!row.expired_at && new Date(String(row.expired_at)) < new Date();
+                                                        return (
+                                                            <tr key={String(row.promo_id ?? i)}>
+                                                                <td style={{ color: "#6b8cbf" }}>#{String(row.promo_id)}</td>
+                                                                <td>
+                                                                    <div style={{ fontWeight: 800, fontFamily: "Nunito, sans-serif", fontSize: "0.95rem", color: "#0052cc", letterSpacing: 1 }}>
+                                                                        {String(row.code)}
+                                                                    </div>
+                                                                    {!!row.description && (
+                                                                        <div style={{ fontSize: "0.72rem", color: "#6b8cbf", marginTop: 2 }}>{String(row.description)}</div>
+                                                                    )}
+                                                                </td>
+                                                                <td>
+                                                                    {String(row.discount_type) === "percent" ? (
+                                                                        <span style={{ fontWeight: 700, color: "#00875a" }}>
+                                                                            -{Number(row.discount_percent)}%
+                                                                            {Number(row.max_discount) > 0 && (
+                                                                                <span style={{ fontWeight: 400, fontSize: "0.75rem", color: "#6b8cbf" }}> (tối đa {Number(row.max_discount).toLocaleString("vi-VN")}₫)</span>
+                                                                            )}
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span style={{ fontWeight: 700, color: "#00875a" }}>-{Number(row.max_discount).toLocaleString("vi-VN")}₫</span>
+                                                                    )}
+                                                                </td>
+                                                                <td style={{ color: "#6b8cbf", fontSize: "0.82rem" }}>
+                                                                    {Number(row.min_order_value) > 0 ? Number(row.min_order_value).toLocaleString("vi-VN") + "₫" : "—"}
+                                                                </td>
+                                                                <td>
+                                                                    <span className="adm-badge" style={{ background: "#f0f4ff", color: "#0052cc" }}>
+                                                                        {appliesToLabel[String(row.applies_to)] || String(row.applies_to)}
                                                                     </span>
-                                                                ) : (
-                                                                    <span style={{ fontWeight: 700, color: "#00875a" }}>-{Number(row.max_discount).toLocaleString("vi-VN")}₫</span>
-                                                                )}
-                                                            </td>
-                                                            <td style={{ color: "#6b8cbf", fontSize: "0.82rem" }}>
-                                                                {Number(row.min_order_value) > 0 ? Number(row.min_order_value).toLocaleString("vi-VN") + "₫" : "—"}
-                                                            </td>
-                                                            <td>
-                                                                <span className="adm-badge" style={{ background: "#f0f4ff", color: "#0052cc" }}>
-                                                                    {appliesToLabel[String(row.applies_to)] || String(row.applies_to)}
-                                                                </span>
-                                                            </td>
-                                                            <td style={{ textAlign: "center", fontSize: "0.85rem" }}>
-                                                                <span style={{ color: Number(row.used_count) >= Number(row.usage_limit) ? "#c0392b" : "#1a3c6b", fontWeight: 600 }}>
-                                                                    {String(row.used_count || 0)}/{String(row.usage_limit || "∞")}
-                                                                </span>
-                                                            </td>
-                                                            <td style={{ fontSize: "0.78rem", color: isExpired ? "#c0392b" : "#6b8cbf" }}>
-                                                                {row.expired_at ? new Date(String(row.expired_at)).toLocaleDateString("vi-VN") : "Không giới hạn"}
-                                                                {isExpired && <div style={{ fontWeight: 600 }}>⛔ Hết hạn</div>}
-                                                            </td>
-                                                            <td>
-                                                                <span className="adm-badge" style={{
-                                                                    background: promoStatusBg[String(row.status)] || "#f0f4ff",
-                                                                    color: promoStatusColor[String(row.status)] || "#6b8cbf",
-                                                                }}>
-                                                                    {promoStatusLabel[String(row.status)] || String(row.status)}
-                                                                </span>
-                                                            </td>
-                                                            <td>
-                                                                <button
-                                                                    className="adm-action-btn"
-                                                                    style={{ background: String(row.status) === "active" ? "#fff8e1" : "#e6f9f0", color: String(row.status) === "active" ? "#b8860b" : "#00875a" }}
-                                                                    onClick={() => handleTogglePromo(Number(row.promo_id))}
-                                                                >
-                                                                    {String(row.status) === "active" ? "⏸ Tắt" : "▶ Bật"}
-                                                                </button>
-                                                                <button className="adm-action-btn adm-edit-btn" onClick={() => openEdit(row)}>✏️ Sửa</button>
-                                                                <button className="adm-action-btn adm-del-btn" onClick={() => handleDelete(row)}>🗑 Xóa</button>
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
-                                    )}
+                                                                </td>
+                                                                <td style={{ textAlign: "center", fontSize: "0.85rem" }}>
+                                                                    <span style={{ color: Number(row.used_count) >= Number(row.usage_limit) ? "#c0392b" : "#1a3c6b", fontWeight: 600 }}>
+                                                                        {String(row.used_count || 0)}/{String(row.usage_limit || "∞")}
+                                                                    </span>
+                                                                </td>
+                                                                <td style={{ fontSize: "0.78rem", color: isExpired ? "#c0392b" : "#6b8cbf" }}>
+                                                                    {row.expired_at ? new Date(String(row.expired_at)).toLocaleDateString("vi-VN") : "Không giới hạn"}
+                                                                    {isExpired && <div style={{ fontWeight: 600 }}>⛔ Hết hạn</div>}
+                                                                </td>
+                                                                <td>
+                                                                    <span className="adm-badge" style={{
+                                                                        background: promoStatusBg[String(row.status)] || "#f0f4ff",
+                                                                        color: promoStatusColor[String(row.status)] || "#6b8cbf",
+                                                                    }}>
+                                                                        {promoStatusLabel[String(row.status)] || String(row.status)}
+                                                                    </span>
+                                                                </td>
+                                                                <td>
+                                                                    <button
+                                                                        className="adm-action-btn"
+                                                                        style={{ background: String(row.status) === "active" ? "#fff8e1" : "#e6f9f0", color: String(row.status) === "active" ? "#b8860b" : "#00875a" }}
+                                                                        onClick={() => handleTogglePromo(Number(row.promo_id))}
+                                                                    >
+                                                                        {String(row.status) === "active" ? "⏸ Tắt" : "▶ Bật"}
+                                                                    </button>
+                                                                    <button className="adm-action-btn adm-edit-btn" onClick={() => openEdit(row)}>✏️ Sửa</button>
+                                                                    <button className="adm-action-btn adm-del-btn" onClick={() => handleDelete(row)}>🗑 Xóa</button>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        )}
                                 </div>
                             </div>
                         );
@@ -1693,103 +2055,188 @@ export default function AdminPage() {
                     {/* ── BANNERS ── */}
                     {section === "banners" && (
                         <div className="adm-table-card">
-                            <div className="adm-table-header">
-                                <div className="adm-table-title">🖼️ Quản lý Banner</div>
-                                <div className="adm-table-actions">
-                                    <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} />
-                                    <button className="adm-add-btn" onClick={openCreate}>＋ Thêm banner</button>
-                                </div>
+                            {/* Tab switcher */}
+                            <div style={{ display: "flex", gap: 8, padding: "1rem 1.25rem 0", borderBottom: "2px solid #e8f0fe", marginBottom: "1rem" }}>
+                                {([["banners", "🖼️ Banner"], ["destinations", "📍 Địa điểm du lịch"]] as const).map(([key, label]) => (
+                                    <button key={key} onClick={() => setBannerTab(key)} style={{
+                                        padding: "0.45rem 1.1rem", fontWeight: 700, fontSize: "0.88rem", border: "none", cursor: "pointer", borderRadius: "8px 8px 0 0",
+                                        background: bannerTab === key ? "#0052cc" : "transparent",
+                                        color: bannerTab === key ? "#fff" : "#6b8cbf",
+                                        marginBottom: -2, borderBottom: bannerTab === key ? "2px solid #0052cc" : "2px solid transparent",
+                                    }}>{label}</button>
+                                ))}
                             </div>
-                            <div className="adm-table-wrap">
-                                {loading ? <div className="adm-loading">Đang tải...</div> :
-                                filteredData.length === 0 ? <div className="adm-empty">Chưa có banner nào. Hãy thêm mới!</div> : (
-                                    <table>
-                                        <thead>
-                                            <tr>
-                                                <th>#</th>
-                                                <th>Ảnh preview</th>
-                                                <th>Tiêu đề</th>
-                                                <th>Liên kết</th>
-                                                <th>Thứ tự</th>
-                                                <th>Thời gian hiển thị</th>
-                                                <th>Trạng thái</th>
-                                                <th>Thao tác</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {filteredData.map((row, i) => {
-                                                const isActive = Number(row.is_active) === 1;
-                                                const now = new Date();
-                                                const start = row.start_date ? new Date(String(row.start_date)) : null;
-                                                const end = row.end_date ? new Date(String(row.end_date)) : null;
-                                                const outOfRange = (start && start > now) || (end && end < now);
-                                                return (
-                                                    <tr key={String(row.banner_id ?? i)}>
-                                                        <td style={{ color: "#6b8cbf" }}>#{String(row.banner_id)}</td>
-                                                        <td>
-                                                            {row.image_url ? (
-                                                                // eslint-disable-next-line @next/next/no-img-element
-                                                                <img
-                                                                    src={String(row.image_url)}
-                                                                    alt="banner"
-                                                                    style={{ width: 110, height: 55, objectFit: "cover", borderRadius: 8, border: "1px solid #e8f0fe" }}
-                                                                    onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
-                                                                />
-                                                            ) : (
-                                                                <div style={{ width: 110, height: 55, background: "#f0f4ff", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "#6b8cbf", fontSize: "0.75rem" }}>
-                                                                    Không có ảnh
-                                                                </div>
-                                                            )}
-                                                        </td>
-                                                        <td>
-                                                            <div style={{ fontWeight: 600, maxWidth: 200 }}>{String(row.title)}</div>
-                                                            {!!row.subtitle && <div style={{ fontSize: "0.75rem", color: "#6b8cbf", marginTop: 2 }}>{String(row.subtitle)}</div>}
-                                                        </td>
-                                                        <td style={{ maxWidth: 160 }}>
-                                                            {row.link_url ? (
-                                                                <span style={{ fontSize: "0.78rem", color: "#0052cc", wordBreak: "break-all" }}>{String(row.link_url)}</span>
-                                                            ) : <span style={{ color: "#c8d8ff" }}>—</span>}
-                                                        </td>
-                                                        <td style={{ textAlign: "center", fontWeight: 700, color: "#0052cc" }}>
-                                                            {String(row.display_order ?? 0)}
-                                                        </td>
-                                                        <td style={{ fontSize: "0.78rem" }}>
-                                                            {start || end ? (
-                                                                <div style={{ color: outOfRange ? "#c0392b" : "#00875a" }}>
-                                                                    {start ? <div>Từ: {start.toLocaleDateString("vi-VN")}</div> : <div>Từ: —</div>}
-                                                                    {end ? <div>Đến: {end.toLocaleDateString("vi-VN")}</div> : <div>Đến: —</div>}
-                                                                    {outOfRange && <div style={{ fontWeight: 700 }}>⛔ Ngoài thời hạn</div>}
-                                                                </div>
-                                                            ) : (
-                                                                <span style={{ color: "#6b8cbf" }}>Không giới hạn</span>
-                                                            )}
-                                                        </td>
-                                                        <td>
-                                                            <span className="adm-badge" style={{
-                                                                background: isActive ? "#e6f9f0" : "#fff0f0",
-                                                                color: isActive ? "#00875a" : "#c0392b",
-                                                            }}>
-                                                                {isActive ? "🟢 Hiển thị" : "⭕ Ẩn"}
-                                                            </span>
-                                                        </td>
-                                                        <td>
-                                                            <button
-                                                                className="adm-action-btn"
-                                                                style={{ background: isActive ? "#fff8e1" : "#e6f9f0", color: isActive ? "#b8860b" : "#00875a" }}
-                                                                onClick={() => handleToggleBanner(Number(row.banner_id))}
-                                                            >
-                                                                {isActive ? "⏸ Ẩn" : "▶ Hiện"}
-                                                            </button>
-                                                            <button className="adm-action-btn adm-edit-btn" onClick={() => openEdit(row)}>✏️ Sửa</button>
-                                                            <button className="adm-action-btn adm-del-btn" onClick={() => handleDelete(row)}>🗑 Xóa</button>
-                                                        </td>
-                                                    </tr>
+
+                            {bannerTab === "destinations" ? (
+                                // ── Destinations tab ──────────────────────────────
+                                <>
+                                    <div className="adm-table-header">
+                                        <div className="adm-table-title">📍 Địa điểm du lịch</div>
+                                        <div className="adm-table-actions">
+                                            <input className="adm-search" placeholder="🔍 Tìm thành phố, tên địa điểm..." value={destSearch} onChange={e => setDestSearch(e.target.value)} />
+                                            <button className="adm-add-btn" onClick={() => { setDestFormValues({}); setDestModal({ mode: "create" }); }}>＋ Thêm địa điểm</button>
+                                        </div>
+                                    </div>
+                                    <div className="adm-table-wrap">
+                                        {destLoading ? <div className="adm-loading">Đang tải...</div> :
+                                            destData.length === 0 ? <div className="adm-empty">Chưa có địa điểm nào.</div> : (() => {
+                                                const q = destSearch.trim().toLowerCase();
+                                                const filtered = q === "" ? destData : destData.filter(r =>
+                                                    String(r.city || "").toLowerCase().includes(q) ||
+                                                    String(r.name || "").toLowerCase().includes(q) ||
+                                                    String(r.description || "").toLowerCase().includes(q)
                                                 );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                )}
-                            </div>
+                                                return filtered.length === 0 ? <div className="adm-empty">Không tìm thấy địa điểm nào.</div> : (
+                                                    <table>
+                                                        <thead><tr><th>#</th><th>Ảnh</th><th>Thành phố</th><th>Tên địa điểm</th><th>Mô tả</th><th>Thao tác</th></tr></thead>
+                                                        <tbody>
+                                                            {filtered.map((row, i) => (
+                                                                <tr key={String(row.destination_id ?? i)}>
+                                                                    <td style={{ color: "#6b8cbf" }}>#{String(row.destination_id)}</td>
+                                                                    <td>
+                                                                        {row.image_url ? (
+                                                                            // eslint-disable-next-line @next/next/no-img-element
+                                                                            <img src={String(row.image_url)} alt="" style={{ width: 72, height: 52, objectFit: "cover", borderRadius: 6, border: "1px solid #e8f0fe" }} />
+                                                                        ) : (
+                                                                            <div style={{ width: 72, height: 52, background: "#f0f4ff", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem" }}>📍</div>
+                                                                        )}
+                                                                    </td>
+                                                                    <td style={{ fontWeight: 700, color: "#0052cc" }}>{String(row.city)}</td>
+                                                                    <td style={{ fontWeight: 600 }}>{String(row.name)}</td>
+                                                                    <td style={{ fontSize: "0.8rem", color: "#6b8cbf", maxWidth: 200 }}>{row.description ? String(row.description).slice(0, 80) + (String(row.description).length > 80 ? "…" : "") : "—"}</td>
+                                                                    <td>
+                                                                        <button className="adm-action-btn adm-edit-btn" onClick={() => {
+                                                                            const vals: Record<string, string> = {};
+                                                                            Object.entries(row).forEach(([k, v]) => { vals[k] = v != null ? String(v) : ""; });
+                                                                            setDestFormValues(vals);
+                                                                            setDestModal({ mode: "edit", row });
+                                                                        }}>✏️ Sửa</button>
+                                                                        <button className="adm-action-btn adm-del-btn" onClick={() => handleDestDelete(row)}>🗑 Xóa</button>
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                );
+                                            })()}
+                                    </div>
+                                </>
+                            ) : (
+                                // ── Banners tab ───────────────────────────────────
+                                <>
+                                    <div className="adm-table-header">
+                                        <div className="adm-table-title">🖼️ Quản lý Banner</div>
+                                        <div className="adm-table-actions">
+                                            <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} />
+                                            <button className="adm-add-btn" onClick={openCreate}>＋ Thêm banner</button>
+                                        </div>
+                                    </div>
+                                    <div className="adm-table-wrap">
+                                        {loading ? <div className="adm-loading">Đang tải...</div> :
+                                            filteredData.length === 0 ? <div className="adm-empty">Chưa có banner nào. Hãy thêm mới!</div> : (
+                                                <table>
+                                                    <thead>
+                                                        <tr>
+                                                            <th>#</th>
+                                                            <th>Ảnh preview</th>
+                                                            <th>Tiêu đề</th>
+                                                            <th>Vị trí</th>
+                                                            <th>Liên kết</th>
+                                                            <th>Thứ tự</th>
+                                                            <th>Thời gian hiển thị</th>
+                                                            <th>Trạng thái</th>
+                                                            <th>Thao tác</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {filteredData.map((row, i) => {
+                                                            const isActive = Number(row.is_active) === 1;
+                                                            const now = new Date();
+                                                            const start = row.start_date ? new Date(String(row.start_date)) : null;
+                                                            const end = row.end_date ? new Date(String(row.end_date)) : null;
+                                                            const outOfRange = (start && start > now) || (end && end < now);
+                                                            return (
+                                                                <tr key={String(row.banner_id ?? i)}>
+                                                                    <td style={{ color: "#6b8cbf" }}>#{String(row.banner_id)}</td>
+                                                                    <td>
+                                                                        {row.image_url ? (
+                                                                            // eslint-disable-next-line @next/next/no-img-element
+                                                                            <img
+                                                                                src={String(row.image_url)}
+                                                                                alt="banner"
+                                                                                style={{ width: 110, height: 55, objectFit: "cover", borderRadius: 8, border: "1px solid #e8f0fe" }}
+                                                                                onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                                                            />
+                                                                        ) : (
+                                                                            <div style={{ width: 110, height: 55, background: "#f0f4ff", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "#6b8cbf", fontSize: "0.75rem" }}>
+                                                                                Không có ảnh
+                                                                            </div>
+                                                                        )}
+                                                                    </td>
+                                                                    <td>
+                                                                        <div style={{ fontWeight: 600, maxWidth: 200 }}>{String(row.title)}</div>
+                                                                        {!!row.subtitle && <div style={{ fontSize: "0.75rem", color: "#6b8cbf", marginTop: 2 }}>{String(row.subtitle)}</div>}
+                                                                    </td>
+                                                                    <td>
+                                                                        <span style={{
+                                                                            display: "inline-block",
+                                                                            padding: "0.2rem 0.6rem",
+                                                                            borderRadius: 99,
+                                                                            fontSize: "0.75rem",
+                                                                            fontWeight: 600,
+                                                                            background: row.page_display === "promotion" ? "#fff0e6" : "#e8f0fe",
+                                                                            color: row.page_display === "promotion" ? "#c05000" : "#0052cc",
+                                                                        }}>
+                                                                            {row.page_display === "promotion" ? "🎟️ Khuyến mãi" : "🏠 Trang chủ"}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td style={{ maxWidth: 160 }}>
+                                                                        {row.link_url ? (
+                                                                            <span style={{ fontSize: "0.78rem", color: "#0052cc", wordBreak: "break-all" }}>{String(row.link_url)}</span>
+                                                                        ) : <span style={{ color: "#c8d8ff" }}>—</span>}
+                                                                    </td>
+                                                                    <td style={{ textAlign: "center", fontWeight: 700, color: "#0052cc" }}>
+                                                                        {String(row.display_order ?? 0)}
+                                                                    </td>
+                                                                    <td style={{ fontSize: "0.78rem" }}>
+                                                                        {start || end ? (
+                                                                            <div style={{ color: outOfRange ? "#c0392b" : "#00875a" }}>
+                                                                                {start ? <div>Từ: {start.toLocaleDateString("vi-VN")}</div> : <div>Từ: —</div>}
+                                                                                {end ? <div>Đến: {end.toLocaleDateString("vi-VN")}</div> : <div>Đến: —</div>}
+                                                                                {outOfRange && <div style={{ fontWeight: 700 }}>⛔ Ngoài thời hạn</div>}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <span style={{ color: "#6b8cbf" }}>Không giới hạn</span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td>
+                                                                        <span className="adm-badge" style={{
+                                                                            background: isActive ? "#e6f9f0" : "#fff0f0",
+                                                                            color: isActive ? "#00875a" : "#c0392b",
+                                                                        }}>
+                                                                            {isActive ? "🟢 Hiển thị" : "⭕ Ẩn"}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td>
+                                                                        <button
+                                                                            className="adm-action-btn"
+                                                                            style={{ background: isActive ? "#fff8e1" : "#e6f9f0", color: isActive ? "#b8860b" : "#00875a" }}
+                                                                            onClick={() => handleToggleBanner(Number(row.banner_id))}
+                                                                        >
+                                                                            {isActive ? "⏸ Ẩn" : "▶ Hiện"}
+                                                                        </button>
+                                                                        <button className="adm-action-btn adm-edit-btn" onClick={() => openEdit(row)}>✏️ Sửa</button>
+                                                                        <button className="adm-action-btn adm-del-btn" onClick={() => handleDelete(row)}>🗑 Xóa</button>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            )}
+                                    </div>
+                                </>
+                            )}
                         </div>
                     )}
 
@@ -1802,7 +2249,7 @@ export default function AdminPage() {
                         const modTypeColor: Record<string, string> = { reschedule: "#0052cc", cancel: "#c0392b" };
                         const modStatusLabel: Record<string, string> = { pending: "Chờ xử lý", approved: "Đã duyệt", rejected: "Đã từ chối" };
                         const modStatusColor: Record<string, string> = { pending: "#b8860b", approved: "#00875a", rejected: "#c0392b" };
-                        const modStatusBg:    Record<string, string> = { pending: "#fffbe6", approved: "#e6f9f0", rejected: "#fff0f0" };
+                        const modStatusBg: Record<string, string> = { pending: "#fffbe6", approved: "#e6f9f0", rejected: "#fff0f0" };
                         const fmtN = (n: unknown) => n ? Number(n).toLocaleString("vi-VN") + "₫" : "—";
                         return (
                             <div className="adm-table-card">
@@ -1814,101 +2261,101 @@ export default function AdminPage() {
                                 </div>
                                 <div className="adm-table-wrap">
                                     {loading ? <div className="adm-loading">Đang tải...</div> :
-                                    filteredData.length === 0 ? <div className="adm-empty">Không có yêu cầu nào</div> : (
-                                        <table>
-                                            <thead>
-                                                <tr>
-                                                    <th>#</th>
-                                                    <th>Loại</th>
-                                                    <th>Khách hàng</th>
-                                                    <th>Đặt chỗ</th>
-                                                    <th>Giá cũ → Mới</th>
-                                                    <th>Phí hủy / Hoàn</th>
-                                                    <th>P.thức hoàn</th>
-                                                    <th>Ngày gửi</th>
-                                                    <th>Trạng thái</th>
-                                                    <th>Thao tác</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {filteredData.map((row, i) => (
-                                                    <tr key={String(row.mod_id ?? i)}>
-                                                        <td style={{ color: "#6b8cbf" }}>#{String(row.mod_id)}</td>
-                                                        <td>
-                                                            <span className="adm-badge" style={{
-                                                                background: `${modTypeColor[String(row.type)] || "#6b8cbf"}18`,
-                                                                color: modTypeColor[String(row.type)] || "#6b8cbf",
-                                                            }}>
-                                                                {String(row.type) === "reschedule" ? "🔄" : "❌"} {modTypeLabel[String(row.type)] || String(row.type)}
-                                                            </span>
-                                                        </td>
-                                                        <td>
-                                                            <div style={{ fontWeight: 600 }}>{String(row.user_name || "—")}</div>
-                                                            <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{String(row.user_email || "")}</div>
-                                                        </td>
-                                                        <td>
-                                                            <div style={{ fontWeight: 600 }}>#{String(row.booking_id)}</div>
-                                                            <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{String(row.entity_name || "")}</div>
-                                                        </td>
-                                                        <td style={{ fontSize: "0.82rem" }}>
-                                                            {row.old_price ? (
-                                                                <>
-                                                                    <div style={{ color: "#6b8cbf" }}>{fmtN(row.old_price)}</div>
-                                                                    {row.new_price && <div style={{ color: "#0052cc", fontWeight: 700 }}>→ {fmtN(row.new_price)}</div>}
-                                                                </>
-                                                            ) : "—"}
-                                                        </td>
-                                                        <td style={{ fontSize: "0.82rem" }}>
-                                                            {!!row.cancel_fee && Number(row.cancel_fee) > 0 && (
-                                                                <div style={{ color: "#c0392b" }}>Phí: {fmtN(row.cancel_fee)}</div>
-                                                            )}
-                                                            {!!row.refund_amount && Number(row.refund_amount) > 0 && (
-                                                                <div style={{ color: "#00875a", fontWeight: 700 }}>Hoàn: {fmtN(row.refund_amount)}</div>
-                                                            )}
-                                                        </td>
-                                                        <td style={{ fontSize: "0.82rem" }}>
-                                                            {String(row.refund_method) === "wallet" ? "💰 Ví" : "🏦 Ngân hàng"}
-                                                            {String(row.refund_method) === "bank" && !!row.bank_info && (
-                                                                <div style={{ fontSize: "0.75rem", color: "#6b8cbf", marginTop: 2 }}>{String(row.bank_info)}</div>
-                                                            )}
-                                                        </td>
-                                                        <td style={{ color: "#6b8cbf", fontSize: "0.8rem" }}>
-                                                            {row.created_at ? new Date(String(row.created_at)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—"}
-                                                        </td>
-                                                        <td>
-                                                            <span className="adm-badge" style={{
-                                                                background: modStatusBg[String(row.status)] || "#f0f4ff",
-                                                                color: modStatusColor[String(row.status)] || "#6b8cbf",
-                                                            }}>
-                                                                {modStatusLabel[String(row.status)] || String(row.status)}
-                                                            </span>
-                                                            {!!row.admin_note && (
-                                                                <div style={{ fontSize: "0.73rem", color: "#6b8cbf", marginTop: 2, maxWidth: 120 }}>{String(row.admin_note)}</div>
-                                                            )}
-                                                        </td>
-                                                        <td>
-                                                            {String(row.status) === "pending" && (
-                                                                <>
-                                                                    <button
-                                                                        className="adm-action-btn adm-approve-btn"
-                                                                        onClick={() => handleModificationAction(Number(row.mod_id), "approve")}
-                                                                    >
-                                                                        ✅ Duyệt
-                                                                    </button>
-                                                                    <button
-                                                                        className="adm-action-btn adm-reject-btn"
-                                                                        onClick={() => handleModificationAction(Number(row.mod_id), "reject")}
-                                                                    >
-                                                                        ✕ Từ chối
-                                                                    </button>
-                                                                </>
-                                                            )}
-                                                        </td>
+                                        filteredData.length === 0 ? <div className="adm-empty">Không có yêu cầu nào</div> : (
+                                            <table>
+                                                <thead>
+                                                    <tr>
+                                                        <th>#</th>
+                                                        <th>Loại</th>
+                                                        <th>Khách hàng</th>
+                                                        <th>Đặt chỗ</th>
+                                                        <th>Giá cũ → Mới</th>
+                                                        <th>Phí hủy / Hoàn</th>
+                                                        <th>P.thức hoàn</th>
+                                                        <th>Ngày gửi</th>
+                                                        <th>Trạng thái</th>
+                                                        <th>Thao tác</th>
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    )}
+                                                </thead>
+                                                <tbody>
+                                                    {filteredData.map((row, i) => (
+                                                        <tr key={String(row.mod_id ?? i)}>
+                                                            <td style={{ color: "#6b8cbf" }}>#{String(row.mod_id)}</td>
+                                                            <td>
+                                                                <span className="adm-badge" style={{
+                                                                    background: `${modTypeColor[String(row.type)] || "#6b8cbf"}18`,
+                                                                    color: modTypeColor[String(row.type)] || "#6b8cbf",
+                                                                }}>
+                                                                    {String(row.type) === "reschedule" ? "🔄" : "❌"} {modTypeLabel[String(row.type)] || String(row.type)}
+                                                                </span>
+                                                            </td>
+                                                            <td>
+                                                                <div style={{ fontWeight: 600 }}>{String(row.user_name || "—")}</div>
+                                                                <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{String(row.user_email || "")}</div>
+                                                            </td>
+                                                            <td>
+                                                                <div style={{ fontWeight: 600 }}>#{String(row.booking_id)}</div>
+                                                                <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{String(row.entity_name || "")}</div>
+                                                            </td>
+                                                            <td style={{ fontSize: "0.82rem" }}>
+                                                                {row.old_price ? (
+                                                                    <>
+                                                                        <div style={{ color: "#6b8cbf" }}>{fmtN(row.old_price)}</div>
+                                                                        {row.new_price && <div style={{ color: "#0052cc", fontWeight: 700 }}>→ {fmtN(row.new_price)}</div>}
+                                                                    </>
+                                                                ) : "—"}
+                                                            </td>
+                                                            <td style={{ fontSize: "0.82rem" }}>
+                                                                {!!row.cancel_fee && Number(row.cancel_fee) > 0 && (
+                                                                    <div style={{ color: "#c0392b" }}>Phí: {fmtN(row.cancel_fee)}</div>
+                                                                )}
+                                                                {!!row.refund_amount && Number(row.refund_amount) > 0 && (
+                                                                    <div style={{ color: "#00875a", fontWeight: 700 }}>Hoàn: {fmtN(row.refund_amount)}</div>
+                                                                )}
+                                                            </td>
+                                                            <td style={{ fontSize: "0.82rem" }}>
+                                                                {String(row.refund_method) === "wallet" ? "💰 Ví" : "🏦 Ngân hàng"}
+                                                                {String(row.refund_method) === "bank" && !!row.bank_info && (
+                                                                    <div style={{ fontSize: "0.75rem", color: "#6b8cbf", marginTop: 2 }}>{String(row.bank_info)}</div>
+                                                                )}
+                                                            </td>
+                                                            <td style={{ color: "#6b8cbf", fontSize: "0.8rem" }}>
+                                                                {row.created_at ? new Date(String(row.created_at)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—"}
+                                                            </td>
+                                                            <td>
+                                                                <span className="adm-badge" style={{
+                                                                    background: modStatusBg[String(row.status)] || "#f0f4ff",
+                                                                    color: modStatusColor[String(row.status)] || "#6b8cbf",
+                                                                }}>
+                                                                    {modStatusLabel[String(row.status)] || String(row.status)}
+                                                                </span>
+                                                                {!!row.admin_note && (
+                                                                    <div style={{ fontSize: "0.73rem", color: "#6b8cbf", marginTop: 2, maxWidth: 120 }}>{String(row.admin_note)}</div>
+                                                                )}
+                                                            </td>
+                                                            <td>
+                                                                {String(row.status) === "pending" && (
+                                                                    <>
+                                                                        <button
+                                                                            className="adm-action-btn adm-approve-btn"
+                                                                            onClick={() => handleModificationAction(Number(row.mod_id), "approve")}
+                                                                        >
+                                                                            ✅ Duyệt
+                                                                        </button>
+                                                                        <button
+                                                                            className="adm-action-btn adm-reject-btn"
+                                                                            onClick={() => handleModificationAction(Number(row.mod_id), "reject")}
+                                                                        >
+                                                                            ✕ Từ chối
+                                                                        </button>
+                                                                    </>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        )}
                                 </div>
                             </div>
                         );
@@ -1927,6 +2374,19 @@ export default function AdminPage() {
                     onSave={handleRoomSave}
                     onClose={() => setRoomModal(null)}
                     saving={roomSaving}
+                />
+            )}
+
+            {/* Destination Modal */}
+            {destModal && (
+                <Modal
+                    title={destModal.mode === "create" ? "Thêm địa điểm" : "Chỉnh sửa địa điểm"}
+                    fields={destFieldDefs}
+                    values={destFormValues}
+                    onChange={(k, v) => setDestFormValues(prev => ({ ...prev, [k]: v }))}
+                    onSave={handleDestSave}
+                    onClose={() => setDestModal(null)}
+                    saving={destSaving}
                 />
             )}
 

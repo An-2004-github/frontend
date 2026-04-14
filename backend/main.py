@@ -22,6 +22,7 @@ from routers.chat import router as chat_router
 from routers.interactions import router as interactions_router
 from routers.travel_planner import router as travel_planner_router
 from routers.trains import router as trains_router
+from routers.notifications import router as notifications_router
 from contextlib import asynccontextmanager
 import asyncio
 from booking_expire import booking_expire_loop
@@ -125,3 +126,4 @@ if _ML_AVAILABLE and recommendations_router is not None:
 app.include_router(interactions_router)
 app.include_router(travel_planner_router)
 app.include_router(trains_router)
+app.include_router(notifications_router)

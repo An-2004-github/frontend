@@ -44,4 +44,5 @@ export interface RoomType {
     available_rooms?: number;
     check_in_time?: string;
     check_out_time?: string;
+    image_url?: string;
 }

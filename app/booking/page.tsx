@@ -146,7 +146,8 @@ export default function BookingPage() {
                 contact_phone: form.contactPhone,
                 contact_email: form.contactEmail,
                 special_requests: form.specialRequests.join(","),
-                total_price: finalTotal,
+                total_price: booking.totalPrice,   // giá gốc trước giảm
+                final_price: finalTotal,            // giá sau giảm
                 ...(promoId ? { promo_id: promoId } : {}),
             };
 

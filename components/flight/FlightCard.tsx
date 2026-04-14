@@ -43,6 +43,7 @@ export default function FlightCard({ flight, passengers = 1, adults = 1, childre
     const totalPrice = flight.price * passengers;
     const logo = AIRLINE_LOGOS[flight.airline] ?? "✈️";
     const isLowSeat = (flight.available_seats ?? 99) <= 5;
+    const isPast = new Date(flight.depart_time) < new Date();
 
     return (
         <>
@@ -135,12 +136,13 @@ export default function FlightCard({ flight, passengers = 1, adults = 1, childre
                         )}
                     </div>
 
-                    {/* ✅ Mở modal thay vì chuyển trang */}
                     <button
                         className="fcard-btn"
-                        onClick={() => { logInteraction("flight", flight.flight_id, "click"); setShowModal(true); }}
+                        disabled={isPast}
+                        style={isPast ? { opacity: 0.45, cursor: "not-allowed", background: "#aaa" } : undefined}
+                        onClick={() => { if (!isPast) { logInteraction("flight", flight.flight_id, "click"); setShowModal(true); } }}
                     >
-                        Chọn chuyến
+                        {isPast ? "Đã khởi hành" : "Chọn chuyến"}
                     </button>
                 </div>
             </div>

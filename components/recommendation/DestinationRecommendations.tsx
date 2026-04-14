@@ -2,54 +2,37 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-const POPULAR_CITIES = [
-    {
-        city: "Hà Nội",
-        label: "Thủ đô ngàn năm văn hiến",
-        image: "https://images.unsplash.com/photo-1509942774463-acf339cf87d5?w=600&q=80",
-    },
-    {
-        city: "TP. Hồ Chí Minh",
-        label: "Thành phố không ngủ",
-        image: "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=600&q=80",
-    },
-    {
-        city: "Đà Nẵng",
-        label: "Thành phố đáng sống",
-        image: "https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=600&q=80",
-    },
-    {
-        city: "Hội An",
-        label: "Phố cổ di sản thế giới",
-        image: "https://images.unsplash.com/photo-1528127269322-539801943592?w=600&q=80",
-    },
-    {
-        city: "Nha Trang",
-        label: "Thiên đường biển xanh",
-        image: "https://images.unsplash.com/photo-1570366583862-f91883984fde?w=600&q=80",
-    },
-    {
-        city: "Đà Lạt",
-        label: "Thành phố ngàn hoa",
-        image: "https://images.unsplash.com/photo-1598970605070-a38a6ccd3a2d?w=600&q=80",
-    },
-    {
-        city: "Phú Quốc",
-        label: "Đảo ngọc nhiệt đới",
-        image: "https://images.unsplash.com/photo-1548018560-c7196548b4f7?w=600&q=80",
-    },
-    {
-        city: "Huế",
-        label: "Cố đô lịch sử",
-        image: "https://images.unsplash.com/photo-1557750255-c76072a7aad1?w=600&q=80",
-    },
-];
+interface Destination {
+    destination_id: number;
+    city: string;
+    name: string;
+    description?: string;
+    image_url?: string;
+}
+
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function DestinationRecommendations() {
     const router = useRouter();
-    const [hovered, setHovered] = useState<string | null>(null);
+    const [destinations, setDestinations] = useState<Destination[]>([]);
+    const [hovered, setHovered] = useState<number | null>(null);
+
+    useEffect(() => {
+        fetch(`${API}/api/destinations`)
+            .then(r => r.json())
+            .then(data => {
+                if (Array.isArray(data)) {
+                    // Lấy tối đa 8 địa điểm có ảnh
+                    const withImg = data.filter(d => d.image_url);
+                    setDestinations(withImg.slice(0, 8));
+                }
+            })
+            .catch(() => {});
+    }, []);
+
+    if (destinations.length === 0) return null;
 
     const handleClick = (city: string) => {
         router.push(`/hotels?search=${encodeURIComponent(city)}`);
@@ -134,12 +117,12 @@ export default function DestinationRecommendations() {
             </div>
 
             <div className="pop-grid">
-                {POPULAR_CITIES.map((dest) => (
+                {destinations.map((dest) => (
                     <div
-                        key={dest.city}
+                        key={dest.destination_id}
                         className="pop-card"
                         onClick={() => handleClick(dest.city)}
-                        onMouseEnter={() => setHovered(dest.city)}
+                        onMouseEnter={() => setHovered(dest.destination_id)}
                         onMouseLeave={() => setHovered(null)}
                         role="button"
                         tabIndex={0}
@@ -147,15 +130,16 @@ export default function DestinationRecommendations() {
                         aria-label={`Tìm khách sạn tại ${dest.city}`}
                     >
                         <Image
-                            src={dest.image}
+                            src={dest.image_url!}
                             alt={dest.city}
                             fill
                             style={{
                                 objectFit: "cover",
-                                transform: hovered === dest.city ? "scale(1.08)" : "scale(1)",
+                                transform: hovered === dest.destination_id ? "scale(1.08)" : "scale(1)",
                                 transition: "transform 0.45s ease",
                             }}
                             sizes="(max-width: 640px) 50vw, 25vw"
+                            unoptimized
                         />
                         <div className="pop-overlay" />
                         <div className="pop-hint">
@@ -163,7 +147,7 @@ export default function DestinationRecommendations() {
                         </div>
                         <div className="pop-body">
                             <div className="pop-city">{dest.city}</div>
-                            <div className="pop-label">{dest.label}</div>
+                            <div className="pop-label">{dest.name}</div>
                         </div>
                     </div>
                 ))}

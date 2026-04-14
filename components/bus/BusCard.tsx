@@ -43,6 +43,7 @@ export default function BusCard({ bus, passengers = 1 }: Props) {
     const logo = COMPANY_LOGOS[bus.company] ?? "🚌";
     const isLowSeat = (bus.available_seats ?? 99) <= 5;
     const isOvernight = new Date(bus.arrive_time).getDate() !== new Date(bus.depart_time).getDate();
+    const isPast = new Date(bus.depart_time) < new Date();
 
     return (
         <>
@@ -138,8 +139,13 @@ export default function BusCard({ bus, passengers = 1 }: Props) {
                             <div className="bcard-price-total">Tổng {passengers} khách</div>
                         )}
                     </div>
-                    <button className="bcard-btn" onClick={() => { logInteraction("bus", bus.bus_id, "click"); setShowModal(true); }}>
-                        Chọn chuyến
+                    <button
+                        className="bcard-btn"
+                        disabled={isPast}
+                        style={isPast ? { opacity: 0.45, cursor: "not-allowed", background: "#aaa" } : undefined}
+                        onClick={() => { if (!isPast) { logInteraction("bus", bus.bus_id, "click"); setShowModal(true); } }}
+                    >
+                        {isPast ? "Đã khởi hành" : "Chọn chuyến"}
                     </button>
                 </div>
             </div>
