@@ -7,7 +7,7 @@ import { useAuthStore } from "@/store/authStore";
 import CloudinaryUpload from "@/components/CloudinaryUpload";
 import CloudinaryMultiUpload from "@/components/CloudinaryMultiUpload";
 
-type Section = "dashboard" | "bookings" | "hotels" | "flights" | "buses" | "trains" | "users" | "wallets" | "promotions" | "banners" | "modifications" | "reviews";
+type Section = "dashboard" | "bookings" | "hotels" | "flights" | "buses" | "trains" | "users" | "wallets" | "promotions" | "banners" | "reviews";
 
 interface Stats {
     total_users: number; total_bookings: number; confirmed_bookings: number;
@@ -411,6 +411,13 @@ export default function AdminPage() {
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [importing, setImporting] = useState(false);
     const excelInputRef = useRef<HTMLInputElement>(null);
+    const offsetRef = useRef(0);
+    const hasMoreRef = useRef(false);
+    const loadingMoreRef = useRef(false);
+    const sentinelRef = useRef<HTMLDivElement>(null);
+    const searchRef = useRef("");
+    const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [search, setSearch] = useState("");
     const [bannerTab, setBannerTab] = useState<"banners" | "destinations">("banners");
     const [destData, setDestData] = useState<Record<string, unknown>[]>([]);
@@ -422,6 +429,12 @@ export default function AdminPage() {
     const [reviewData, setReviewData] = useState<Record<string, unknown>[]>([]);
     const [reviewLoading, setReviewLoading] = useState(false);
     const [reviewSearch, setReviewSearch] = useState("");
+
+    // Bookings + Modifications merged
+    const [bookingTab, setBookingTab] = useState<"bookings" | "modifications">("bookings");
+    const [modData, setModData] = useState<Record<string, unknown>[]>([]);
+    const [modLoading, setModLoading] = useState(false);
+    const [modSearch, setModSearch] = useState("");
 
     // Hotel detail / room types
     const [selectedHotel, setSelectedHotel] = useState<Record<string, unknown> | null>(null);
@@ -461,18 +474,56 @@ export default function AdminPage() {
             .catch(() => setChartData([]));
     }, [chartPeriod]);
 
-    // Load section data
-    const loadSection = useCallback(async (s: Section) => {
-        if (s === "dashboard") return;
-        setLoading(true);
+    // Load section data with server-side pagination
+    const PAGINATED = ["bookings", "hotels", "flights", "buses", "trains", "users", "promotions"];
+    const loadSection = useCallback(async (s: Section, append = false) => {
+        if (s === "dashboard" || s === "wallets") return;
+        if (append) {
+            if (loadingMoreRef.current || !hasMoreRef.current) return;
+            loadingMoreRef.current = true;
+            setLoadingMore(true);
+        } else {
+            setLoading(true);
+            setData([]);
+            offsetRef.current = 0;
+            hasMoreRef.current = false;
+        }
         try {
-            const res = await api.get(`/api/admin/${s}`);
-            setData(res.data);
-        } catch { setData([]); }
-        finally { setLoading(false); }
+            const usePagination = PAGINATED.includes(s);
+            const params = usePagination
+                ? { skip: offsetRef.current, limit: 50, search: searchRef.current }
+                : {};
+            const res = await api.get(`/api/admin/${s}`, { params });
+            const rows = res.data as Record<string, unknown>[];
+            if (append) setData(prev => {
+                const ID_KEYS: Record<string, string> = {
+                    users: "user_id", bookings: "booking_id", hotels: "hotel_id",
+                    flights: "flight_id", buses: "bus_id", trains: "train_id", promotions: "promo_id",
+                };
+                const idKey = ID_KEYS[s];
+                if (!idKey) return [...prev, ...rows];
+                const seen = new Set(prev.map(r => r[idKey]));
+                return [...prev, ...rows.filter(r => !seen.has(r[idKey]))];
+            });
+            else setData(rows);
+            if (usePagination) {
+                offsetRef.current += rows.length;
+                hasMoreRef.current = rows.length >= 50;
+            }
+        } catch { if (!append) setData([]); }
+        finally {
+            setLoading(false);
+            setLoadingMore(false);
+            loadingMoreRef.current = false;
+        }
     }, []);
 
-    useEffect(() => { loadSection(section); setSearch(""); setSelectedHotel(null); }, [section, loadSection]);
+    useEffect(() => {
+        searchRef.current = "";
+        setSearch("");
+        setSelectedHotel(null);
+        loadSection(section);
+    }, [section, loadSection]);
 
     const loadDestData = useCallback(async () => {
         setDestLoading(true);
@@ -482,6 +533,19 @@ export default function AdminPage() {
     }, []);
     useEffect(() => { if (section === "banners" && bannerTab === "destinations") loadDestData(); }, [section, bannerTab, loadDestData]);
 
+    // Infinite scroll observer
+    useEffect(() => {
+        const el = sentinelRef.current;
+        if (!el) return;
+        const observer = new IntersectionObserver(entries => {
+            if (entries[0].isIntersecting && hasMoreRef.current && !loadingMoreRef.current) {
+                loadSection(section, true);
+            }
+        }, { rootMargin: "300px" });
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [section, loadSection]);
+
     const loadReviews = useCallback(async () => {
         setReviewLoading(true);
         try { const r = await api.get("/api/admin/reviews"); setReviewData(r.data); }
@@ -489,6 +553,14 @@ export default function AdminPage() {
         finally { setReviewLoading(false); }
     }, []);
     useEffect(() => { if (section === "reviews") loadReviews(); }, [section, loadReviews]);
+
+    const loadModData = useCallback(async () => {
+        setModLoading(true);
+        try { const r = await api.get("/api/admin/modifications"); setModData(r.data); }
+        catch { setModData([]); }
+        finally { setModLoading(false); }
+    }, []);
+    useEffect(() => { if (section === "bookings" && bookingTab === "modifications") loadModData(); }, [section, bookingTab, loadModData]);
 
     const destFieldDefs = [
         { key: "city", label: "Thành phố", required: true },
@@ -667,19 +739,14 @@ export default function AdminPage() {
     const idKey: Record<string, string> = { hotels: "hotel_id", flights: "flight_id", buses: "bus_id", trains: "train_id", users: "user_id", bookings: "booking_id", promotions: "promo_id", banners: "banner_id" };
 
     const q = search.trim().toLowerCase();
-    const filteredData = q === "" ? data : data.filter(row => {
-        if (section === "hotels") return String(row.name || "").toLowerCase().includes(q) || String(row.dest_city || "").toLowerCase().includes(q) || String(row.address || "").toLowerCase().includes(q);
-        if (section === "flights") return String(row.airline || "").toLowerCase().includes(q) || String(row.from_city || "").toLowerCase().includes(q) || String(row.to_city || "").toLowerCase().includes(q);
-        if (section === "buses") return String(row.company || "").toLowerCase().includes(q) || String(row.from_city || "").toLowerCase().includes(q) || String(row.to_city || "").toLowerCase().includes(q);
-        if (section === "trains") return String(row.train_code || "").toLowerCase().includes(q) || String(row.from_city || "").toLowerCase().includes(q) || String(row.to_city || "").toLowerCase().includes(q);
-        if (section === "bookings") return String(row.user_name || "").toLowerCase().includes(q) || String(row.user_email || "").toLowerCase().includes(q) || String(row.entity_name || "").toLowerCase().includes(q);
-        if (section === "users") return String(row.full_name || "").toLowerCase().includes(q) || String(row.email || "").toLowerCase().includes(q) || String(row.phone || "").toLowerCase().includes(q);
-        if (section === "withdrawals") return String(row.full_name || "").toLowerCase().includes(q) || String(row.email || "").toLowerCase().includes(q) || String(row.bank_name || "").toLowerCase().includes(q) || String(row.account_no || "").toLowerCase().includes(q);
-        if (section === "promotions") return String(row.code || "").toLowerCase().includes(q) || String(row.description || "").toLowerCase().includes(q);
-        if (section === "banners") return String(row.title || "").toLowerCase().includes(q) || String(row.subtitle || "").toLowerCase().includes(q);
-        if (section === "modifications") return String(row.user_name || "").toLowerCase().includes(q) || String(row.user_email || "").toLowerCase().includes(q) || String(row.entity_name || "").toLowerCase().includes(q) || String(row.type || "").toLowerCase().includes(q);
-        return true;
-    });
+    // Paginated sections: server already filtered, skip client-side filter
+    // Banners/non-paginated: keep client-side filter
+    const filteredData = (["hotels","flights","buses","trains","bookings","users","promotions"].includes(section))
+        ? data
+        : q === "" ? data : data.filter(row => {
+            if (section === "banners") return String(row.title || "").toLowerCase().includes(q) || String(row.subtitle || "").toLowerCase().includes(q);
+            return true;
+        });
 
     const openCreate = () => {
         if (section === "hotels" && destinations.length === 0) loadDestinations();
@@ -695,6 +762,15 @@ export default function AdminPage() {
         Object.entries(row).forEach(([k, v]) => { vals[k] = v != null ? String(v) : ""; });
         setFormValues(vals);
         setModal({ mode: "edit", row });
+    };
+
+    const handleSearchChange = (val: string) => {
+        setSearch(val);
+        searchRef.current = val;
+        const PAGINATED_S = ["bookings", "hotels", "flights", "buses", "trains", "users", "promotions"];
+        if (!PAGINATED_S.includes(section)) return;
+        if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+        searchTimerRef.current = setTimeout(() => { loadSection(section); }, 400);
     };
 
     const EXCEL_SECTIONS = ["hotels", "flights", "buses", "trains", "promotions"];
@@ -884,7 +960,7 @@ export default function AdminPage() {
         if (!confirm(`Xác nhận ${label} yêu cầu #${id}?`)) return;
         try {
             await api.post(`/api/admin/modifications/${id}/${action}`);
-            loadSection("modifications");
+            loadModData();
         } catch (e: unknown) {
             const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
             alert(detail || "Thao tác thất bại");
@@ -920,8 +996,7 @@ export default function AdminPage() {
         {
             title: "Quản lý đặt chỗ",
             items: [
-                { key: "bookings", icon: "🗂️", label: "Đặt chỗ" },
-                { key: "modifications", icon: "🔄", label: "Đổi/Hủy lịch" },
+                { key: "bookings", icon: "🗂️", label: "Đặt chỗ & Đổi/Hủy" },
             ]
         }
     ];
@@ -1311,7 +1386,7 @@ export default function AdminPage() {
 
                             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px,1fr))", gap: "1rem" }}>
                                 {[
-                                    { key: "bookings", icon: "🗂️", label: "Quản lý đặt chỗ" },
+                                    { key: "bookings", icon: "🗂️", label: "Quản lý đặt chỗ & Đổi/Hủy" },
                                     { key: "hotels", icon: "🏨", label: "Quản lý khách sạn" },
                                     { key: "flights", icon: "✈️", label: "Quản lý chuyến bay" },
                                     { key: "buses", icon: "🚌", label: "Quản lý xe khách" },
@@ -1320,7 +1395,6 @@ export default function AdminPage() {
                                     { key: "withdrawals", icon: "💸", label: "Quản lý rút tiền" },
                                     { key: "promotions", icon: "🎟️", label: "Mã giảm giá" },
                                     { key: "banners", icon: "🖼️", label: "Banner & Địa điểm" },
-                                    { key: "modifications", icon: "🔄", label: "Yêu cầu đổi/hủy lịch" },
                                     { key: "reviews", icon: "⭐", label: "Quản lý đánh giá" },
                                 ].map(item => (
                                     <div
@@ -1435,55 +1509,208 @@ export default function AdminPage() {
                     )}
 
                     {/* ── BOOKINGS ── */}
-                    {section === "bookings" && (
-                        <div className="adm-table-card">
-                            <div className="adm-table-header">
-                                <div className="adm-table-title">🗂️ Danh sách đặt chỗ</div>
-                                <div className="adm-table-actions">
-                                    <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} />
+                    {section === "bookings" && (() => {
+                        const modTypeLabel: Record<string, string> = { reschedule: "Đổi lịch", cancel: "Hủy" };
+                        const modTypeColor: Record<string, string> = { reschedule: "#0052cc", cancel: "#c0392b" };
+                        const modStatusLabel: Record<string, string> = { pending: "Chờ xử lý", approved: "Đã duyệt", rejected: "Đã từ chối" };
+                        const modStatusColor: Record<string, string> = { pending: "#b8860b", approved: "#00875a", rejected: "#c0392b" };
+                        const modStatusBg: Record<string, string> = { pending: "#fffbe6", approved: "#e6f9f0", rejected: "#fff0f0" };
+                        const fmtN = (n: unknown) => n ? Number(n).toLocaleString("vi-VN") + "₫" : "—";
+
+                        const filteredMod = modData.filter(row => {
+                            const q = modSearch.toLowerCase();
+                            if (!q) return true;
+                            return String(row.user_name || "").toLowerCase().includes(q)
+                                || String(row.user_email || "").toLowerCase().includes(q)
+                                || String(row.entity_name || "").toLowerCase().includes(q)
+                                || String(row.type || "").toLowerCase().includes(q);
+                        });
+
+                        return (
+                            <div className="adm-table-card">
+                                {/* Sub-tabs */}
+                                <div style={{ display: "flex", gap: "0.25rem", padding: "0.75rem 1rem", borderBottom: "1px solid #e8f0fe", background: "#fafbff" }}>
+                                    {([
+                                        { key: "bookings", label: "🗂️ Danh sách đặt chỗ" },
+                                        { key: "modifications", label: "🔄 Đổi/Hủy lịch" },
+                                    ] as { key: "bookings" | "modifications"; label: string }[]).map(t => (
+                                        <button
+                                            key={t.key}
+                                            onClick={() => setBookingTab(t.key)}
+                                            style={{
+                                                padding: "0.45rem 1rem", border: "none", borderRadius: 8, cursor: "pointer",
+                                                fontWeight: 600, fontSize: "0.85rem",
+                                                background: bookingTab === t.key ? "#0052cc" : "transparent",
+                                                color: bookingTab === t.key ? "#fff" : "#6b8cbf",
+                                                transition: "background 0.15s, color 0.15s",
+                                            }}
+                                        >
+                                            {t.label}
+                                        </button>
+                                    ))}
                                 </div>
-                            </div>
-                            <div className="adm-table-wrap">
-                                {loading ? <div className="adm-loading">Đang tải...</div> : filteredData.length === 0 ? <div className="adm-empty">Không có dữ liệu</div> : (
-                                    <table>
-                                        <thead>
-                                            <tr>
-                                                <th>#</th><th>Khách hàng</th><th>Dịch vụ</th>
-                                                <th>Tổng tiền</th><th>Ngày đặt</th><th>Trạng thái</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {filteredData.map((row, i) => (
-                                                <tr key={String(row.booking_id ?? i)}>
-                                                    <td>#{String(row.booking_id)}</td>
-                                                    <td>
-                                                        <div style={{ fontWeight: 600 }}>{String(row.user_name || "—")}</div>
-                                                        <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{String(row.user_email || "")}</div>
-                                                    </td>
-                                                    <td>
-                                                        <div>{String(row.entity_name || "—")}</div>
-                                                        <div style={{ fontSize: "0.72rem", color: "#6b8cbf", textTransform: "capitalize" }}>{String(row.entity_type || "")}</div>
-                                                    </td>
-                                                    <td style={{ fontWeight: 700, color: "#0052cc" }}>{fmt(Number(row.final_amount))}</td>
-                                                    <td style={{ color: "#6b8cbf", fontSize: "0.8rem" }}>
-                                                        {row.booking_date ? new Date(String(row.booking_date)).toLocaleDateString("vi-VN") : "—"}
-                                                    </td>
-                                                    <td>
-                                                        <span
-                                                            className="adm-badge"
-                                                            style={{ background: `${statusColor[String(row.status)]}18`, color: statusColor[String(row.status)] || "#1a3c6b" }}
-                                                        >
-                                                            {statusLabel[String(row.status)] || String(row.status)}
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+
+                                {bookingTab === "bookings" && (
+                                    <>
+                                        <div className="adm-table-header">
+                                            <div className="adm-table-title">🗂️ Danh sách đặt chỗ</div>
+                                            <div className="adm-table-actions">
+                                                <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => handleSearchChange(e.target.value)} />
+                                            </div>
+                                        </div>
+                                        <div className="adm-table-wrap">
+                                            {loading ? <div className="adm-loading">Đang tải...</div> : filteredData.length === 0 ? <div className="adm-empty">Không có dữ liệu</div> : (
+                                                <table>
+                                                    <thead>
+                                                        <tr>
+                                                            <th>#</th><th>Khách hàng</th><th>Dịch vụ</th>
+                                                            <th>Tổng tiền</th><th>Ngày đặt</th><th>Trạng thái</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {filteredData.map((row, i) => (
+                                                            <tr key={String(row.booking_id ?? i)}>
+                                                                <td>#{String(row.booking_id)}</td>
+                                                                <td>
+                                                                    <div style={{ fontWeight: 600 }}>{String(row.user_name || "—")}</div>
+                                                                    <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{String(row.user_email || "")}</div>
+                                                                </td>
+                                                                <td>
+                                                                    <div>{String(row.entity_name || "—")}</div>
+                                                                    <div style={{ fontSize: "0.72rem", color: "#6b8cbf", textTransform: "capitalize" }}>{String(row.entity_type || "")}</div>
+                                                                </td>
+                                                                <td style={{ fontWeight: 700, color: "#0052cc" }}>{fmt(Number(row.final_amount))}</td>
+                                                                <td style={{ color: "#6b8cbf", fontSize: "0.8rem" }}>
+                                                                    {row.booking_date ? new Date(String(row.booking_date)).toLocaleDateString("vi-VN") : "—"}
+                                                                </td>
+                                                                <td>
+                                                                    <span
+                                                                        className="adm-badge"
+                                                                        style={{ background: `${statusColor[String(row.status)]}18`, color: statusColor[String(row.status)] || "#1a3c6b" }}
+                                                                    >
+                                                                        {statusLabel[String(row.status)] || String(row.status)}
+                                                                    </span>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+
+                                {bookingTab === "modifications" && (
+                                    <>
+                                        <div className="adm-table-header">
+                                            <div className="adm-table-title">🔄 Yêu cầu Đổi/Hủy lịch</div>
+                                            <div className="adm-table-actions">
+                                                <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={modSearch} onChange={e => setModSearch(e.target.value)} />
+                                            </div>
+                                        </div>
+                                        <div className="adm-table-wrap">
+                                            {modLoading ? <div className="adm-loading">Đang tải...</div> :
+                                                filteredMod.length === 0 ? <div className="adm-empty">Không có yêu cầu nào</div> : (
+                                                    <table>
+                                                        <thead>
+                                                            <tr>
+                                                                <th>#</th>
+                                                                <th>Loại</th>
+                                                                <th>Khách hàng</th>
+                                                                <th>Đặt chỗ</th>
+                                                                <th>Giá cũ → Mới</th>
+                                                                <th>Phí hủy / Hoàn</th>
+                                                                <th>P.thức hoàn</th>
+                                                                <th>Ngày gửi</th>
+                                                                <th>Trạng thái</th>
+                                                                <th>Thao tác</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {filteredMod.map((row, i) => (
+                                                                <tr key={String(row.mod_id ?? i)}>
+                                                                    <td style={{ color: "#6b8cbf" }}>#{String(row.mod_id)}</td>
+                                                                    <td>
+                                                                        <span className="adm-badge" style={{
+                                                                            background: `${modTypeColor[String(row.type)] || "#6b8cbf"}18`,
+                                                                            color: modTypeColor[String(row.type)] || "#6b8cbf",
+                                                                        }}>
+                                                                            {String(row.type) === "reschedule" ? "🔄" : "❌"} {modTypeLabel[String(row.type)] || String(row.type)}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td>
+                                                                        <div style={{ fontWeight: 600 }}>{String(row.user_name || "—")}</div>
+                                                                        <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{String(row.user_email || "")}</div>
+                                                                    </td>
+                                                                    <td>
+                                                                        <div style={{ fontWeight: 600 }}>#{String(row.booking_id)}</div>
+                                                                        <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{String(row.entity_name || "")}</div>
+                                                                    </td>
+                                                                    <td style={{ fontSize: "0.82rem" }}>
+                                                                        {row.old_price ? (
+                                                                            <>
+                                                                                <div style={{ color: "#6b8cbf" }}>{fmtN(row.old_price)}</div>
+                                                                                {row.new_price && <div style={{ color: "#0052cc", fontWeight: 700 }}>→ {fmtN(row.new_price)}</div>}
+                                                                            </>
+                                                                        ) : "—"}
+                                                                    </td>
+                                                                    <td style={{ fontSize: "0.82rem" }}>
+                                                                        {!!row.cancel_fee && Number(row.cancel_fee) > 0 && (
+                                                                            <div style={{ color: "#c0392b" }}>Phí: {fmtN(row.cancel_fee)}</div>
+                                                                        )}
+                                                                        {!!row.refund_amount && Number(row.refund_amount) > 0 && (
+                                                                            <div style={{ color: "#00875a", fontWeight: 700 }}>Hoàn: {fmtN(row.refund_amount)}</div>
+                                                                        )}
+                                                                    </td>
+                                                                    <td style={{ fontSize: "0.82rem" }}>
+                                                                        {String(row.refund_method) === "wallet" ? "💰 Ví" : "🏦 Ngân hàng"}
+                                                                        {String(row.refund_method) === "bank" && !!row.bank_info && (
+                                                                            <div style={{ fontSize: "0.75rem", color: "#6b8cbf", marginTop: 2 }}>{String(row.bank_info)}</div>
+                                                                        )}
+                                                                    </td>
+                                                                    <td style={{ color: "#6b8cbf", fontSize: "0.8rem" }}>
+                                                                        {row.created_at ? new Date(String(row.created_at)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—"}
+                                                                    </td>
+                                                                    <td>
+                                                                        <span className="adm-badge" style={{
+                                                                            background: modStatusBg[String(row.status)] || "#f0f4ff",
+                                                                            color: modStatusColor[String(row.status)] || "#6b8cbf",
+                                                                        }}>
+                                                                            {modStatusLabel[String(row.status)] || String(row.status)}
+                                                                        </span>
+                                                                        {!!row.admin_note && (
+                                                                            <div style={{ fontSize: "0.73rem", color: "#6b8cbf", marginTop: 2, maxWidth: 120 }}>{String(row.admin_note)}</div>
+                                                                        )}
+                                                                    </td>
+                                                                    <td>
+                                                                        {String(row.status) === "pending" && (
+                                                                            <>
+                                                                                <button
+                                                                                    className="adm-action-btn adm-approve-btn"
+                                                                                    onClick={() => handleModificationAction(Number(row.mod_id), "approve")}
+                                                                                >
+                                                                                    ✅ Duyệt
+                                                                                </button>
+                                                                                <button
+                                                                                    className="adm-action-btn adm-reject-btn"
+                                                                                    onClick={() => handleModificationAction(Number(row.mod_id), "reject")}
+                                                                                >
+                                                                                    ✕ Từ chối
+                                                                                </button>
+                                                                            </>
+                                                                        )}
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                )}
+                                        </div>
+                                    </>
                                 )}
                             </div>
-                        </div>
-                    )}
+                        );
+                    })()}
 
                     {/* ── HOTELS ── */}
                     {section === "hotels" && !selectedHotel && (
@@ -1491,7 +1718,7 @@ export default function AdminPage() {
                             <div className="adm-table-header">
                                 <div className="adm-table-title">🏨 Danh sách khách sạn</div>
                                 <div className="adm-table-actions">
-                                    <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} />
+                                    <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => handleSearchChange(e.target.value)} />
                                     <button className="adm-template-btn" onClick={downloadTemplate}>📄 File mẫu</button>
                                     <button className="adm-import-btn" disabled={importing} onClick={() => excelInputRef.current?.click()}>
                                         {importing ? "⏳ Đang nhập..." : "📥 Nhập Excel"}
@@ -1654,7 +1881,7 @@ export default function AdminPage() {
                             <div className="adm-table-header">
                                 <div className="adm-table-title">✈️ Danh sách chuyến bay</div>
                                 <div className="adm-table-actions">
-                                    <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} />
+                                    <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => handleSearchChange(e.target.value)} />
                                     <button className="adm-template-btn" onClick={downloadTemplate}>📄 File mẫu</button>
                                     <button className="adm-import-btn" disabled={importing} onClick={() => excelInputRef.current?.click()}>
                                         {importing ? "⏳ Đang nhập..." : "📥 Nhập Excel"}
@@ -1731,7 +1958,7 @@ export default function AdminPage() {
                             <div className="adm-table-header">
                                 <div className="adm-table-title">🚌 Danh sách xe khách</div>
                                 <div className="adm-table-actions">
-                                    <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} />
+                                    <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => handleSearchChange(e.target.value)} />
                                     <button className="adm-template-btn" onClick={downloadTemplate}>📄 File mẫu</button>
                                     <button className="adm-import-btn" disabled={importing} onClick={() => excelInputRef.current?.click()}>
                                         {importing ? "⏳ Đang nhập..." : "📥 Nhập Excel"}
@@ -1808,7 +2035,7 @@ export default function AdminPage() {
                             <div className="adm-table-header">
                                 <div className="adm-table-title">🚆 Danh sách chuyến tàu</div>
                                 <div className="adm-table-actions">
-                                    <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} />
+                                    <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => handleSearchChange(e.target.value)} />
                                     <button className="adm-template-btn" onClick={downloadTemplate}>📄 File mẫu</button>
                                     <button className="adm-import-btn" disabled={importing} onClick={() => excelInputRef.current?.click()}>
                                         {importing ? "⏳ Đang nhập..." : "📥 Nhập Excel"}
@@ -1897,7 +2124,7 @@ export default function AdminPage() {
                             <div className="adm-table-header">
                                 <div className="adm-table-title">👥 Danh sách người dùng</div>
                                 <div className="adm-table-actions">
-                                    <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} />
+                                    <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => handleSearchChange(e.target.value)} />
                                     <button className="adm-add-btn" onClick={openCreate}>＋ Thêm mới</button>
                                 </div>
                             </div>
@@ -1954,7 +2181,7 @@ export default function AdminPage() {
                                 <div className="adm-table-header">
                                     <div className="adm-table-title">🎟️ Mã giảm giá</div>
                                     <div className="adm-table-actions">
-                                        <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} />
+                                        <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => handleSearchChange(e.target.value)} />
                                         <button className="adm-import-btn" disabled={importing} onClick={() => excelInputRef.current?.click()}>
                                             {importing ? "⏳ Đang nhập..." : "📥 Nhập Excel"}
                                         </button>
@@ -2127,7 +2354,7 @@ export default function AdminPage() {
                                     <div className="adm-table-header">
                                         <div className="adm-table-title">🖼️ Quản lý Banner</div>
                                         <div className="adm-table-actions">
-                                            <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} />
+                                            <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => handleSearchChange(e.target.value)} />
                                             <button className="adm-add-btn" onClick={openCreate}>＋ Thêm banner</button>
                                         </div>
                                     </div>
@@ -2244,123 +2471,14 @@ export default function AdminPage() {
                     {section === "wallets" && <WalletSection />}
 
                     {/* ── MODIFICATIONS ── */}
-                    {section === "modifications" && (() => {
-                        const modTypeLabel: Record<string, string> = { reschedule: "Đổi lịch", cancel: "Hủy" };
-                        const modTypeColor: Record<string, string> = { reschedule: "#0052cc", cancel: "#c0392b" };
-                        const modStatusLabel: Record<string, string> = { pending: "Chờ xử lý", approved: "Đã duyệt", rejected: "Đã từ chối" };
-                        const modStatusColor: Record<string, string> = { pending: "#b8860b", approved: "#00875a", rejected: "#c0392b" };
-                        const modStatusBg: Record<string, string> = { pending: "#fffbe6", approved: "#e6f9f0", rejected: "#fff0f0" };
-                        const fmtN = (n: unknown) => n ? Number(n).toLocaleString("vi-VN") + "₫" : "—";
-                        return (
-                            <div className="adm-table-card">
-                                <div className="adm-table-header">
-                                    <div className="adm-table-title">🔄 Yêu cầu Đổi/Hủy lịch</div>
-                                    <div className="adm-table-actions">
-                                        <input className="adm-search" placeholder="🔍 Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} />
-                                    </div>
-                                </div>
-                                <div className="adm-table-wrap">
-                                    {loading ? <div className="adm-loading">Đang tải...</div> :
-                                        filteredData.length === 0 ? <div className="adm-empty">Không có yêu cầu nào</div> : (
-                                            <table>
-                                                <thead>
-                                                    <tr>
-                                                        <th>#</th>
-                                                        <th>Loại</th>
-                                                        <th>Khách hàng</th>
-                                                        <th>Đặt chỗ</th>
-                                                        <th>Giá cũ → Mới</th>
-                                                        <th>Phí hủy / Hoàn</th>
-                                                        <th>P.thức hoàn</th>
-                                                        <th>Ngày gửi</th>
-                                                        <th>Trạng thái</th>
-                                                        <th>Thao tác</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {filteredData.map((row, i) => (
-                                                        <tr key={String(row.mod_id ?? i)}>
-                                                            <td style={{ color: "#6b8cbf" }}>#{String(row.mod_id)}</td>
-                                                            <td>
-                                                                <span className="adm-badge" style={{
-                                                                    background: `${modTypeColor[String(row.type)] || "#6b8cbf"}18`,
-                                                                    color: modTypeColor[String(row.type)] || "#6b8cbf",
-                                                                }}>
-                                                                    {String(row.type) === "reschedule" ? "🔄" : "❌"} {modTypeLabel[String(row.type)] || String(row.type)}
-                                                                </span>
-                                                            </td>
-                                                            <td>
-                                                                <div style={{ fontWeight: 600 }}>{String(row.user_name || "—")}</div>
-                                                                <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{String(row.user_email || "")}</div>
-                                                            </td>
-                                                            <td>
-                                                                <div style={{ fontWeight: 600 }}>#{String(row.booking_id)}</div>
-                                                                <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{String(row.entity_name || "")}</div>
-                                                            </td>
-                                                            <td style={{ fontSize: "0.82rem" }}>
-                                                                {row.old_price ? (
-                                                                    <>
-                                                                        <div style={{ color: "#6b8cbf" }}>{fmtN(row.old_price)}</div>
-                                                                        {row.new_price && <div style={{ color: "#0052cc", fontWeight: 700 }}>→ {fmtN(row.new_price)}</div>}
-                                                                    </>
-                                                                ) : "—"}
-                                                            </td>
-                                                            <td style={{ fontSize: "0.82rem" }}>
-                                                                {!!row.cancel_fee && Number(row.cancel_fee) > 0 && (
-                                                                    <div style={{ color: "#c0392b" }}>Phí: {fmtN(row.cancel_fee)}</div>
-                                                                )}
-                                                                {!!row.refund_amount && Number(row.refund_amount) > 0 && (
-                                                                    <div style={{ color: "#00875a", fontWeight: 700 }}>Hoàn: {fmtN(row.refund_amount)}</div>
-                                                                )}
-                                                            </td>
-                                                            <td style={{ fontSize: "0.82rem" }}>
-                                                                {String(row.refund_method) === "wallet" ? "💰 Ví" : "🏦 Ngân hàng"}
-                                                                {String(row.refund_method) === "bank" && !!row.bank_info && (
-                                                                    <div style={{ fontSize: "0.75rem", color: "#6b8cbf", marginTop: 2 }}>{String(row.bank_info)}</div>
-                                                                )}
-                                                            </td>
-                                                            <td style={{ color: "#6b8cbf", fontSize: "0.8rem" }}>
-                                                                {row.created_at ? new Date(String(row.created_at)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—"}
-                                                            </td>
-                                                            <td>
-                                                                <span className="adm-badge" style={{
-                                                                    background: modStatusBg[String(row.status)] || "#f0f4ff",
-                                                                    color: modStatusColor[String(row.status)] || "#6b8cbf",
-                                                                }}>
-                                                                    {modStatusLabel[String(row.status)] || String(row.status)}
-                                                                </span>
-                                                                {!!row.admin_note && (
-                                                                    <div style={{ fontSize: "0.73rem", color: "#6b8cbf", marginTop: 2, maxWidth: 120 }}>{String(row.admin_note)}</div>
-                                                                )}
-                                                            </td>
-                                                            <td>
-                                                                {String(row.status) === "pending" && (
-                                                                    <>
-                                                                        <button
-                                                                            className="adm-action-btn adm-approve-btn"
-                                                                            onClick={() => handleModificationAction(Number(row.mod_id), "approve")}
-                                                                        >
-                                                                            ✅ Duyệt
-                                                                        </button>
-                                                                        <button
-                                                                            className="adm-action-btn adm-reject-btn"
-                                                                            onClick={() => handleModificationAction(Number(row.mod_id), "reject")}
-                                                                        >
-                                                                            ✕ Từ chối
-                                                                        </button>
-                                                                    </>
-                                                                )}
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        )}
-                                </div>
-                            </div>
-                        );
-                    })()}
 
+                    {/* Infinite scroll sentinel */}
+                    <div ref={sentinelRef} style={{ height: 1, marginTop: 8 }} />
+                    {loadingMore && (
+                        <div style={{ textAlign: "center", padding: "1rem 0 0.5rem", color: "#6b8cbf", fontSize: "0.85rem" }}>
+                            Đang tải thêm...
+                        </div>
+                    )}
                 </div>
             </main>
 

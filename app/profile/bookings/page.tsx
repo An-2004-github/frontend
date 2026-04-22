@@ -31,7 +31,7 @@ const TYPE_MAP: Record<string, { icon: string; label: string }> = {
     train: { icon: "🚆", label: "Tàu hỏa" },
 };
 
-const TABS = ["Tất cả", "Khách sạn", "Máy bay", "Xe khách"];
+const TABS = ["Tất cả", "Khách sạn", "Máy bay", "Tàu hỏa", "Xe khách"];
 
 export default function BookingsPage() {
     const [bookings, setBookings] = useState<Booking[]>([]);
@@ -49,6 +49,7 @@ export default function BookingsPage() {
         "Tất cả": [],
         "Khách sạn": ["room"],
         "Máy bay": ["flight"],
+        "Tàu hỏa": ["train"],
         "Xe khách": ["bus"],
     };
 

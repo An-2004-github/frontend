@@ -17,7 +17,7 @@ const NAV_LINKS = [
 ];
 
 export default function Navbar() {
-    const { user, logout, updateUser } = useAuthStore();
+    const { user, logout, refreshWallet } = useAuthStore();
     const pathname = usePathname();
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
@@ -27,17 +27,17 @@ export default function Navbar() {
 
     useEffect(() => {
         if (!user) return;
-        const fetchWallet = () => {
-            api.get("/api/auth/me").then(res => {
-                if (res.data?.wallet !== undefined) {
-                    updateUser({ wallet: res.data.wallet });
-                }
-            }).catch(() => {});
-        };
-        fetchWallet();
-        const onFocus = () => fetchWallet();
+        refreshWallet();
+        const onFocus = () => refreshWallet();
+        const onWalletUpdated = () => refreshWallet();
         window.addEventListener("focus", onFocus);
-        return () => window.removeEventListener("focus", onFocus);
+        window.addEventListener("wallet-updated", onWalletUpdated);
+        const interval = setInterval(refreshWallet, 30000);
+        return () => {
+            window.removeEventListener("focus", onFocus);
+            window.removeEventListener("wallet-updated", onWalletUpdated);
+            clearInterval(interval);
+        };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.user_id]);
 

@@ -12,6 +12,7 @@ interface BookingItem {
     entity_name?: string;
     quantity: number;
     price: number;
+    seat_class?: string;
     check_in_date?: string;
     check_out_date?: string;
 }
@@ -28,6 +29,16 @@ interface BookingDetail {
     user?: { full_name: string; email: string };
 }
 
+interface TransportPolicy {
+    allows_reschedule: boolean;
+    allows_cancel: boolean;
+    reschedule_fee_percent: number;
+    cancel_fee_percent: number;
+    refund_on_downgrade: boolean;
+    refund_on_cancel: boolean;
+    min_hours_before: number;
+}
+
 const STATUS_MAP: Record<string, { label: string; color: string; bg: string; icon: string }> = {
     pending:   { label: "Chờ thanh toán", color: "#b8762e", bg: "#fff8e1",  icon: "⏳" },
     confirmed: { label: "Đã xác nhận",    color: "#00875a", bg: "#d4edda",  icon: "✅" },
@@ -39,6 +50,7 @@ const TYPE_MAP: Record<string, { icon: string; label: string }> = {
     room:   { icon: "🏨", label: "Khách sạn" },
     flight: { icon: "✈️", label: "Máy bay" },
     bus:    { icon: "🚌", label: "Xe khách" },
+    train:  { icon: "🚆", label: "Tàu hỏa" },
 };
 
 const fmtDate = (d?: string) =>
@@ -56,10 +68,22 @@ export default function BookingDetailPage() {
     const [loading, setLoading] = useState(true);
     const [notFound, setNotFound] = useState(false);
     const [modifyMode, setModifyMode] = useState<"reschedule" | "cancel" | null>(null);
+    const [policy, setPolicy] = useState<TransportPolicy | null>(null);
+
+    const reloadBooking = () =>
+        api.get(`/api/bookings/${bookingId}`).then(res => {
+            const b = res.data as BookingDetail & { policy?: TransportPolicy };
+            setBooking(b);
+            if (b.policy) setPolicy(b.policy);
+        }).catch(() => {});
 
     useEffect(() => {
         api.get(`/api/bookings/${bookingId}`)
-            .then(res => setBooking(res.data))
+            .then(res => {
+                const b = res.data as BookingDetail & { policy?: TransportPolicy };
+                setBooking(b);
+                if (b.policy) setPolicy(b.policy);
+            })
             .catch(err => {
                 if (err?.response?.status === 404) setNotFound(true);
             })
@@ -227,22 +251,38 @@ export default function BookingDetailPage() {
                         const checkIn = booking.items?.[0]?.check_in_date;
                         const isPast = checkIn ? new Date(checkIn) < new Date(new Date().toDateString()) : false;
                         if (isPast) return null;
+
+                        const canReschedule = policy ? policy.allows_reschedule : true;
+                        const canCancel     = policy ? policy.allows_cancel     : true;
+
                         return (
                             <>
-                                <button
-                                    className="bd-btn"
-                                    style={{ background: "#fff3e0", color: "#e67e22", border: "1.5px solid #f39c12" }}
-                                    onClick={() => setModifyMode("reschedule")}
-                                >
-                                    🔄 Đổi lịch
-                                </button>
-                                <button
-                                    className="bd-btn"
-                                    style={{ background: "#fff0ee", color: "#c0392b", border: "1.5px solid #e74c3c" }}
-                                    onClick={() => setModifyMode("cancel")}
-                                >
-                                    ❌ Hủy {item?.entity_type === "room" ? "phòng" : "vé"}
-                                </button>
+                                {canReschedule ? (
+                                    <button
+                                        className="bd-btn"
+                                        style={{ background: "#fff3e0", color: "#e67e22", border: "1.5px solid #f39c12" }}
+                                        onClick={() => setModifyMode("reschedule")}
+                                    >
+                                        🔄 Đổi lịch
+                                    </button>
+                                ) : (
+                                    <div style={{ flex: 1, textAlign: "center", fontSize: "0.78rem", color: "#6b8cbf", padding: "0.75rem", background: "#f8faff", borderRadius: 10, border: "1px solid #e8f0fe" }}>
+                                        🚫 Vé không được đổi lịch
+                                    </div>
+                                )}
+                                {canCancel ? (
+                                    <button
+                                        className="bd-btn"
+                                        style={{ background: "#fff0ee", color: "#c0392b", border: "1.5px solid #e74c3c" }}
+                                        onClick={() => setModifyMode("cancel")}
+                                    >
+                                        ❌ Hủy {item?.entity_type === "room" ? "phòng" : "vé"}
+                                    </button>
+                                ) : (
+                                    <div style={{ flex: 1, textAlign: "center", fontSize: "0.78rem", color: "#6b8cbf", padding: "0.75rem", background: "#f8faff", borderRadius: 10, border: "1px solid #e8f0fe" }}>
+                                        🚫 Vé không được hủy
+                                    </div>
+                                )}
                             </>
                         );
                     })()}
@@ -256,10 +296,7 @@ export default function BookingDetailPage() {
                     onClose={() => setModifyMode(null)}
                     onDone={() => {
                         setModifyMode(null);
-                        // Reload booking data
-                        api.get(`/api/bookings/${bookingId}`)
-                            .then(res => setBooking(res.data))
-                            .catch(() => {});
+                        reloadBooking();
                     }}
                 />
             )}

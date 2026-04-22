@@ -145,15 +145,55 @@ def get_flight(flight_id: int):
         if not flight:
             raise HTTPException(404, "Chuyến bay không tồn tại")
 
-        # Lấy ghế theo hạng
-        seats = conn.execute(
-            text("""
-                SELECT * FROM flight_seats
-                WHERE flight_id = :id
-                ORDER BY seat_class, seat_number
-            """),
-            {"id": flight_id}
-        ).fetchall()
-        result = dict(flight._mapping)
-        result["seats"] = [dict(s._mapping) for s in seats]
-        return result
+        flight_d = dict(flight._mapping)
+        airline    = flight_d["airline"]
+        base_price = float(flight_d["price"])
+
+        MULTIPLIERS = {"economy": 1.0, "business": 1.8, "first": 2.5}
+        CLASS_LABELS = {"economy": "Economy", "business": "Business Class", "first": "First Class"}
+        CARRY_ON     = {"economy": 7,  "business": 10, "first": 14}
+        CHECKED_BAG  = {"economy": 0,  "business": 23, "first": 32}
+
+        class_rows = conn.execute(text("""
+            SELECT
+                fs.seat_class,
+                SUM(fs.is_booked = 0)                           AS available,
+                COALESCE(tp.allows_reschedule,      1)          AS allows_reschedule,
+                COALESCE(tp.allows_cancel,          1)          AS allows_cancel,
+                COALESCE(tp.refund_on_cancel,       1)          AS refund_on_cancel,
+                COALESCE(tp.reschedule_fee_percent, 0)          AS reschedule_fee_percent,
+                COALESCE(tp.cancel_fee_percent,     10)         AS cancel_fee_percent,
+                COALESCE(tp.min_hours_before,       2)          AS min_hours_before
+            FROM flight_seats fs
+            LEFT JOIN transport_policies tp
+                ON  tp.entity_type = 'flight'
+                AND tp.carrier     = :airline
+                AND tp.seat_class  = fs.seat_class
+            WHERE fs.flight_id = :id
+            GROUP BY fs.seat_class,
+                tp.allows_reschedule, tp.allows_cancel, tp.refund_on_cancel,
+                tp.reschedule_fee_percent, tp.cancel_fee_percent, tp.min_hours_before
+            ORDER BY FIELD(fs.seat_class, 'economy', 'business', 'first')
+        """), {"id": flight_id, "airline": airline}).fetchall()
+
+        seat_classes = []
+        for row in class_rows:
+            d  = dict(row._mapping)
+            sc = d["seat_class"]
+            seat_classes.append({
+                "seat_class":             sc,
+                "label":                  CLASS_LABELS.get(sc, sc),
+                "available":              int(d["available"] or 0),
+                "price":                  round(base_price * MULTIPLIERS.get(sc, 1.0)),
+                "carry_on_kg":            CARRY_ON.get(sc, 7),
+                "checked_bag_kg":         CHECKED_BAG.get(sc, 0),
+                "allows_reschedule":      bool(d["allows_reschedule"]),
+                "allows_cancel":          bool(d["allows_cancel"]),
+                "refund_on_cancel":       bool(d["refund_on_cancel"]),
+                "reschedule_fee_percent": float(d["reschedule_fee_percent"]),
+                "cancel_fee_percent":     float(d["cancel_fee_percent"]),
+                "min_hours_before":       int(d["min_hours_before"]),
+            })
+
+        flight_d["seat_classes"] = seat_classes
+        return flight_d

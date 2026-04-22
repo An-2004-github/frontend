@@ -139,15 +139,51 @@ def get_bus(bus_id: int):
         if not bus:
             raise HTTPException(404, "Chuyến xe không tồn tại")
 
-        seats = conn.execute(
-            text("""
-                SELECT * FROM bus_seats
-                WHERE bus_id = :id
-                ORDER BY seat_class, seat_number
-            """),
-            {"id": bus_id}
-        ).fetchall()
+        bus_d = dict(bus._mapping)
+        company    = bus_d["company"]
+        base_price = float(bus_d["price"])
 
-        result = dict(bus._mapping)
-        result["seats"] = [dict(s._mapping) for s in seats]
-        return result
+        MULTIPLIERS  = {"standard": 1.0, "vip": 1.4, "sleeper": 1.6}
+        CLASS_LABELS = {"standard": "Ghế thường", "vip": "Ghế VIP", "sleeper": "Giường nằm"}
+
+        class_rows = conn.execute(text("""
+            SELECT
+                bs.seat_class,
+                SUM(bs.is_booked = 0)                           AS available,
+                COALESCE(tp.allows_reschedule,      1)          AS allows_reschedule,
+                COALESCE(tp.allows_cancel,          1)          AS allows_cancel,
+                COALESCE(tp.refund_on_cancel,       1)          AS refund_on_cancel,
+                COALESCE(tp.reschedule_fee_percent, 0)          AS reschedule_fee_percent,
+                COALESCE(tp.cancel_fee_percent,     10)         AS cancel_fee_percent,
+                COALESCE(tp.min_hours_before,       2)          AS min_hours_before
+            FROM bus_seats bs
+            LEFT JOIN transport_policies tp
+                ON  tp.entity_type = 'bus'
+                AND tp.carrier     = :company
+                AND tp.seat_class  = bs.seat_class
+            WHERE bs.bus_id = :id
+            GROUP BY bs.seat_class,
+                tp.allows_reschedule, tp.allows_cancel, tp.refund_on_cancel,
+                tp.reschedule_fee_percent, tp.cancel_fee_percent, tp.min_hours_before
+            ORDER BY FIELD(bs.seat_class, 'standard', 'vip', 'sleeper')
+        """), {"id": bus_id, "company": company}).fetchall()
+
+        seat_classes = []
+        for row in class_rows:
+            d  = dict(row._mapping)
+            sc = d["seat_class"]
+            seat_classes.append({
+                "seat_class":             sc,
+                "label":                  CLASS_LABELS.get(sc, sc),
+                "available":              int(d["available"] or 0),
+                "price":                  round(base_price * MULTIPLIERS.get(sc, 1.0)),
+                "allows_reschedule":      bool(d["allows_reschedule"]),
+                "allows_cancel":          bool(d["allows_cancel"]),
+                "refund_on_cancel":       bool(d["refund_on_cancel"]),
+                "reschedule_fee_percent": float(d["reschedule_fee_percent"]),
+                "cancel_fee_percent":     float(d["cancel_fee_percent"]),
+                "min_hours_before":       int(d["min_hours_before"]),
+            })
+
+        bus_d["seat_classes"] = seat_classes
+        return bus_d

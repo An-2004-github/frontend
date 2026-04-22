@@ -138,16 +138,38 @@ def get_train(train_id: int):
             raise HTTPException(404, "Tàu không tồn tại")
 
         seats = conn.execute(text("""
-            SELECT seat_class,
-                   COUNT(*) AS total,
-                   SUM(is_booked = 0) AS available,
-                   MIN(price) AS price
-            FROM train_seats
-            WHERE train_id = :id
-            GROUP BY seat_class
-            ORDER BY FIELD(seat_class, 'hard_seat','soft_seat','hard_sleeper','soft_sleeper')
+            SELECT
+                ts.seat_class,
+                COUNT(*)                                        AS total,
+                SUM(ts.is_booked = 0)                          AS available,
+                MIN(ts.price)                                   AS price,
+                COALESCE(tp.allows_reschedule,      1)         AS allows_reschedule,
+                COALESCE(tp.allows_cancel,          1)         AS allows_cancel,
+                COALESCE(tp.refund_on_cancel,       1)         AS refund_on_cancel,
+                COALESCE(tp.reschedule_fee_percent, 0)         AS reschedule_fee_percent,
+                COALESCE(tp.cancel_fee_percent,     10)        AS cancel_fee_percent,
+                COALESCE(tp.min_hours_before,       2)         AS min_hours_before
+            FROM train_seats ts
+            LEFT JOIN transport_policies tp
+                ON  tp.entity_type = 'train'
+                AND tp.carrier     = 'Đường sắt Việt Nam'
+                AND tp.seat_class  = ts.seat_class
+            WHERE ts.train_id = :id
+            GROUP BY ts.seat_class,
+                tp.allows_reschedule, tp.allows_cancel, tp.refund_on_cancel,
+                tp.reschedule_fee_percent, tp.cancel_fee_percent, tp.min_hours_before
+            ORDER BY FIELD(ts.seat_class, 'hard_seat','soft_seat','hard_sleeper','soft_sleeper')
         """), {"id": train_id}).fetchall()
 
         result = dict(train._mapping)
-        result["seat_classes"] = [dict(s._mapping) for s in seats]
+        result["seat_classes"] = [{
+            **dict(s._mapping),
+            "available":              int(dict(s._mapping).get("available") or 0),
+            "allows_reschedule":      bool(dict(s._mapping)["allows_reschedule"]),
+            "allows_cancel":          bool(dict(s._mapping)["allows_cancel"]),
+            "refund_on_cancel":       bool(dict(s._mapping)["refund_on_cancel"]),
+            "reschedule_fee_percent": float(dict(s._mapping)["reschedule_fee_percent"]),
+            "cancel_fee_percent":     float(dict(s._mapping)["cancel_fee_percent"]),
+            "min_hours_before":       int(dict(s._mapping)["min_hours_before"]),
+        } for s in seats]
         return result

@@ -107,7 +107,12 @@ def get_hotels(
 
     with engine.connect() as conn:
         result = conn.execute(text(query), params)
-        return [dict(row._mapping) for row in result]
+        rows = []
+        for row in result:
+            d = dict(row._mapping)
+            d["allows_refund"] = bool(d.get("allows_refund", True))
+            rows.append(d)
+        return rows
 
 
 # Lấy chi tiết khách sạn
@@ -167,6 +172,7 @@ def get_hotel_by_id(hotel_id: int):
         ).fetchall()
 
         hotel = dict(result._mapping)
+        hotel["allows_refund"] = bool(hotel.get("allows_refund", True))
         hotel["images"]     = [r.image_url for r in images]
         hotel["room_types"] = [dict(r._mapping) for r in rooms]
         hotel["reviews"]    = [dict(r._mapping) for r in reviews]

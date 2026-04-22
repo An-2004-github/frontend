@@ -90,11 +90,16 @@ def get_revenue(period: str = "7d", admin_id: int = Depends(get_admin_user)):
 
 # ── USERS ────────────────────────────────────────────────────────
 @router.get("/users")
-def get_all_users(admin_id: int = Depends(get_admin_user)):
+def get_all_users(skip: int = 0, limit: int = 50, search: str = "", admin_id: int = Depends(get_admin_user)):
     with engine.connect() as conn:
+        params: dict = {"limit": limit, "skip": skip}
+        where = ""
+        if search:
+            where = "WHERE full_name LIKE :s OR email LIKE :s OR phone LIKE :s"
+            params["s"] = f"%{search}%"
         rows = conn.execute(text(
-            "SELECT user_id, full_name, email, phone, role, wallet, provider, created_at FROM users ORDER BY created_at DESC"
-        )).fetchall()
+            f"SELECT user_id, full_name, email, phone, role, wallet, provider, created_at FROM users {where} ORDER BY created_at DESC, user_id DESC LIMIT :limit OFFSET :skip"
+        ), params).fetchall()
     return [dict(r._mapping) for r in rows]
 
 
@@ -192,9 +197,14 @@ def admin_create_user(data: UserCreateRequest, admin_id: int = Depends(get_admin
 
 # ── BOOKINGS ─────────────────────────────────────────────────────
 @router.get("/bookings")
-def get_all_bookings(admin_id: int = Depends(get_admin_user)):
+def get_all_bookings(skip: int = 0, limit: int = 50, search: str = "", admin_id: int = Depends(get_admin_user)):
     with engine.connect() as conn:
-        rows = conn.execute(text("""
+        params: dict = {"limit": limit, "skip": skip}
+        having = ""
+        if search:
+            having = "HAVING user_name LIKE :s OR user_email LIKE :s OR entity_name LIKE :s"
+            params["s"] = f"%{search}%"
+        rows = conn.execute(text(f"""
             SELECT
                 b.booking_id, b.booking_date, b.status, b.total_price, b.final_amount,
                 u.full_name AS user_name, u.email AS user_email,
@@ -216,8 +226,10 @@ def get_all_bookings(admin_id: int = Depends(get_admin_user)):
             LEFT JOIN trains t ON t.train_id = bi.entity_id AND bi.entity_type = 'train'
             GROUP BY b.booking_id, b.booking_date, b.status, b.total_price, b.final_amount,
                      u.full_name, u.email
-            ORDER BY b.booking_date DESC
-        """)).fetchall()
+            {having}
+            ORDER BY b.booking_date DESC, b.booking_id DESC
+            LIMIT :limit OFFSET :skip
+        """), params).fetchall()
     return [dict(r._mapping) for r in rows]
 
 
@@ -399,9 +411,14 @@ class HotelRequest(BaseModel):
 
 
 @router.get("/hotels")
-def admin_get_hotels(admin_id: int = Depends(get_admin_user)):
+def admin_get_hotels(skip: int = 0, limit: int = 50, search: str = "", admin_id: int = Depends(get_admin_user)):
     with engine.connect() as conn:
-        rows = conn.execute(text("""
+        params: dict = {"limit": limit, "skip": skip}
+        where = ""
+        if search:
+            where = "WHERE h.name LIKE :s OR d.city LIKE :s OR h.address LIKE :s"
+            params["s"] = f"%{search}%"
+        rows = conn.execute(text(f"""
             SELECT h.*, d.city AS dest_city,
                    (SELECT GROUP_CONCAT(img.image_url ORDER BY img.image_id SEPARATOR ',')
                     FROM images img
@@ -422,8 +439,10 @@ def admin_get_hotels(admin_id: int = Depends(get_admin_user)):
                     FROM room_types rt WHERE rt.hotel_id = h.hotel_id) AS available_rooms
             FROM hotels h
             LEFT JOIN destinations d ON d.destination_id = h.destination_id
+            {where}
             ORDER BY h.hotel_id DESC
-        """)).fetchall()
+            LIMIT :limit OFFSET :skip
+        """), params).fetchall()
     return [dict(r._mapping) for r in rows]
 
 
@@ -477,14 +496,19 @@ class FlightRequest(BaseModel):
 
 
 @router.get("/flights")
-def admin_get_flights(admin_id: int = Depends(get_admin_user)):
+def admin_get_flights(skip: int = 0, limit: int = 50, search: str = "", admin_id: int = Depends(get_admin_user)):
     with engine.begin() as conn:
         conn.execute(text("""
             UPDATE flights SET status = 'completed'
             WHERE status = 'active' AND depart_time < NOW()
         """))
     with engine.connect() as conn:
-        rows = conn.execute(text("""
+        params: dict = {"limit": limit, "skip": skip}
+        where = ""
+        if search:
+            where = "WHERE f.airline LIKE :s OR f.from_city LIKE :s OR f.to_city LIKE :s"
+            params["s"] = f"%{search}%"
+        rows = conn.execute(text(f"""
             SELECT f.*,
                    (SELECT img.image_url FROM images img
                     WHERE img.entity_type='flight' AND img.entity_id=f.flight_id LIMIT 1) AS image_url,
@@ -499,8 +523,10 @@ def admin_get_flights(admin_id: int = Depends(get_admin_user)):
                    (SELECT COUNT(*) FROM flight_seats fs
                     WHERE fs.flight_id = f.flight_id AND fs.is_booked = 0 AND fs.seat_class = 'first') AS avail_first
             FROM flights f
+            {where}
             ORDER BY f.flight_id DESC
-        """)).fetchall()
+            LIMIT :limit OFFSET :skip
+        """), params).fetchall()
     return [dict(r._mapping) for r in rows]
 
 
@@ -559,14 +585,19 @@ class BusRequest(BaseModel):
 
 
 @router.get("/buses")
-def admin_get_buses(admin_id: int = Depends(get_admin_user)):
+def admin_get_buses(skip: int = 0, limit: int = 50, search: str = "", admin_id: int = Depends(get_admin_user)):
     with engine.begin() as conn:
         conn.execute(text("""
             UPDATE buses SET status = 'completed'
             WHERE status = 'active' AND depart_time < NOW()
         """))
     with engine.connect() as conn:
-        rows = conn.execute(text("""
+        params: dict = {"limit": limit, "skip": skip}
+        where = ""
+        if search:
+            where = "WHERE b.company LIKE :s OR b.from_city LIKE :s OR b.to_city LIKE :s"
+            params["s"] = f"%{search}%"
+        rows = conn.execute(text(f"""
             SELECT b.*,
                    (SELECT img.image_url FROM images img
                     WHERE img.entity_type='bus' AND img.entity_id=b.bus_id LIMIT 1) AS image_url,
@@ -581,8 +612,10 @@ def admin_get_buses(admin_id: int = Depends(get_admin_user)):
                    (SELECT COUNT(*) FROM bus_seats bs
                     WHERE bs.bus_id = b.bus_id AND bs.is_booked = 0 AND bs.seat_class = 'sleeper') AS avail_sleeper
             FROM buses b
+            {where}
             ORDER BY b.bus_id DESC
-        """)).fetchall()
+            LIMIT :limit OFFSET :skip
+        """), params).fetchall()
     return [dict(r._mapping) for r in rows]
 
 
@@ -630,9 +663,14 @@ def admin_delete_bus(bus_id: int, admin_id: int = Depends(get_admin_user)):
 
 # ── REVIEWS ──────────────────────────────────────────────────────
 @router.get("/reviews")
-def admin_get_reviews(admin_id: int = Depends(get_admin_user)):
+def admin_get_reviews(skip: int = 0, limit: int = 50, search: str = "", admin_id: int = Depends(get_admin_user)):
     with engine.connect() as conn:
-        rows = conn.execute(text("""
+        params: dict = {"limit": limit, "skip": skip}
+        where = ""
+        if search:
+            where = "WHERE u.full_name LIKE :s OR u.email LIKE :s OR r.comment LIKE :s"
+            params["s"] = f"%{search}%"
+        rows = conn.execute(text(f"""
             SELECT r.*,
                    u.full_name, u.email,
                    CASE
@@ -641,8 +679,10 @@ def admin_get_reviews(admin_id: int = Depends(get_admin_user)):
                    END AS entity_name
             FROM reviews r
             LEFT JOIN users u ON u.user_id = r.user_id
-            ORDER BY r.created_at DESC
-        """)).fetchall()
+            {where}
+            ORDER BY r.created_at DESC, r.review_id DESC
+            LIMIT :limit OFFSET :skip
+        """), params).fetchall()
     return [dict(row._mapping) for row in rows]
 
 
@@ -806,11 +846,15 @@ class PromotionRequest(BaseModel):
 
 
 @router.get("/promotions")
-def admin_get_promotions(admin_id: int = Depends(get_admin_user)):
+def admin_get_promotions(skip: int = 0, limit: int = 50, search: str = "", admin_id: int = Depends(get_admin_user)):
     with engine.connect() as conn:
+        params: dict = {"limit": limit, "skip": skip}
+        where = ""
+        if search:
+            where = f"WHERE code LIKE '%{search}%' OR description LIKE '%{search}%'"
         rows = conn.execute(text(
-            "SELECT * FROM promotions ORDER BY promo_id DESC"
-        )).fetchall()
+            f"SELECT * FROM promotions {where} ORDER BY promo_id DESC LIMIT :limit OFFSET :skip"
+        ), params).fetchall()
     return [dict(r._mapping) for r in rows]
 
 
@@ -1047,7 +1091,7 @@ def admin_delete_destination(dest_id: int, admin_id: int = Depends(get_admin_use
 
 # ── BOOKING MODIFICATIONS MANAGEMENT ───────────────────────────
 @router.get("/modifications")
-def get_modifications(admin_id: int = Depends(get_admin_user)):
+def get_modifications(skip: int = 0, limit: int = 50, search: str = "", admin_id: int = Depends(get_admin_user)):
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT m.*,
@@ -1067,7 +1111,8 @@ def get_modifications(admin_id: int = Depends(get_admin_user)):
             LEFT JOIN flights f ON f.flight_id = bi.entity_id AND bi.entity_type = 'flight'
             LEFT JOIN buses bs ON bs.bus_id = bi.entity_id AND bi.entity_type = 'bus'
             ORDER BY m.created_at DESC
-        """)).fetchall()
+            LIMIT :limit OFFSET :skip
+        """), {"limit": limit, "skip": skip}).fetchall()
         return [dict(r._mapping) for r in rows]
 
 
@@ -1099,6 +1144,57 @@ def approve_modification(mod_id: int, data: dict = {}, background_tasks: Backgro
             """), {"uid": user_id, "amt": refund_amount,
                    "desc": f"Hoàn tiền {'hủy' if m['type'] == 'cancel' else 'đổi lịch'} #{booking_id}"})
 
+        # Nếu là đổi lịch: cập nhật booking, booking_items và transfer ghế
+        if m["type"] == "reschedule" and float(m.get("new_price") or 0) > 0:
+            new_entity_id  = m.get("new_entity_id")
+            new_seat_class = m.get("new_seat_class")
+            new_price      = float(m["new_price"])
+
+            # Lấy entity_type và thông tin ghế cũ để transfer
+            item_row = conn.execute(
+                text("SELECT entity_type, entity_id, seat_class, quantity FROM booking_items WHERE booking_id = :bid LIMIT 1"),
+                {"bid": booking_id}
+            ).fetchone()
+            if item_row:
+                item_d     = dict(item_row._mapping)
+                entity_type    = item_d["entity_type"]
+                old_entity_id  = item_d["entity_id"]
+                old_seat_class = item_d.get("seat_class") or new_seat_class or ""
+                quantity       = item_d.get("quantity") or 1
+
+                # Transfer ghế nếu là vận tải và có thay đổi
+                if entity_type in ("flight", "bus", "train") and new_entity_id and new_seat_class:
+                    from routers.bookings import _transfer_seats
+                    try:
+                        _transfer_seats(conn, entity_type, old_entity_id, new_entity_id,
+                                        old_seat_class, new_seat_class, quantity)
+                    except Exception:
+                        pass  # Ghế đã được chuyển khi user thanh toán
+
+            if new_entity_id:
+                conn.execute(
+                    text("UPDATE booking_items SET entity_id = :eid WHERE booking_id = :bid"),
+                    {"eid": new_entity_id, "bid": booking_id},
+                )
+            if new_seat_class:
+                conn.execute(
+                    text("UPDATE booking_items SET seat_class = :sc WHERE booking_id = :bid"),
+                    {"sc": new_seat_class, "bid": booking_id},
+                )
+            if m.get("new_check_in"):
+                conn.execute(
+                    text("UPDATE booking_items SET check_in_date = :ci, check_out_date = :co WHERE booking_id = :bid"),
+                    {"ci": str(m["new_check_in"]), "co": str(m["new_check_out"]), "bid": booking_id},
+                )
+            conn.execute(
+                text("UPDATE bookings SET total_price = :np, final_amount = :np WHERE booking_id = :bid"),
+                {"np": new_price, "bid": booking_id},
+            )
+            conn.execute(
+                text("UPDATE booking_items SET price = :np WHERE booking_id = :bid"),
+                {"np": new_price, "bid": booking_id},
+            )
+
         conn.execute(
             text("UPDATE booking_modifications SET status = 'approved', admin_note = :note WHERE mod_id = :id"),
             {"id": mod_id, "note": (data or {}).get("note", "")}
@@ -1118,12 +1214,8 @@ def reject_modification(mod_id: int, data: dict = {}, admin_id: int = Depends(ge
             raise HTTPException(404, "Yêu cầu không tồn tại")
         m = dict(mod._mapping)
 
-        # If it was a cancel, restore booking to confirmed
-        if m["type"] == "cancel":
-            conn.execute(
-                text("UPDATE bookings SET status = 'confirmed' WHERE booking_id = :id"),
-                {"id": m["booking_id"]}
-            )
+        # Nếu là reschedule pending (cần thanh toán thêm nhưng chưa trả), huỷ mod thôi
+        # Không restore cancel vì booking đã bị huỷ ngay khi user gửi yêu cầu
 
         conn.execute(
             text("UPDATE booking_modifications SET status = 'rejected', admin_note = :note WHERE mod_id = :id"),
@@ -1146,14 +1238,19 @@ class TrainRequest(BaseModel):
 
 
 @router.get("/trains")
-def admin_get_trains(admin_id: int = Depends(get_admin_user)):
+def admin_get_trains(skip: int = 0, limit: int = 50, search: str = "", admin_id: int = Depends(get_admin_user)):
     with engine.begin() as conn:
         conn.execute(text("""
             UPDATE trains SET status = 'completed'
             WHERE status = 'active' AND depart_time < NOW()
         """))
     with engine.connect() as conn:
-        rows = conn.execute(text("""
+        params: dict = {"limit": limit, "skip": skip}
+        where = ""
+        if search:
+            where = "WHERE t.train_code LIKE :s OR t.from_city LIKE :s OR t.to_city LIKE :s"
+            params["s"] = f"%{search}%"
+        rows = conn.execute(text(f"""
             SELECT t.*,
                    TIMESTAMPDIFF(MINUTE, t.depart_time, t.arrive_time) AS duration_minutes,
                    (SELECT COUNT(*) FROM train_seats ts WHERE ts.train_id = t.train_id AND ts.is_booked = 0) AS avail_total,
@@ -1163,8 +1260,10 @@ def admin_get_trains(admin_id: int = Depends(get_admin_user)):
                    (SELECT COUNT(*) FROM train_seats ts WHERE ts.train_id = t.train_id AND ts.is_booked = 0 AND ts.seat_class = 'hard_sleeper') AS avail_hard_sleeper,
                    (SELECT COUNT(*) FROM train_seats ts WHERE ts.train_id = t.train_id AND ts.is_booked = 0 AND ts.seat_class = 'soft_sleeper') AS avail_soft_sleeper
             FROM trains t
-            ORDER BY t.depart_time DESC
-        """)).fetchall()
+            {where}
+            ORDER BY t.depart_time DESC, t.train_id DESC
+            LIMIT :limit OFFSET :skip
+        """), params).fetchall()
     return [dict(r._mapping) for r in rows]
 
 

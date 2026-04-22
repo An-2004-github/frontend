@@ -1,11 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
+
+const useIsClient = () =>
+    useSyncExternalStore(() => () => {}, () => true, () => false);
 import { useRouter } from "next/navigation";
 import api from "@/lib/axios";
-import { Train, TrainSeatClassInfo } from "@/types/train";
+import { Train } from "@/types/train";
 import { useBookingStore } from "@/store/bookingStore";
+
+interface SeatClassInfo {
+    seat_class:             "hard_seat" | "soft_seat" | "hard_sleeper" | "soft_sleeper";
+    label:                  string;
+    available:              number;
+    price:                  number;
+    allows_reschedule:      boolean;
+    allows_cancel:          boolean;
+    refund_on_cancel:       boolean;
+    reschedule_fee_percent: number;
+    cancel_fee_percent:     number;
+    min_hours_before:       number;
+}
+
+interface Props {
+    train:      Train;
+    passengers: number;
+    onClose:    () => void;
+}
 
 const SEAT_CLASS_LABEL: Record<string, string> = {
     hard_seat:    "Ngồi cứng",
@@ -26,12 +48,6 @@ const SEAT_CLASS_DESC: Record<string, string> = {
     soft_sleeper: "Giường nằm 4 chỗ/khoang, riêng tư",
 };
 
-interface Props {
-    train: Train;
-    passengers: number;
-    onClose: () => void;
-}
-
 function formatTime(s: string) {
     return new Date(s).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
@@ -43,12 +59,28 @@ function formatDuration(m: number) {
     return `${h}g${mm > 0 ? ` ${mm}p` : ""}`;
 }
 
+function PolicyTag({ ok, label }: { ok: boolean; label: string }) {
+    return (
+        <div style={{
+            display: "flex", alignItems: "center", gap: "0.4rem",
+            fontSize: "0.8rem",
+            color: ok ? "#00875a" : "#bf2600",
+            textDecoration: ok ? "none" : "line-through",
+            opacity: ok ? 1 : 0.75,
+        }}>
+            <span>{ok ? "✓" : "✗"}</span>
+            {label}
+        </div>
+    );
+}
+
 export default function TrainTicketModal({ train, passengers, onClose }: Props) {
     const router = useRouter();
     const { setBooking } = useBookingStore();
-    const [seatClasses, setSeatClasses] = useState<TrainSeatClassInfo[]>([]);
+    const [seatClasses, setSeatClasses] = useState<SeatClassInfo[]>([]);
     const [loading, setLoading] = useState(true);
-    const [selected, setSelected] = useState<TrainSeatClassInfo | null>(null);
+    const [selected, setSelected] = useState<SeatClassInfo | null>(null);
+    const isClient = useIsClient();
 
     useEffect(() => {
         api.get(`/api/trains/${train.train_id}`)
@@ -58,30 +90,30 @@ export default function TrainTicketModal({ train, passengers, onClose }: Props) 
 
     const handleConfirm = () => {
         if (!selected) return;
-        const basePrice = selected.price * passengers;
+        const basePrice  = selected.price * passengers;
         const taxAndFees = Math.round(basePrice * 0.05);
         setBooking({
-            type: "train",
-            trainId: train.train_id,
-            trainCode: train.train_code,
-            fromCity: train.from_city,
-            toCity: train.to_city,
-            fromStation: train.from_station,
-            toStation: train.to_station,
-            departTime: train.depart_time,
-            arriveTime: train.arrive_time,
-            seatClass: selected.seat_class,
+            type:         "train",
+            trainId:      train.train_id,
+            trainCode:    train.train_code,
+            fromCity:     train.from_city,
+            toCity:       train.to_city,
+            fromStation:  train.from_station,
+            toStation:    train.to_station,
+            departTime:   train.depart_time,
+            arriveTime:   train.arrive_time,
+            seatClass:    selected.seat_class,
             seatClassName: SEAT_CLASS_LABEL[selected.seat_class] ?? selected.seat_class,
             passengers,
             basePrice,
             taxAndFees,
-            totalPrice: basePrice + taxAndFees,
+            totalPrice:   basePrice + taxAndFees,
         });
         onClose();
         router.push("/booking");
     };
 
-    const totalPrice = selected ? selected.price * passengers : 0;
+    if (!isClient) return null;
 
     return createPortal(
         <>
@@ -95,7 +127,7 @@ export default function TrainTicketModal({ train, passengers, onClose }: Props) 
                 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
                 .ttm-modal {
                     background: #fff; border-radius: 16px;
-                    width: 100%; max-width: 680px; max-height: 90vh;
+                    width: 100%; max-width: 860px; max-height: 90vh;
                     overflow-y: auto; box-shadow: 0 24px 60px rgba(0,0,0,0.25);
                     animation: slideUp 0.25s ease;
                 }
@@ -113,7 +145,7 @@ export default function TrainTicketModal({ train, passengers, onClose }: Props) 
                     display: flex; align-items: center; justify-content: center;
                     transition: background 0.15s;
                 }
-                .ttm-close:hover { background: #dde9ff; color: #0052cc; }
+                .ttm-close:hover { background: #dde9ff; color: #003580; }
                 .ttm-info {
                     background: #f0f4ff; margin: 1rem 1.5rem;
                     border-radius: 12px; padding: 1rem 1.25rem;
@@ -128,31 +160,23 @@ export default function TrainTicketModal({ train, passengers, onClose }: Props) 
                     font-family: 'Nunito', sans-serif; font-size: 1rem; font-weight: 700; color: #1a3c6b;
                     display: flex; align-items: center; gap: 0.5rem;
                 }
-                .ttm-route-arrow { color: #6b8cbf; }
                 .ttm-date { font-size: 0.82rem; color: #6b8cbf; }
                 .ttm-time-wrap { margin-left: auto; text-align: right; }
                 .ttm-time { font-size: 0.88rem; font-weight: 600; color: #1a3c6b; }
                 .ttm-duration { font-size: 0.78rem; color: #6b8cbf; }
-
-                .ttm-classes { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; padding: 0 1.5rem 1.5rem; }
+                .ttm-classes {
+                    display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+                    gap: 1rem; padding: 0 1.5rem 1.5rem;
+                }
                 .ttm-class {
                     border: 2px solid #e8f0fe; border-radius: 14px; padding: 1.25rem;
-                    cursor: pointer; transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
-                    display: flex; flex-direction: column; gap: 0.75rem;
+                    cursor: pointer; display: flex; flex-direction: column; gap: 0.75rem;
+                    transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
                 }
-                .ttm-class:hover { border-color: #003580; box-shadow: 0 4px 16px rgba(0,53,128,0.1); }
+                .ttm-class:hover:not(.disabled) { border-color: #003580; box-shadow: 0 4px 16px rgba(0,53,128,0.1); }
                 .ttm-class.selected { border-color: #003580; background: #f0f4ff; box-shadow: 0 4px 16px rgba(0,53,128,0.15); }
-                .ttm-class.disabled { opacity: 0.45; cursor: not-allowed; }
-                .ttm-class-header { display: flex; align-items: center; justify-content: space-between; }
-                .ttm-class-icon { font-size: 1.8rem; }
-                .ttm-avail {
-                    font-size: 0.72rem; font-weight: 700; padding: 0.15rem 0.55rem;
-                    border-radius: 99px;
-                }
-                .ttm-class-name { font-family: 'Nunito', sans-serif; font-size: 1rem; font-weight: 700; color: #1a3c6b; }
-                .ttm-class-desc { font-size: 0.8rem; color: #6b8cbf; }
-                .ttm-class-price { font-family: 'Nunito', sans-serif; font-size: 1.2rem; font-weight: 800; color: #003580; }
-                .ttm-class-price span { font-size: 0.78rem; font-weight: 400; color: #6b8cbf; }
+                .ttm-class.disabled { opacity: 0.5; cursor: not-allowed; }
+                .ttm-divider { height: 1px; background: #f0f4ff; margin: 0.1rem 0; }
                 .ttm-select-btn {
                     width: 100%; padding: 0.6rem;
                     background: linear-gradient(135deg, #003580, #0052cc);
@@ -160,14 +184,12 @@ export default function TrainTicketModal({ train, passengers, onClose }: Props) 
                     font-size: 0.85rem; font-weight: 600; cursor: pointer;
                     transition: opacity 0.15s; margin-top: auto;
                 }
-                .ttm-select-btn:hover { opacity: 0.88; }
+                .ttm-select-btn:disabled { opacity: 0.45; cursor: not-allowed; }
                 .ttm-footer {
                     padding: 1rem 1.5rem; border-top: 1px solid #e8f0fe;
                     display: flex; align-items: center; justify-content: space-between;
                     position: sticky; bottom: 0; background: #fff;
                 }
-                .ttm-sel-info { font-size: 0.88rem; color: #6b8cbf; }
-                .ttm-sel-price { font-family: 'Nunito', sans-serif; font-size: 1.1rem; font-weight: 800; color: #003580; }
                 .ttm-confirm-btn {
                     padding: 0.65rem 1.75rem;
                     background: linear-gradient(135deg, #003580, #0052cc);
@@ -193,7 +215,7 @@ export default function TrainTicketModal({ train, passengers, onClose }: Props) 
                         <span className="ttm-badge">{train.train_code}</span>
                         <div className="ttm-route">
                             <span>{train.from_city}</span>
-                            <span className="ttm-route-arrow">→</span>
+                            <span style={{ color: "#6b8cbf" }}>→</span>
                             <span>{train.to_city}</span>
                         </div>
                         <span className="ttm-date">{formatDate(train.depart_time)}</span>
@@ -208,37 +230,70 @@ export default function TrainTicketModal({ train, passengers, onClose }: Props) 
                     ) : (
                         <div className="ttm-classes">
                             {seatClasses.map((sc) => {
-                                const notEnough = sc.available < passengers;
+                                const notEnough  = sc.available < passengers;
                                 const isSelected = selected?.seat_class === sc.seat_class;
-                                const label = SEAT_CLASS_LABEL[sc.seat_class] ?? sc.seat_class;
-                                const icon = SEAT_CLASS_ICON[sc.seat_class] ?? "💺";
-                                const desc = SEAT_CLASS_DESC[sc.seat_class] ?? "";
+                                const totalPrice = sc.price * passengers;
                                 return (
                                     <div
                                         key={sc.seat_class}
                                         className={`ttm-class${isSelected ? " selected" : ""}${notEnough ? " disabled" : ""}`}
                                         onClick={() => !notEnough && setSelected(sc)}
                                     >
-                                        <div className="ttm-class-header">
-                                            <span className="ttm-class-icon">{icon}</span>
-                                            <span className="ttm-avail" style={{
+                                        {/* Header */}
+                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                                <span style={{ fontSize: "1.5rem" }}>{SEAT_CLASS_ICON[sc.seat_class] ?? "💺"}</span>
+                                                <div>
+                                                    <div style={{ fontFamily: "Nunito, sans-serif", fontWeight: 700, fontSize: "0.95rem", color: "#1a3c6b" }}>
+                                                        {sc.label || SEAT_CLASS_LABEL[sc.seat_class] || sc.seat_class}
+                                                    </div>
+                                                    <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>
+                                                        {SEAT_CLASS_DESC[sc.seat_class] ?? ""}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <span style={{
+                                                fontSize: "0.72rem", fontWeight: 700, padding: "0.15rem 0.55rem", borderRadius: 99,
                                                 background: notEnough ? "#fff0f0" : sc.available <= 10 ? "#fff8e1" : "#e6f9f0",
                                                 color: notEnough ? "#c0392b" : sc.available <= 10 ? "#b8860b" : "#00875a",
                                                 border: `1px solid ${notEnough ? "#ffcdd2" : sc.available <= 10 ? "#ffe082" : "#b7dfbb"}`,
                                             }}>
-                                                {notEnough ? "Hết chỗ" : `${sc.available} chỗ trống`}
+                                                {notEnough ? "Hết chỗ" : `${sc.available} chỗ`}
                                             </span>
                                         </div>
-                                        <div className="ttm-class-name">{label}</div>
-                                        <div className="ttm-class-desc">{desc}</div>
-                                        <div className="ttm-class-price">
-                                            {(sc.price * passengers).toLocaleString("vi-VN")}₫
-                                            {passengers > 1 && <span> / {passengers} khách</span>}
+
+                                        {/* Price */}
+                                        <div style={{ fontFamily: "Nunito, sans-serif", fontSize: "1.15rem", fontWeight: 800, color: "#003580" }}>
+                                            {totalPrice.toLocaleString("vi-VN")}₫
+                                            {passengers > 1 && <span style={{ fontSize: "0.78rem", fontWeight: 400, color: "#6b8cbf" }}> / {passengers} khách</span>}
                                         </div>
+
+                                        <div className="ttm-divider" />
+
+                                        {/* Policy */}
+                                        <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                                            <PolicyTag
+                                                ok={sc.allows_reschedule}
+                                                label={sc.allows_reschedule
+                                                    ? `Đổi vé${sc.reschedule_fee_percent > 0 ? ` (phí ${sc.reschedule_fee_percent}%)` : " miễn phí"}`
+                                                    : "Không được đổi vé"}
+                                            />
+                                            <PolicyTag
+                                                ok={sc.refund_on_cancel}
+                                                label={sc.refund_on_cancel
+                                                    ? `Hoàn vé${sc.cancel_fee_percent > 0 ? ` (phí ${sc.cancel_fee_percent}%)` : " miễn phí"}`
+                                                    : `Không hoàn vé${sc.cancel_fee_percent > 0 ? ` + phí hủy ${sc.cancel_fee_percent}%` : ""}`}
+                                            />
+                                            {(sc.allows_reschedule || sc.allows_cancel) && sc.min_hours_before > 0 && (
+                                                <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>⏱ Trước ít nhất {sc.min_hours_before} giờ</div>
+                                            )}
+                                        </div>
+
                                         <button
                                             className="ttm-select-btn"
                                             disabled={notEnough}
                                             onClick={(e) => { e.stopPropagation(); if (!notEnough) setSelected(sc); }}
+                                            style={{ background: isSelected ? "linear-gradient(135deg,#00215a,#003580)" : undefined }}
                                         >
                                             {notEnough ? "Hết chỗ" : isSelected ? "✓ Đã chọn" : "Chọn"}
                                         </button>
@@ -252,22 +307,18 @@ export default function TrainTicketModal({ train, passengers, onClose }: Props) 
                         <div>
                             {selected ? (
                                 <>
-                                    <div className="ttm-sel-info">
-                                        {SEAT_CLASS_LABEL[selected.seat_class]} · {passengers} khách
+                                    <div style={{ fontSize: "0.88rem", color: "#6b8cbf" }}>
+                                        {selected.label || SEAT_CLASS_LABEL[selected.seat_class]} · {passengers} khách
                                     </div>
-                                    <div className="ttm-sel-price">
-                                        {totalPrice.toLocaleString("vi-VN")}₫
+                                    <div style={{ fontFamily: "Nunito, sans-serif", fontSize: "1.1rem", fontWeight: 800, color: "#003580" }}>
+                                        {(selected.price * passengers).toLocaleString("vi-VN")}₫
                                     </div>
                                 </>
                             ) : (
-                                <div className="ttm-sel-info">Chưa chọn hạng ghế</div>
+                                <div style={{ fontSize: "0.88rem", color: "#6b8cbf" }}>Chưa chọn hạng ghế</div>
                             )}
                         </div>
-                        <button
-                            className="ttm-confirm-btn"
-                            disabled={!selected}
-                            onClick={handleConfirm}
-                        >
+                        <button className="ttm-confirm-btn" disabled={!selected} onClick={handleConfirm}>
                             Tiếp tục →
                         </button>
                     </div>

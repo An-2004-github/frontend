@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { User } from '@/types/user';
+import api from '@/lib/axios';
 
 interface AuthState {
     user: User | null;
@@ -11,11 +12,12 @@ interface AuthState {
     logout: () => void;
     setHasHydrated: (v: boolean) => void;
     updateUser: (partial: Partial<User>) => void;
+    refreshWallet: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>()(
     persist(
-        (set) => ({
+        (set, get) => ({
             user: null,
             token: null,
             isAuthenticated: false,
@@ -35,6 +37,18 @@ export const useAuthStore = create<AuthState>()(
                 set((state) => ({
                     user: state.user ? { ...state.user, ...partial } : state.user,
                 })),
+
+            refreshWallet: async () => {
+                if (!get().user) return;
+                try {
+                    const res = await api.get('/api/auth/me');
+                    if (res.data?.wallet !== undefined) {
+                        set((state) => ({
+                            user: state.user ? { ...state.user, wallet: res.data.wallet } : state.user,
+                        }));
+                    }
+                } catch { /* ignore */ }
+            },
         }),
         {
             name: 'auth-storage',

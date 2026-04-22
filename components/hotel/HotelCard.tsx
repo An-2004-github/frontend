@@ -81,19 +81,40 @@ export default function HotelCard({ hotel, adults = 1, childrenCount = 0, rooms 
                     </div>
                 )}
 
-                {/* Room availability */}
-                {availRooms !== null && (
-                    <div style={{
-                        display: "inline-flex", alignItems: "center", gap: "0.3rem",
-                        fontSize: "0.72rem", fontWeight: 700,
-                        padding: "0.2rem 0.6rem", borderRadius: 99, marginTop: "0.2rem",
-                        background: isFull ? "#fff0f0" : isLowRoom ? "#fff8e1" : "#e6f9f0",
-                        color: isFull ? "#c0392b" : isLowRoom ? "#b8860b" : "#00875a",
-                        border: `1px solid ${isFull ? "#ffcdd2" : isLowRoom ? "#ffe082" : "#b7dfbb"}`,
-                    }}>
-                        {isFull ? "🚫 Hết phòng" : isLowRoom ? `🔥 Còn ${availRooms} phòng` : `✅ Còn ${availRooms} phòng trống`}
-                    </div>
-                )}
+                {/* Room availability + refund policy */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", marginTop: "0.2rem" }}>
+                    {availRooms !== null && (
+                        <div style={{
+                            display: "inline-flex", alignItems: "center", gap: "0.3rem",
+                            fontSize: "0.72rem", fontWeight: 700,
+                            padding: "0.2rem 0.6rem", borderRadius: 99,
+                            background: isFull ? "#fff0f0" : isLowRoom ? "#fff8e1" : "#e6f9f0",
+                            color: isFull ? "#c0392b" : isLowRoom ? "#b8860b" : "#00875a",
+                            border: `1px solid ${isFull ? "#ffcdd2" : isLowRoom ? "#ffe082" : "#b7dfbb"}`,
+                        }}>
+                            {isFull ? "🚫 Hết phòng" : isLowRoom ? `🔥 Còn ${availRooms} phòng` : `✅ Còn ${availRooms} phòng trống`}
+                        </div>
+                    )}
+                    {!hotel.allows_refund ? (
+                        <div style={{
+                            display: "inline-flex", alignItems: "center", gap: "0.3rem",
+                            fontSize: "0.72rem", fontWeight: 700,
+                            padding: "0.2rem 0.6rem", borderRadius: 99,
+                            background: "#fff0f0", color: "#c0392b", border: "1px solid #ffcdd2",
+                        }}>
+                            ⛔ Không hoàn tiền
+                        </div>
+                    ) : (
+                        <div style={{
+                            display: "inline-flex", alignItems: "center", gap: "0.3rem",
+                            fontSize: "0.72rem", fontWeight: 700,
+                            padding: "0.2rem 0.6rem", borderRadius: 99,
+                            background: "#e6f9f0", color: "#00875a", border: "1px solid #b7dfbb",
+                        }}>
+                            ✓ Có thể hoàn tiền
+                        </div>
+                    )}
+                </div>
 
                 {/* Footer */}
                 <div className="hcard-footer">

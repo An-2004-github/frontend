@@ -1,23 +1,45 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import DestinationInput from "@/components/ui/DestinationInput";
 import { logSearch } from "@/lib/logInteraction";
 
 type ServiceType = "hotel" | "flight" | "train" | "bus";
 
-const TODAY = new Date().toISOString().split("T")[0];
-const TOMORROW = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; })();
+// Tính ngày theo local timezone của trình duyệt
+function localDateStr(offsetDays = 0): string {
+    const d = new Date();
+    d.setDate(d.getDate() + offsetDays);
+    return [
+        d.getFullYear(),
+        String(d.getMonth() + 1).padStart(2, "0"),
+        String(d.getDate()).padStart(2, "0"),
+    ].join("-");
+}
+
+function addDays(dateStr: string, days: number): string {
+    const d = new Date(dateStr);
+    d.setDate(d.getDate() + days);
+    return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0")].join("-");
+}
+
+// Server trả "" (không có timezone), client trả ngày thực — không gây hydration mismatch
+const useClientDate = (offsetDays = 0) =>
+    useSyncExternalStore(() => () => {}, () => localDateStr(offsetDays), () => "");
 
 export default function SearchBar() {
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<ServiceType>("hotel");
 
+    // Ngày client-only (server snapshot = "", client snapshot = ngày thực)
+    const clientToday    = useClientDate(0);
+    const clientTomorrow = useClientDate(1);
+
     // ── Hotel state ──────────────────────────────────────────────
     const [hotelQuery, setHotelQuery] = useState("");
-    const [checkIn, setCheckIn]       = useState(TODAY);
-    const [checkOut, setCheckOut]     = useState(TOMORROW);
+    const [checkIn, setCheckIn]       = useState("");
+    const [checkOut, setCheckOut]     = useState("");
     const [adults, setAdults]         = useState(1);
     const [children, setChildren]     = useState(0);
     const [rooms, setRooms]           = useState(1);
@@ -27,13 +49,17 @@ export default function SearchBar() {
     // ── Flight / Bus / Train state ───────────────────────────────
     const [fromCity, setFromCity]       = useState("");
     const [toCity, setToCity]           = useState("");
-    const [departDate, setDepartDate]   = useState(TODAY);
+    const [departDate, setDepartDate]   = useState("");
     const [paxAdults, setPaxAdults]     = useState(1);
     const [paxChildren, setPaxChildren] = useState(0);
     const [paxOpen, setPaxOpen]         = useState(false);
     const paxRef = useRef<HTMLDivElement>(null);
 
-    // Đóng dropdown khi click ngoài
+    // Giá trị hiệu dụng: dùng state nếu user đã chọn, không thì fallback về ngày client
+    const effectiveCheckIn   = checkIn    || clientToday;
+    const effectiveCheckOut  = checkOut   || clientTomorrow;
+    const effectiveDepartDate = departDate || clientToday;
+
     useEffect(() => {
         const handler = (e: MouseEvent) => {
             if (guestRef.current && !guestRef.current.contains(e.target as Node)) setGuestOpen(false);
@@ -252,8 +278,8 @@ export default function SearchBar() {
                                 <input
                                     className="sb-input"
                                     type="date"
-                                    value={checkIn}
-                                    min={TODAY}
+                                    value={effectiveCheckIn}
+                                    min={clientToday}
                                     onChange={e => {
                                         const v = e.target.value;
                                         setCheckIn(v);
@@ -271,8 +297,8 @@ export default function SearchBar() {
                                 <input
                                     className="sb-input"
                                     type="date"
-                                    value={checkOut}
-                                    min={(() => { const d = new Date(checkIn || TODAY); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; })()}
+                                    value={effectiveCheckOut}
+                                    min={effectiveCheckIn ? addDays(effectiveCheckIn, 1) : clientTomorrow}
                                     onChange={e => setCheckOut(e.target.value)}
                                 />
                             </div>
@@ -358,8 +384,8 @@ export default function SearchBar() {
                                 <input
                                     className="sb-input"
                                     type="date"
-                                    value={departDate}
-                                    min={TODAY}
+                                    value={effectiveDepartDate}
+                                    min={clientToday}
                                     onChange={e => setDepartDate(e.target.value)}
                                 />
                             </div>
