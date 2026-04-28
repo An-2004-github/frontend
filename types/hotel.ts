@@ -30,8 +30,9 @@ export interface Hotel {
     image_url?: string;
     images?: string[];           // dùng ở trang detail
 
-    // Chính sách hoàn tiền của khách sạn
+    // Chính sách của khách sạn
     allows_refund?: boolean;
+    allows_reschedule?: boolean;
 
     // Dùng ở trang detail
     room_types?: RoomType[];

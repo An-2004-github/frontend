@@ -11,12 +11,16 @@ export interface HotelBooking {
     checkOut: string;
     nights: number;
     guests: number;
+    adultsCount: number;
+    childrenCount: number;
     basePrice: number;
     taxAndFees: number;
     originalPrice?: number;
     totalPrice: number;
     checkInTime?: string;
     checkOutTime?: string;
+    allowsRefund?: boolean;
+    allowsReschedule?: boolean;
 }
 
 export interface FlightBooking {
@@ -46,6 +50,7 @@ export interface BusBooking {
     departTime: string;
     arriveTime: string;
     passengers: number;
+    seatClass?: string;
     basePrice: number;
     taxAndFees: number;
     totalPrice: number;

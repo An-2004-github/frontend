@@ -233,6 +233,57 @@ def get_all_bookings(skip: int = 0, limit: int = 50, search: str = "", admin_id:
     return [dict(r._mapping) for r in rows]
 
 
+@router.get("/bookings/{booking_id}/detail")
+def get_booking_detail_admin(booking_id: int, admin_id: int = Depends(get_admin_user)):
+    import json as _json
+    with engine.connect() as conn:
+        booking = conn.execute(
+            text("SELECT b.*, u.full_name AS user_name, u.email AS user_email FROM bookings b JOIN users u ON u.user_id = b.user_id WHERE b.booking_id = :id"),
+            {"id": booking_id}
+        ).fetchone()
+        if not booking:
+            raise HTTPException(404, "Booking không tồn tại")
+        result = dict(booking._mapping)
+
+        # Items
+        items = conn.execute(text("""
+            SELECT bi.*,
+                CASE bi.entity_type
+                    WHEN 'room'   THEN CONCAT(h.name, ' - ', rt.name)
+                    WHEN 'flight' THEN CONCAT(f.airline, ': ', f.from_city, ' → ', f.to_city)
+                    WHEN 'bus'    THEN CONCAT(bs.company, ': ', bs.from_city, ' → ', bs.to_city)
+                    WHEN 'train'  THEN CONCAT('Tàu ', t.train_code, ': ', t.from_city, ' → ', t.to_city)
+                    ELSE CONCAT(bi.entity_type, ' #', bi.entity_id)
+                END AS entity_name
+            FROM booking_items bi
+            LEFT JOIN room_types rt ON rt.room_type_id = bi.entity_id AND bi.entity_type = 'room'
+            LEFT JOIN hotels h ON h.hotel_id = rt.hotel_id
+            LEFT JOIN flights f ON f.flight_id = bi.entity_id AND bi.entity_type = 'flight'
+            LEFT JOIN buses bs ON bs.bus_id = bi.entity_id AND bi.entity_type = 'bus'
+            LEFT JOIN trains t ON t.train_id = bi.entity_id AND bi.entity_type = 'train'
+            WHERE bi.booking_id = :id
+        """), {"id": booking_id}).fetchall()
+        result["items"] = [dict(i._mapping) for i in items]
+
+        # Payment transactions
+        payments = conn.execute(text("""
+            SELECT method, amount, status, paid_at, transaction_ref
+            FROM payment_transactions WHERE booking_id = :id ORDER BY paid_at ASC
+        """), {"id": booking_id}).fetchall()
+        result["payments"] = [dict(p._mapping) for p in payments]
+
+        # Modification history (full)
+        mods = conn.execute(text("""
+            SELECT m.*, u2.full_name AS acted_by
+            FROM booking_modifications m
+            LEFT JOIN users u2 ON u2.user_id = m.user_id
+            WHERE m.booking_id = :id ORDER BY m.created_at ASC
+        """), {"id": booking_id}).fetchall()
+        result["modifications"] = [dict(m._mapping) for m in mods]
+
+        return result
+
+
 @router.put("/bookings/{booking_id}/status")
 def update_booking_status(booking_id: int, status: str, background_tasks: BackgroundTasks, admin_id: int = Depends(get_admin_user)):
     if status not in ("pending", "confirmed", "cancelled"):
@@ -720,7 +771,7 @@ async def admin_approve_withdrawal(
 
     with engine.begin() as conn:
         req = conn.execute(
-            text("SELECT wr.*, u.full_name, u.email FROM withdrawal_requests wr JOIN users u ON u.user_id = wr.user_id WHERE wr.wr_id = :id"),
+            text("SELECT wr.*, u.full_name, u.email FROM withdrawal_requests wr JOIN users u ON u.user_id = wr.user_id WHERE wr.wr_id = :id FOR UPDATE"),
             {"id": withdrawal_id}
         ).fetchone()
         if not req:
@@ -730,7 +781,7 @@ async def admin_approve_withdrawal(
             raise HTTPException(400, "Yêu cầu này đã được xử lý")
 
         balance = conn.execute(
-            text("SELECT wallet FROM users WHERE user_id = :uid"),
+            text("SELECT wallet FROM users WHERE user_id = :uid FOR UPDATE"),
             {"uid": req_dict["user_id"]}
         ).scalar()
         if float(balance or 0) < float(req_dict["amount"]):
@@ -849,12 +900,15 @@ class PromotionRequest(BaseModel):
 def admin_get_promotions(skip: int = 0, limit: int = 50, search: str = "", admin_id: int = Depends(get_admin_user)):
     with engine.connect() as conn:
         params: dict = {"limit": limit, "skip": skip}
-        where = ""
         if search:
-            where = f"WHERE code LIKE '%{search}%' OR description LIKE '%{search}%'"
-        rows = conn.execute(text(
-            f"SELECT * FROM promotions {where} ORDER BY promo_id DESC LIMIT :limit OFFSET :skip"
-        ), params).fetchall()
+            params["s"] = f"%{search}%"
+            rows = conn.execute(text(
+                "SELECT * FROM promotions WHERE code LIKE :s OR description LIKE :s ORDER BY promo_id DESC LIMIT :limit OFFSET :skip"
+            ), params).fetchall()
+        else:
+            rows = conn.execute(text(
+                "SELECT * FROM promotions ORDER BY promo_id DESC LIMIT :limit OFFSET :skip"
+            ), params).fetchall()
     return [dict(r._mapping) for r in rows]
 
 
@@ -1102,7 +1156,8 @@ def get_modifications(skip: int = 0, limit: int = 50, search: str = "", admin_id
                     WHEN 'bus'    THEN CONCAT(bs.company, ': ', bs.from_city, ' → ', bs.to_city)
                     ELSE CONCAT(bi.entity_type, ' #', bi.entity_id)
                 END AS entity_name,
-                bi.entity_type
+                bi.entity_type,
+                adm.full_name AS approved_by_name
             FROM booking_modifications m
             JOIN users u ON u.user_id = m.user_id
             JOIN booking_items bi ON bi.booking_id = m.booking_id
@@ -1110,6 +1165,7 @@ def get_modifications(skip: int = 0, limit: int = 50, search: str = "", admin_id
             LEFT JOIN hotels h ON h.hotel_id = rt.hotel_id
             LEFT JOIN flights f ON f.flight_id = bi.entity_id AND bi.entity_type = 'flight'
             LEFT JOIN buses bs ON bs.bus_id = bi.entity_id AND bi.entity_type = 'bus'
+            LEFT JOIN users adm ON adm.user_id = m.approved_by
             ORDER BY m.created_at DESC
             LIMIT :limit OFFSET :skip
         """), {"limit": limit, "skip": skip}).fetchall()
@@ -1121,7 +1177,7 @@ def approve_modification(mod_id: int, data: dict = {}, background_tasks: Backgro
                          admin_id: int = Depends(get_admin_user)):
     with engine.begin() as conn:
         mod = conn.execute(
-            text("SELECT * FROM booking_modifications WHERE mod_id = :id AND status = 'pending'"),
+            text("SELECT * FROM booking_modifications WHERE mod_id = :id AND status = 'pending' FOR UPDATE"),
             {"id": mod_id}
         ).fetchone()
         if not mod:
@@ -1196,8 +1252,8 @@ def approve_modification(mod_id: int, data: dict = {}, background_tasks: Backgro
             )
 
         conn.execute(
-            text("UPDATE booking_modifications SET status = 'approved', admin_note = :note WHERE mod_id = :id"),
-            {"id": mod_id, "note": (data or {}).get("note", "")}
+            text("UPDATE booking_modifications SET status = 'approved', admin_note = :note, approved_by = :ab, approved_at = NOW() WHERE mod_id = :id"),
+            {"id": mod_id, "note": (data or {}).get("note", ""), "ab": admin_id}
         )
 
     return {"message": "Đã duyệt yêu cầu"}
@@ -1218,8 +1274,8 @@ def reject_modification(mod_id: int, data: dict = {}, admin_id: int = Depends(ge
         # Không restore cancel vì booking đã bị huỷ ngay khi user gửi yêu cầu
 
         conn.execute(
-            text("UPDATE booking_modifications SET status = 'rejected', admin_note = :note WHERE mod_id = :id"),
-            {"id": mod_id, "note": (data or {}).get("note", "")}
+            text("UPDATE booking_modifications SET status = 'rejected', admin_note = :note, approved_by = :ab, approved_at = NOW() WHERE mod_id = :id"),
+            {"id": mod_id, "note": (data or {}).get("note", ""), "ab": admin_id}
         )
 
     return {"message": "Đã từ chối yêu cầu"}

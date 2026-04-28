@@ -7,67 +7,67 @@ import api from "@/lib/axios";
 import DestinationInput from "@/components/ui/DestinationInput";
 
 // ── Types ──────────────────────────────────────────────────────────
-type Budget        = "under5m" | "5to10m" | "10to20m" | "over20m";
-type Transport     = "flight" | "bus" | "self_drive" | "any";
+type Budget = "under5m" | "5to10m" | "10to20m" | "over20m";
+type Transport = "flight" | "bus" | "self_drive" | "any";
 type ItineraryType = "short" | "medium" | "long";
 
 interface TrendingDest {
     destination_id: number;
-    city:           string;
-    name:           string;
-    avg_rating:     number;
-    min_price?:     number;
-    image_url?:     string;
-    trend_score:    number;
-    booking_score:  number;
+    city: string;
+    name: string;
+    avg_rating: number;
+    min_price?: number;
+    image_url?: string;
+    trend_score: number;
+    booking_score: number;
     interact_score: number;
-    search_score:   number;
+    search_score: number;
 }
 
 interface Suggestion {
-    city:           string;
-    match_score:    number;
-    tagline:        string;
-    why_match:      string;
-    highlights:     string[];
-    budget_note:    string;
-    transport_tip:  string;
-    itinerary:      string;
+    city: string;
+    match_score: number;
+    tagline: string;
+    why_match: string;
+    highlights: string[];
+    budget_note: string;
+    transport_tip: string;
+    itinerary: string;
     destination_id?: number;
-    image_url?:     string;
-    min_price?:     number;
-    avg_rating?:    number;
+    image_url?: string;
+    min_price?: number;
+    avg_rating?: number;
 }
 
 // ── Constants ──────────────────────────────────────────────────────
 const INTERESTS = [
-    { id: "resort",    label: "🏖️ Nghỉ dưỡng" },
-    { id: "relax",     label: "🧘 Thư giãn" },
-    { id: "culture",   label: "🏛️ Văn hoá - Lịch sử" },
-    { id: "food",      label: "🍜 Ẩm thực" },
+    { id: "resort", label: "🏖️ Nghỉ dưỡng" },
+    { id: "relax", label: "🧘 Thư giãn" },
+    { id: "culture", label: "🏛️ Văn hoá - Lịch sử" },
+    { id: "food", label: "🍜 Ẩm thực" },
     { id: "adventure", label: "🧗 Mạo hiểm" },
-    { id: "family",    label: "👨‍👩‍👧 Gia đình" },
-    { id: "romantic",  label: "💑 Lãng mạn - Cặp đôi" },
+    { id: "family", label: "👨‍👩‍👧 Gia đình" },
+    { id: "romantic", label: "💑 Lãng mạn - Cặp đôi" },
 ];
 
 const BUDGETS: { id: Budget; label: string; desc: string }[] = [
-    { id: "under5m",  label: "< 5 triệu",   desc: "Tiết kiệm" },
-    { id: "5to10m",   label: "5–10 triệu",  desc: "Thoải mái" },
-    { id: "10to20m",  label: "10–20 triệu", desc: "Cao cấp" },
-    { id: "over20m",  label: "> 20 triệu",  desc: "Sang trọng" },
+    { id: "under5m", label: "< 5 triệu", desc: "Tiết kiệm" },
+    { id: "5to10m", label: "5–10 triệu", desc: "Thoải mái" },
+    { id: "10to20m", label: "10–20 triệu", desc: "Cao cấp" },
+    { id: "over20m", label: "> 20 triệu", desc: "Sang trọng" },
 ];
 
 const TRANSPORTS: { id: Transport; icon: string; label: string }[] = [
-    { id: "flight",     icon: "✈️", label: "Máy bay" },
-    { id: "bus",        icon: "🚌", label: "Xe khách" },
+    { id: "flight", icon: "✈️", label: "Máy bay" },
+    { id: "bus", icon: "🚌", label: "Xe khách" },
     { id: "self_drive", icon: "🚗", label: "Tự lái" },
-    { id: "any",        icon: "🔄", label: "Linh hoạt" },
+    { id: "any", icon: "🔄", label: "Linh hoạt" },
 ];
 
 const ITINERARIES: { id: ItineraryType; label: string; desc: string }[] = [
-    { id: "short",  label: "1–3 ngày",  desc: "Cuối tuần" },
-    { id: "medium", label: "4–7 ngày",  desc: "Kỳ nghỉ" },
-    { id: "long",   label: "> 7 ngày",  desc: "Dài ngày" },
+    { id: "short", label: "1–3 ngày", desc: "Cuối tuần" },
+    { id: "medium", label: "4–7 ngày", desc: "Kỳ nghỉ" },
+    { id: "long", label: "> 7 ngày", desc: "Dài ngày" },
 ];
 
 const SCORE_COLOR = (s: number) =>
@@ -79,30 +79,30 @@ const TODAY = new Date().toISOString().split("T")[0];
 export default function TravelPlannerPage() {
     // Form state
     const [destination, setDestination] = useState("");
-    const [departDate,  setDepartDate]  = useState("");
-    const [returnDate,  setReturnDate]  = useState("");
-    const [budget,      setBudget]      = useState<Budget | "">("");
-    const [interests,   setInterests]   = useState<string[]>([]);
-    const [people,      setPeople]      = useState(2);
-    const [transport,   setTransport]   = useState<Transport | "">("");
-    const [itinerary,   setItinerary]   = useState<ItineraryType | "">("");
+    const [departDate, setDepartDate] = useState("");
+    const [returnDate, setReturnDate] = useState("");
+    const [budget, setBudget] = useState<Budget | "">("");
+    const [interests, setInterests] = useState<string[]>([]);
+    const [people, setPeople] = useState(2);
+    const [transport, setTransport] = useState<Transport | "">("");
+    const [itinerary, setItinerary] = useState<ItineraryType | "">("");
 
     // Trending state
-    const [trending,        setTrending]        = useState<TrendingDest[]>([]);
+    const [trending, setTrending] = useState<TrendingDest[]>([]);
     const [trendingLoading, setTrendingLoading] = useState(true);
 
     useEffect(() => {
         api.get("/api/travel-planner/trending", { params: { limit: 8, days: 30 } })
             .then(res => setTrending(res.data))
-            .catch(() => {})
+            .catch(() => { })
             .finally(() => setTrendingLoading(false));
     }, []);
 
     // Result state
     const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-    const [loading,     setLoading]     = useState(false);
-    const [error,       setError]       = useState("");
-    const [submitted,   setSubmitted]   = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
+    const [submitted, setSubmitted] = useState(false);
 
     const toggleInterest = (id: string) =>
         setInterests(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -115,14 +115,14 @@ export default function TravelPlannerPage() {
         setSuggestions([]);
         try {
             const res = await api.post("/api/travel-planner/suggest", {
-                destination:    destination || null,
-                depart_date:    departDate  || null,
-                return_date:    returnDate  || null,
-                budget:         budget      || null,
+                destination: destination || null,
+                depart_date: departDate || null,
+                return_date: returnDate || null,
+                budget: budget || null,
                 interests,
                 people,
-                transport:      transport   || null,
-                itinerary_type: itinerary   || null,
+                transport: transport || null,
+                itinerary_type: itinerary || null,
             });
             setSuggestions(res.data);
         } catch {
@@ -323,15 +323,15 @@ export default function TravelPlannerPage() {
 
                         {/* Ngày đi / về */}
                         <div className="tp-card">
-                            <div className="tp-card-title">📅 Thời gian</div>
+                            <div className="tp-card-title">📅 Quỹ thời gian</div>
                             <div className="tp-date-row">
                                 <div>
-                                    <div className="tp-label">Ngày đi</div>
+                                    <div className="tp-label">Từ ngày</div>
                                     <input type="date" className="tp-input" value={departDate} min={TODAY}
                                         onChange={e => setDepartDate(e.target.value)} />
                                 </div>
                                 <div>
-                                    <div className="tp-label">Ngày về</div>
+                                    <div className="tp-label">Đến ngày</div>
                                     <input type="date" className="tp-input" value={returnDate} min={departDate || TODAY}
                                         onChange={e => setReturnDate(e.target.value)} />
                                 </div>

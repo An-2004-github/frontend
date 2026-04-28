@@ -10,6 +10,12 @@ import { promotionService } from "@/services/promotionService";
 import { Promotion } from "@/types/promotion";
 import DestinationInput from "@/components/ui/DestinationInput";
 
+function localDate(offsetDays = 0): string {
+    const d = new Date();
+    d.setDate(d.getDate() + offsetDays);
+    return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0")].join("-");
+}
+
 const PRICE_OPTIONS = [
     { label: "Tất cả", min: undefined, max: undefined },
     { label: "Dưới 1 triệu", min: undefined, max: 1_000_000 },
@@ -28,6 +34,17 @@ const SORT_OPTIONS = [
     { label: "Đánh giá cao nhất", value: "rating" },
     { label: "Giá thấp nhất", value: "price_asc" },
     { label: "Giá cao nhất", value: "price_desc" },
+];
+
+const AMENITIES_LIST = [
+    { label: "WiFi miễn phí", value: "WiFi", icon: "📶" },
+    { label: "Hồ bơi", value: "Hồ bơi", icon: "🏊" },
+    { label: "Bãi đỗ xe", value: "Bãi đỗ xe", icon: "🅿️" },
+    { label: "Bữa sáng", value: "Bữa sáng", icon: "🍳" },
+    { label: "Gym", value: "Gym", icon: "💪" },
+    { label: "Spa", value: "Spa", icon: "💆" },
+    { label: "Điều hòa", value: "Điều hòa", icon: "❄️" },
+    { label: "Nhà hàng", value: "Nhà hàng", icon: "🍽️" },
 ];
 
 const POPULAR_CITIES_HP = [
@@ -53,13 +70,18 @@ export default function HotelsPage() {
 
     // Filter state
     const [searchInput, setSearchInput] = useState("");
+    const [searchError, setSearchError] = useState("");
     const [search, setSearch] = useState("");
     const [priceIdx, setPriceIdx] = useState(0);
     const [ratingIdx, setRatingIdx] = useState(0);
     const [sortVal, setSortVal] = useState("rating");
+    const [refundOnly, setRefundOnly] = useState(false);
+    const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
     const [selectedCity, setSelectedCity] = useState<string | null>(null);
-    const [checkIn, setCheckIn] = useState(() => new Date().toISOString().split("T")[0]);
-    const [checkOut, setCheckOut] = useState("");
+    const [checkIn, setCheckIn] = useState(() => localDate(0));
+    const [checkOut, setCheckOut] = useState(() => {
+        return localDate(1);
+    });
     const [showFilter, setShowFilter] = useState(false);
 
     // Guest picker
@@ -147,21 +169,34 @@ export default function HotelsPage() {
                 sort: sortVal as "rating" | "price_asc" | "price_desc",
                 min_guests: guestsPerRoom,
             });
+            let filtered = data;
             const minRating = RATING_OPTIONS[ratingIdx].min;
-            setHotels(minRating > 0 ? data.filter(h => (h.avg_rating ?? 0) >= minRating) : data);
+            if (minRating > 0) filtered = filtered.filter(h => (h.avg_rating ?? 0) >= minRating);
+            if (refundOnly) filtered = filtered.filter(h => h.allows_refund === true);
+            if (selectedAmenities.length > 0) {
+                filtered = filtered.filter(h => {
+                    const hAmens: string[] = Array.isArray(h.amenities) ? h.amenities : [];
+                    return selectedAmenities.every(a =>
+                        hAmens.some(ha => ha.toLowerCase().includes(a.toLowerCase()))
+                    );
+                });
+            }
+            setHotels(filtered);
         } finally {
             setLoadingHotels(false);
         }
-    }, [priceIdx, ratingIdx, sortVal, guestsPerRoom]);
+    }, [priceIdx, ratingIdx, sortVal, guestsPerRoom, refundOnly, selectedAmenities]);
 
     // Tự động re-fetch khi filter/sort thay đổi (chỉ khi đã tìm kiếm)
     useEffect(() => {
         if (!showFilter) return;
         fetchHotels(search);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [priceIdx, ratingIdx, sortVal, guestsPerRoom]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [priceIdx, ratingIdx, sortVal, guestsPerRoom, refundOnly, selectedAmenities]);
 
     const handleSearch = () => {
+        if (!searchInput.trim()) { setSearchError("Vui lòng nhập tên khách sạn hoặc địa điểm"); return; }
+        setSearchError("");
         setSearch(searchInput);
         setShowFilter(true);
         fetchHotels(searchInput);
@@ -172,6 +207,7 @@ export default function HotelsPage() {
         setSearchInput("");
         setPriceIdx(0); setRatingIdx(0);
         setSortVal("rating"); setSelectedCity(null);
+        setRefundOnly(false); setSelectedAmenities([]);
         setShowFilter(false); setHotels([]);
     };
 
@@ -227,7 +263,7 @@ export default function HotelsPage() {
                     display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;
                 }
                 .hp-search-field {
-                    display: flex; flex-direction: column; gap: 0.35rem; flex: 1; min-width: 160px;
+                    display: flex; flex-direction: column; gap: 0.35rem; flex: 1; min-width: 160px; position: relative;
                 }
                 .hp-search-label {
                     font-size: 0.72rem; font-weight: 600; color: #6b778c;
@@ -293,8 +329,10 @@ export default function HotelsPage() {
                     font-family: 'Nunito', sans-serif; font-size: 0.95rem; font-weight: 700;
                     cursor: pointer; white-space: nowrap;
                     transition: opacity 0.15s, transform 0.15s;
+                    margin-left: auto; align-self: flex-end;
                 }
-                .hp-search-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+                .hp-search-btn:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+                .hp-search-btn:disabled { background: #b0bcd8; cursor: not-allowed; opacity: 0.7; }
 
                 /* ── CONTENT ── */
                 .hp-content {
@@ -456,6 +494,46 @@ export default function HotelsPage() {
                 }
                 .hp-sort-select:focus { border-color: #0052cc; }
 
+                .hp-refund-toggle {
+                    display: flex; align-items: center; gap: 0.55rem;
+                    padding: 0.45rem 0.7rem; border-radius: 8px;
+                    border: 1.5px solid #e8f0fe; background: #fff;
+                    font-size: 0.82rem; color: #3a5f9a; cursor: pointer;
+                    width: 100%; text-align: left; transition: all 0.15s;
+                }
+                .hp-refund-toggle:hover { background: #f0f4ff; }
+                .hp-refund-toggle.active {
+                    background: #e6f9f0; border-color: #b7dfbb;
+                    color: #00875a; font-weight: 600;
+                }
+                .hp-refund-toggle .hp-toggle-box {
+                    width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0;
+                    border: 2px solid #00875a; display: flex; align-items: center;
+                    justify-content: center; font-size: 0.65rem; color: #fff;
+                    background: transparent; transition: background 0.15s;
+                }
+                .hp-refund-toggle.active .hp-toggle-box { background: #00875a; }
+
+                .hp-amenity-item {
+                    display: flex; align-items: center; gap: 0.5rem;
+                    padding: 0.38rem 0.6rem; border-radius: 7px;
+                    border: 1.5px solid #e8f0fe; background: #fff;
+                    font-size: 0.8rem; color: #3a5f9a; cursor: pointer;
+                    margin-bottom: 0.3rem; transition: all 0.15s;
+                }
+                .hp-amenity-item:hover { background: #f0f4ff; }
+                .hp-amenity-item.active {
+                    background: #e8f0fe; border-color: rgba(0,82,204,0.35);
+                    color: #0052cc; font-weight: 500;
+                }
+                .hp-amenity-check {
+                    width: 15px; height: 15px; border-radius: 4px; flex-shrink: 0;
+                    border: 2px solid #0052cc; display: flex; align-items: center;
+                    justify-content: center; font-size: 0.6rem; color: #fff;
+                    background: transparent; transition: background 0.15s;
+                }
+                .hp-amenity-item.active .hp-amenity-check { background: #0052cc; }
+
                 .hp-reset-btn {
                     width: 100%; padding: 0.6rem;
                     background: #f0f4ff; color: #0052cc;
@@ -538,20 +616,20 @@ export default function HotelsPage() {
                     display: flex; align-items: center; justify-content: space-between;
                     border-top: 1px solid #eef2fb; padding-top: 0.75rem; margin-top: auto;
                 }
-                .hcard-price { display: flex; align-items: baseline; gap: 0.25rem; }
-                .hcard-price-from { font-size: 0.72rem; color: #6b8cbf; }
+                .hcard-price { display: flex; align-items: baseline; gap: 0.2rem; }
+                .hcard-price-from { font-size: 0.68rem; color: #6b8cbf; }
                 .hcard-price-value {
                     font-family: 'Nunito', sans-serif;
-                    font-size: 1.05rem; font-weight: 800; color: #0052cc;
+                    font-size: 0.88rem; font-weight: 800; color: #0052cc;
                 }
-                .hcard-price-night { font-size: 0.72rem; color: #6b8cbf; }
-                .hcard-price-contact { font-size: 0.8rem; color: #6b8cbf; }
+                .hcard-price-night { font-size: 0.68rem; color: #6b8cbf; }
+                .hcard-price-contact { font-size: 0.75rem; color: #6b8cbf; }
                 .hcard-btn {
-                    padding: 0.45rem 1rem;
+                    padding: 0.38rem 0.75rem;
                     background: linear-gradient(135deg, #0052cc, #0065ff);
                     color: #fff; border-radius: 8px;
-                    font-size: 0.8rem; font-weight: 600; text-decoration: none;
-                    font-family: 'DM Sans', sans-serif;
+                    font-size: 0.75rem; font-weight: 600; text-decoration: none;
+                    font-family: 'DM Sans', sans-serif; white-space: nowrap;
                     transition: opacity 0.15s;
                 }
                 .hcard-btn:hover { opacity: 0.88; }
@@ -600,7 +678,7 @@ export default function HotelsPage() {
                         <div className="hp-hero-circle" style={{ width: 140, height: 140, left: -40, bottom: -40 }} />
                     </div>
                     <h1>🏨 Tìm khách sạn lý tưởng</h1>
-                    <p>Hàng trăm lựa chọn khách sạn trên toàn Việt Nam với giá tốt nhất</p>
+                    <p>Hàng trăm lựa chọn khách sạn với giá tốt nhất</p>
 
                     {/* Search Box */}
                     <div className="hp-search-box">
@@ -608,19 +686,24 @@ export default function HotelsPage() {
                             <label className="hp-search-label">🔍 Tìm kiếm</label>
                             <DestinationInput
                                 value={searchInput}
-                                onChange={setSearchInput}
-                                placeholder="Nhập tên khách sạn hoặc địa điểm..."
+                                onChange={v => { setSearchInput(v); if (v.trim()) setSearchError(""); }}
+                                placeholder="Tên khách sạn hoặc địa điểm..."
                                 cityMode
+                                inputStyle={searchError ? { borderColor: "#e74c3c", boxShadow: "0 0 0 3px rgba(231,76,60,0.12)" } : {}}
                             />
+                            {searchError && (
+                                <span style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, fontSize: "0.7rem", color: "#fff", background: "#e74c3c", borderRadius: "6px", padding: "0.2rem 0.55rem", display: "flex", alignItems: "center", gap: "0.3rem", whiteSpace: "nowrap", zIndex: 10, boxShadow: "0 2px 8px rgba(231,76,60,0.3)" }}>
+                                    ⚠ {searchError}
+                                </span>
+                            )}
                         </div>
                         <div className="hp-search-field">
                             <label className="hp-search-label">📅 Nhận phòng</label>
-                            <input className="hp-search-input" type="date" value={checkIn} min={new Date().toISOString().split("T")[0]}
+                            <input className="hp-search-input" type="date" value={checkIn} min={localDate(0)}
                                 onChange={e => {
                                     const newCheckIn = e.target.value;
                                     setCheckIn(newCheckIn);
-                                    // Nếu checkOut <= checkIn mới thì reset sang ngày hôm sau
-                                    if (checkOut && checkOut <= newCheckIn) {
+                                    if (!checkOut || checkOut <= newCheckIn) {
                                         const d = new Date(newCheckIn);
                                         d.setDate(d.getDate() + 1);
                                         setCheckOut(d.toISOString().split("T")[0]);
@@ -630,7 +713,7 @@ export default function HotelsPage() {
                         <div className="hp-search-field">
                             <label className="hp-search-label">📅 Trả phòng</label>
                             <input className="hp-search-input" type="date" value={checkOut}
-                                min={(() => { const d = new Date(checkIn || new Date()); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; })()}
+                                min={checkIn ? (([y,m,d]) => { const dt = new Date(+y, +m-1, +d+1); return [dt.getFullYear(), String(dt.getMonth()+1).padStart(2,"0"), String(dt.getDate()).padStart(2,"0")].join("-"); })(checkIn.split("-")) : localDate(1)}
                                 onChange={e => setCheckOut(e.target.value)} />
                         </div>
                         <div className="hp-search-field" style={{ minWidth: 260, position: "relative" }} ref={guestRef}>
@@ -686,7 +769,9 @@ export default function HotelsPage() {
                                 </div>
                             )}
                         </div>
-                        <button className="hp-search-btn" onClick={handleSearch}>Tìm ngay</button>
+                        <button className="hp-search-btn" onClick={handleSearch}>
+                            Tìm ngay
+                        </button>
                     </div>
                 </div>
 
@@ -838,6 +923,38 @@ export default function HotelsPage() {
                                                 <option key={opt.value} value={opt.value}>{opt.label}</option>
                                             ))}
                                         </select>
+                                    </div>
+
+                                    {/* Refund policy */}
+                                    <div className="hp-filter-group">
+                                        <div className="hp-filter-group-label">Chính sách</div>
+                                        <button
+                                            className={`hp-refund-toggle${refundOnly ? " active" : ""}`}
+                                            onClick={() => setRefundOnly(v => !v)}
+                                        >
+                                            <span className="hp-toggle-box">{refundOnly ? "✓" : ""}</span>
+                                            ✅ Có thể hoàn tiền
+                                        </button>
+                                    </div>
+
+                                    {/* Amenities */}
+                                    <div className="hp-filter-group">
+                                        <div className="hp-filter-group-label">Tiện nghi</div>
+                                        {AMENITIES_LIST.map((a) => {
+                                            const active = selectedAmenities.includes(a.value);
+                                            return (
+                                                <div
+                                                    key={a.value}
+                                                    className={`hp-amenity-item${active ? " active" : ""}`}
+                                                    onClick={() => setSelectedAmenities(prev =>
+                                                        active ? prev.filter(x => x !== a.value) : [...prev, a.value]
+                                                    )}
+                                                >
+                                                    <span className="hp-amenity-check">{active ? "✓" : ""}</span>
+                                                    {a.icon} {a.label}
+                                                </div>
+                                            );
+                                        })}
                                     </div>
 
                                     <button className="hp-reset-btn" onClick={handleReset}>

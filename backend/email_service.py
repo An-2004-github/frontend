@@ -379,9 +379,32 @@ async def send_welcome_email(email: str, name: str):
 
 async def send_cancel_confirmation_email(email: str, name: str, booking_id: int,
                                          service_name: str, refund_amount: float,
-                                         cancel_fee: float, refund_method: str):
+                                         cancel_fee: float, refund_method: str,
+                                         non_refundable: bool = False):
     fmt = lambda n: f"{n:,.0f}₫"
-    refund_label = "Ví VIVU" if refund_method == "wallet" else "Tài khoản ngân hàng"
+
+    if non_refundable:
+        body_content = f"""
+            <p>Xin chào <strong>{name}</strong>,</p>
+            <p>Đặt chỗ của bạn đã được hủy thành công.</p>
+            <div class="row"><span class="lbl">Dịch vụ</span><span class="val">{service_name}</span></div>
+            <div class="row"><span class="lbl">Số tiền đã thanh toán</span><span class="val" style="color:#c0392b">{fmt(cancel_fee)}</span></div>
+            <div class="nonrefund">
+                ⛔ <strong>Vé không hoàn tiền</strong><br>
+                Theo chính sách, đặt chỗ này không được hoàn tiền khi hủy.<br>
+                Toàn bộ <strong>{fmt(cancel_fee)}</strong> đã bị mất.
+            </div>"""
+    else:
+        refund_label = "Ví VIVU" if refund_method == "wallet" else "Tài khoản ngân hàng"
+        body_content = f"""
+            <p>Xin chào <strong>{name}</strong>,</p>
+            <p>Đặt chỗ của bạn đã được hủy. Dưới đây là thông tin chi tiết:</p>
+            <div class="row"><span class="lbl">Dịch vụ</span><span class="val">{service_name}</span></div>
+            {'<div class="row"><span class="lbl">Phí hủy</span><span class="val" style="color:#c0392b">' + fmt(cancel_fee) + '</span></div>' if cancel_fee > 0 else ''}
+            <div class="row"><span class="lbl">Số tiền hoàn</span><span class="val" style="color:#00875a">{fmt(refund_amount)}</span></div>
+            <div class="row"><span class="lbl">Phương thức hoàn tiền</span><span class="val">{refund_label}</span></div>
+            <div class="note">⏱ Yêu cầu hoàn tiền sẽ được xử lý trong vòng <strong>2–5 ngày làm việc</strong>.</div>"""
+
     html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
     <style>
         body{{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4ff;margin:0;padding:0}}
@@ -391,19 +414,12 @@ async def send_cancel_confirmation_email(email: str, name: str, booking_id: int,
         .bd{{padding:2rem}} .row{{display:flex;justify-content:space-between;padding:.6rem 0;border-bottom:1px solid #f0f4ff;font-size:.9rem}}
         .row:last-child{{border:none}} .lbl{{color:#6b8cbf}} .val{{font-weight:600;color:#1a3c6b}}
         .note{{background:#fff8e1;border-left:4px solid #f39c12;padding:1rem;margin:1rem 0;border-radius:0 8px 8px 0;font-size:.85rem;color:#7b5700}}
+        .nonrefund{{background:#fff0ee;border-left:4px solid #e74c3c;padding:1rem;margin:1rem 0;border-radius:0 8px 8px 0;font-size:.87rem;color:#7b0000;line-height:1.6}}
         .ft{{background:#f8faff;padding:1rem 2rem;text-align:center;font-size:.8rem;color:#6b8cbf}}
     </style></head><body>
     <div class="w">
         <div class="hd"><h1>❌ Hủy đặt chỗ thành công</h1><p>Mã đặt chỗ #{booking_id}</p></div>
-        <div class="bd">
-            <p>Xin chào <strong>{name}</strong>,</p>
-            <p>Đặt chỗ của bạn đã được hủy. Dưới đây là thông tin chi tiết:</p>
-            <div class="row"><span class="lbl">Dịch vụ</span><span class="val">{service_name}</span></div>
-            <div class="row"><span class="lbl">Phí hủy</span><span class="val" style="color:#c0392b">{fmt(cancel_fee)}</span></div>
-            <div class="row"><span class="lbl">Số tiền hoàn</span><span class="val" style="color:#00875a">{fmt(refund_amount)}</span></div>
-            <div class="row"><span class="lbl">Phương thức hoàn tiền</span><span class="val">{refund_label}</span></div>
-            <div class="note">⏱ Yêu cầu hoàn tiền sẽ được xử lý trong vòng <strong>2–5 ngày làm việc</strong>.</div>
-        </div>
+        <div class="bd">{body_content}</div>
         <div class="ft">VIVU Travel — Cảm ơn bạn đã sử dụng dịch vụ</div>
     </div></body></html>"""
 

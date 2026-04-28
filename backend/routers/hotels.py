@@ -111,6 +111,14 @@ def get_hotels(
         for row in result:
             d = dict(row._mapping)
             d["allows_refund"] = bool(d.get("allows_refund", True))
+            amen_raw = d.get("amenities") or "[]"
+            try:
+                import json as _json
+                amenities = _json.loads(amen_raw) if isinstance(amen_raw, str) else (amen_raw or [])
+            except Exception:
+                amenities = []
+            d["amenities"] = amenities
+            d["allows_reschedule"] = not any("không đổi lịch" in a.lower() for a in amenities)
             rows.append(d)
         return rows
 
@@ -173,6 +181,14 @@ def get_hotel_by_id(hotel_id: int):
 
         hotel = dict(result._mapping)
         hotel["allows_refund"] = bool(hotel.get("allows_refund", True))
+        amen_raw = hotel.get("amenities") or "[]"
+        try:
+            import json as _json
+            amenities = _json.loads(amen_raw) if isinstance(amen_raw, str) else (amen_raw or [])
+        except Exception:
+            amenities = []
+        hotel["amenities"] = amenities
+        hotel["allows_reschedule"] = not any("không đổi lịch" in a.lower() for a in amenities)
         hotel["images"]     = [r.image_url for r in images]
         hotel["room_types"] = [dict(r._mapping) for r in rooms]
         hotel["reviews"]    = [dict(r._mapping) for r in reviews]
@@ -195,11 +211,11 @@ def check_availability(
                     rt.price_per_night,
                     rt.max_guests,
                     rt.total_rooms,
-                    GREATEST(0, rt.total_rooms - COUNT(CASE
+                    GREATEST(0, rt.total_rooms - COALESCE(SUM(CASE
                         WHEN b.status IN ('pending','confirmed')
                             AND bi.check_in_date < :check_out
                             AND bi.check_out_date > :check_in
-                        THEN 1 END)) AS available_rooms,
+                        THEN bi.quantity ELSE 0 END), 0)) AS available_rooms,
                     (SELECT GROUP_CONCAT(img.image_url ORDER BY img.image_id SEPARATOR ',')
                      FROM images img
                      WHERE img.entity_type = 'room_type' AND img.entity_id = rt.room_type_id) AS image_url

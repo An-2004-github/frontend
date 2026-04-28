@@ -133,6 +133,10 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                 .bc-info-icon { color: #6b8cbf; }
                 .bc-policy { font-size: 0.78rem; color: #6b8cbf; display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.35rem; }
                 .bc-policy-icon { width: 15px; height: 15px; border-radius: 50%; border: 1px solid #aaa; display: inline-flex; align-items: center; justify-content: center; font-size: 0.6rem; color: #777; flex-shrink: 0; }
+                .bc-policy-badges { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; margin-bottom: 0.2rem; }
+                .bc-policy-badge { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.73rem; font-weight: 600; padding: 0.25rem 0.65rem; border-radius: 99px; }
+                .bc-policy-badge.ok { background: #e6f9f0; color: #00875a; border: 1px solid #b7dfbb; }
+                .bc-policy-badge.no { background: #fff0f0; color: #c0392b; border: 1px solid #ffcdd2; }
                 .bc-divider { border: none; border-top: 1px solid #eef0f8; margin: 0.85rem 0; }
                 .bc-price-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
                 .bc-price-title { font-size: 0.88rem; font-weight: 700; color: #1a3c6b; }
@@ -227,18 +231,24 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                             </div>
 
                             <div className="bc-info-row">
-                                <span>👥 {booking.guests} khách</span>
-                                <span className="bc-info-icon">🛏</span>
-                                <span className="bc-info-icon">📶</span>
+                                <span>🛏 {booking.quantity} phòng</span>
+                                <span style={{ color: "#c8d8ff" }}>·</span>
+                                <span>👤 {booking.adultsCount} người lớn{booking.childrenCount > 0 ? ` · 🧒 ${booking.childrenCount} trẻ em` : ""}</span>
+                                <span style={{ color: "#c8d8ff" }}>·</span>
+                                <span>🌙 {booking.nights} đêm</span>
                             </div>
 
-                            <div className="bc-policy">
-                                <span className="bc-policy-icon">i</span>
-                                Đặt phòng này không được hoàn tiền.
-                            </div>
-                            <div className="bc-policy">
-                                <span className="bc-policy-icon">i</span>
-                                Non-reschedulable
+                            <div className="bc-policy-badges">
+                                {booking.allowsRefund !== false ? (
+                                    <span className="bc-policy-badge ok">✓ Có thể hoàn tiền</span>
+                                ) : (
+                                    <span className="bc-policy-badge no">⛔ Không hoàn tiền</span>
+                                )}
+                                {booking.allowsReschedule !== false ? (
+                                    <span className="bc-policy-badge ok">✓ Được đổi lịch</span>
+                                ) : (
+                                    <span className="bc-policy-badge no">🚫 Không được đổi lịch</span>
+                                )}
                             </div>
                         </>
                     )}
@@ -247,9 +257,17 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                         <>
                             <div className="bc-room-name">{booking.airline}</div>
                             <div className="bc-popular">{booking.fromCity} → {booking.toCity}</div>
-                            <div className="bc-info-row">✈ Khởi hành: {new Date(booking.departTime).toLocaleString("vi-VN")}</div>
-                            <div className="bc-info-row">✈ Đến: {new Date(booking.arriveTime).toLocaleString("vi-VN")}</div>
-                            <div className="bc-info-row">👥 {booking.passengers} hành khách · {booking.seatClass === "business" ? "Thương gia" : "Phổ thông"}</div>
+                            <div className="bc-info-row">
+                                <span>✈ Khởi hành: {new Date(booking.departTime).toLocaleString("vi-VN")}</span>
+                            </div>
+                            <div className="bc-info-row">
+                                <span>🛬 Đến: {new Date(booking.arriveTime).toLocaleString("vi-VN")}</span>
+                            </div>
+                            <div className="bc-info-row">
+                                <span>👥 {booking.passengers} hành khách</span>
+                                <span style={{ color: "#c8d8ff" }}>·</span>
+                                <span>💺 {booking.seatClass === "business" ? "Thương gia" : booking.seatClass === "first" ? "Hạng nhất" : "Phổ thông"}</span>
+                            </div>
                         </>
                     )}
 
@@ -257,8 +275,18 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                         <>
                             <div className="bc-room-name">{booking.company}</div>
                             <div className="bc-popular">{booking.fromCity} → {booking.toCity}</div>
-                            <div className="bc-info-row">🚌 Khởi hành: {new Date(booking.departTime).toLocaleString("vi-VN")}</div>
-                            <div className="bc-info-row">👥 {booking.passengers} hành khách</div>
+                            <div className="bc-info-row">
+                                <span>🚌 Khởi hành: {new Date(booking.departTime).toLocaleString("vi-VN")}</span>
+                            </div>
+                            <div className="bc-info-row">
+                                <span>👥 {booking.passengers} hành khách</span>
+                                {booking.seatClass && (
+                                    <>
+                                        <span style={{ color: "#c8d8ff" }}>·</span>
+                                        <span>💺 {booking.seatClass === "vip" ? "VIP" : booking.seatClass === "sleeper" ? "Giường nằm" : "Thường"}</span>
+                                    </>
+                                )}
+                            </div>
                         </>
                     )}
 
@@ -266,9 +294,17 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                         <>
                             <div className="bc-room-name">Tàu {booking.trainCode}</div>
                             <div className="bc-popular">{booking.fromCity} → {booking.toCity}</div>
-                            <div className="bc-info-row">🚉 {booking.fromStation} → {booking.toStation}</div>
-                            <div className="bc-info-row">🚆 Khởi hành: {new Date(booking.departTime).toLocaleString("vi-VN")}</div>
-                            <div className="bc-info-row">👥 {booking.passengers} hành khách · {booking.seatClassName}</div>
+                            <div className="bc-info-row">
+                                <span>🚉 {booking.fromStation} → {booking.toStation}</span>
+                            </div>
+                            <div className="bc-info-row">
+                                <span>🚆 Khởi hành: {new Date(booking.departTime).toLocaleString("vi-VN")}</span>
+                            </div>
+                            <div className="bc-info-row">
+                                <span>👥 {booking.passengers} hành khách</span>
+                                <span style={{ color: "#c8d8ff" }}>·</span>
+                                <span>💺 {booking.seatClassName}</span>
+                            </div>
                         </>
                     )}
 

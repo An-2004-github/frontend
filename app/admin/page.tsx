@@ -436,6 +436,10 @@ export default function AdminPage() {
     const [modLoading, setModLoading] = useState(false);
     const [modSearch, setModSearch] = useState("");
 
+    // Booking detail modal (admin)
+    const [bookingDetail, setBookingDetail] = useState<Record<string, unknown> | null>(null);
+    const [bookingDetailLoading, setBookingDetailLoading] = useState(false);
+
     // Hotel detail / room types
     const [selectedHotel, setSelectedHotel] = useState<Record<string, unknown> | null>(null);
     const [roomData, setRoomData] = useState<Record<string, unknown>[]>([]);
@@ -561,6 +565,16 @@ export default function AdminPage() {
         finally { setModLoading(false); }
     }, []);
     useEffect(() => { if (section === "bookings" && bookingTab === "modifications") loadModData(); }, [section, bookingTab, loadModData]);
+
+    const openBookingDetail = async (bookingId: number) => {
+        setBookingDetail(null);
+        setBookingDetailLoading(true);
+        try {
+            const r = await api.get(`/api/admin/bookings/${bookingId}/detail`);
+            setBookingDetail(r.data);
+        } catch { setBookingDetail({}); }
+        finally { setBookingDetailLoading(false); }
+    };
 
     const destFieldDefs = [
         { key: "city", label: "Thành phố", required: true },
@@ -1564,7 +1578,7 @@ export default function AdminPage() {
                                                     <thead>
                                                         <tr>
                                                             <th>#</th><th>Khách hàng</th><th>Dịch vụ</th>
-                                                            <th>Tổng tiền</th><th>Ngày đặt</th><th>Trạng thái</th>
+                                                            <th>Tổng tiền</th><th>Ngày đặt</th><th>Trạng thái</th><th></th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
@@ -1590,6 +1604,15 @@ export default function AdminPage() {
                                                                     >
                                                                         {statusLabel[String(row.status)] || String(row.status)}
                                                                     </span>
+                                                                </td>
+                                                                <td>
+                                                                    <button
+                                                                        className="adm-action-btn"
+                                                                        style={{ background: "#e8f0fe", color: "#0052cc", border: "none" }}
+                                                                        onClick={() => openBookingDetail(Number(row.booking_id))}
+                                                                    >
+                                                                        🔍 Chi tiết
+                                                                    </button>
                                                                 </td>
                                                             </tr>
                                                         ))}
@@ -1623,6 +1646,7 @@ export default function AdminPage() {
                                                                 <th>P.thức hoàn</th>
                                                                 <th>Ngày gửi</th>
                                                                 <th>Trạng thái</th>
+                                                                <th>Người duyệt</th>
                                                                 <th>Thao tác</th>
                                                             </tr>
                                                         </thead>
@@ -1680,6 +1704,20 @@ export default function AdminPage() {
                                                                         </span>
                                                                         {!!row.admin_note && (
                                                                             <div style={{ fontSize: "0.73rem", color: "#6b8cbf", marginTop: 2, maxWidth: 120 }}>{String(row.admin_note)}</div>
+                                                                        )}
+                                                                    </td>
+                                                                    <td style={{ fontSize: "0.82rem" }}>
+                                                                        {row.approved_by_name ? (
+                                                                            <>
+                                                                                <div style={{ fontWeight: 600, color: "#1a3c6b" }}>👤 {String(row.approved_by_name)}</div>
+                                                                                {row.approved_at && (
+                                                                                    <div style={{ fontSize: "0.73rem", color: "#6b8cbf" }}>
+                                                                                        {new Date(String(row.approved_at)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })}
+                                                                                    </div>
+                                                                                )}
+                                                                            </>
+                                                                        ) : (
+                                                                            <span style={{ color: "#c8d8ff" }}>—</span>
                                                                         )}
                                                                     </td>
                                                                     <td>
@@ -2520,6 +2558,122 @@ export default function AdminPage() {
                     saving={saving}
                 />
             )}
+
+            {/* ── Booking detail modal ── */}
+            {(bookingDetail !== null || bookingDetailLoading) && (() => {
+                const fmtN = (n: unknown) => n ? Number(n).toLocaleString("vi-VN") + "₫" : "—";
+                const fmtDT = (s: unknown) => s ? new Date(String(s)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—";
+                const modTypeLabel: Record<string, string> = { reschedule: "🔄 Đổi lịch", cancel: "❌ Hủy" };
+                const modTypeColor: Record<string, string> = { reschedule: "#0052cc", cancel: "#c0392b" };
+                const modStatusLabel: Record<string, string> = { pending: "Chờ xử lý", approved: "Đã duyệt", rejected: "Đã từ chối" };
+                const modStatusColor: Record<string, string> = { pending: "#b8860b", approved: "#00875a", rejected: "#c0392b" };
+                const modifications = (bookingDetail?.modifications as Record<string, unknown>[]) ?? [];
+                const payments = (bookingDetail?.payments as Record<string, unknown>[]) ?? [];
+                const item = ((bookingDetail?.items as Record<string, unknown>[]) ?? [])[0];
+                const METHOD_LABEL: Record<string, string> = { wallet: "Ví VIVU", qr_transfer: "Chuyển khoản QR", combined: "Kết hợp Ví + QR" };
+
+                return (
+                    <div style={{ position: "fixed", inset: 0, zIndex: 2000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
+                        onClick={() => setBookingDetail(null)}>
+                        <div style={{ background: "#fff", borderRadius: 18, width: "100%", maxWidth: 600, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}
+                            onClick={e => e.stopPropagation()}>
+                            <div style={{ padding: "1.5rem 1.5rem 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                <h2 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 800, color: "#1a3c6b" }}>
+                                    🔍 Chi tiết đặt chỗ #{String(bookingDetail?.booking_id ?? "...")}
+                                </h2>
+                                <button onClick={() => setBookingDetail(null)} style={{ background: "none", border: "none", fontSize: "1.4rem", cursor: "pointer", color: "#6b8cbf" }}>×</button>
+                            </div>
+
+                            <div style={{ padding: "1.25rem 1.5rem 1.5rem" }}>
+                                {bookingDetailLoading ? (
+                                    <div style={{ textAlign: "center", padding: "2rem", color: "#6b8cbf" }}>Đang tải...</div>
+                                ) : (
+                                    <>
+                                        {/* Basic info */}
+                                        <div style={{ background: "#f8faff", borderRadius: 10, padding: "0.85rem 1rem", marginBottom: "1rem", fontSize: "0.88rem" }}>
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.4rem 1rem" }}>
+                                                <div><span style={{ color: "#6b8cbf" }}>Khách hàng: </span><strong>{String(bookingDetail?.user_name ?? "—")}</strong></div>
+                                                <div><span style={{ color: "#6b8cbf" }}>Email: </span>{String(bookingDetail?.user_email ?? "—")}</div>
+                                                <div><span style={{ color: "#6b8cbf" }}>Dịch vụ: </span>{String(item?.entity_name ?? "—")}</div>
+                                                <div><span style={{ color: "#6b8cbf" }}>Trạng thái: </span>
+                                                    <span style={{ fontWeight: 700, color: statusColor[String(bookingDetail?.status)] || "#1a3c6b" }}>
+                                                        {statusLabel[String(bookingDetail?.status)] || String(bookingDetail?.status)}
+                                                    </span>
+                                                </div>
+                                                {item?.check_in_date && <div><span style={{ color: "#6b8cbf" }}>Nhận phòng: </span>{String(item.check_in_date).slice(0, 10)}</div>}
+                                                {item?.check_out_date && <div><span style={{ color: "#6b8cbf" }}>Trả phòng: </span>{String(item.check_out_date).slice(0, 10)}</div>}
+                                                <div><span style={{ color: "#6b8cbf" }}>Tổng tiền: </span><strong style={{ color: "#0052cc" }}>{fmtN(bookingDetail?.final_amount)}</strong></div>
+                                                <div><span style={{ color: "#6b8cbf" }}>Ngày đặt: </span>{fmtDT(bookingDetail?.booking_date)}</div>
+                                            </div>
+                                        </div>
+
+                                        {/* Payment history */}
+                                        {payments.length > 0 && (
+                                            <div style={{ marginBottom: "1rem" }}>
+                                                <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#6b8cbf", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "0.5rem" }}>
+                                                    💳 Lịch sử thanh toán
+                                                </div>
+                                                {payments.map((p, i) => (
+                                                    <div key={i} style={{ display: "flex", justifyContent: "space-between", background: "#f0fff8", borderRadius: 8, padding: "0.5rem 0.75rem", marginBottom: "0.3rem", fontSize: "0.83rem" }}>
+                                                        <span style={{ color: "#00875a", fontWeight: 600 }}>{METHOD_LABEL[String(p.method)] ?? String(p.method)}</span>
+                                                        <span style={{ fontWeight: 700 }}>{fmtN(p.amount)}</span>
+                                                        <span style={{ color: "#6b8cbf" }}>{fmtDT(p.paid_at)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* Modification history */}
+                                        <div>
+                                            <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#6b8cbf", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "0.5rem" }}>
+                                                📋 Lịch sử đổi / hủy ({modifications.length} lần)
+                                            </div>
+                                            {modifications.length === 0 ? (
+                                                <div style={{ color: "#6b8cbf", fontSize: "0.85rem", padding: "0.75rem 0" }}>Chưa có thay đổi nào.</div>
+                                            ) : (
+                                                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                                                    {modifications.map((m, i) => {
+                                                        const extraCharge = Number(m.reschedule_fee ?? 0) + Math.max(0, Number(m.price_diff ?? 0));
+                                                        const refund = Number(m.refund_amount ?? 0);
+                                                        const cancelFee = Number(m.cancel_fee ?? 0);
+                                                        return (
+                                                            <div key={i} style={{ background: "#f8f9ff", border: `1px solid ${modTypeColor[String(m.type)] ?? "#e8f0fe"}22`, borderLeft: `3px solid ${modTypeColor[String(m.type)] ?? "#6b8cbf"}`, borderRadius: "0 8px 8px 0", padding: "0.65rem 0.85rem", fontSize: "0.83rem" }}>
+                                                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.3rem" }}>
+                                                                    <span style={{ fontWeight: 700, color: modTypeColor[String(m.type)] ?? "#6b8cbf" }}>
+                                                                        {modTypeLabel[String(m.type)] ?? String(m.type)} #{i + 1}
+                                                                    </span>
+                                                                    <span style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{fmtDT(m.created_at)}</span>
+                                                                </div>
+                                                                <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+                                                                    {m.old_price && m.new_price && (
+                                                                        <span style={{ color: "#6b8cbf" }}>{fmtN(m.old_price)} → <strong style={{ color: "#1a3c6b" }}>{fmtN(m.new_price)}</strong></span>
+                                                                    )}
+                                                                    {extraCharge > 0 && <span style={{ color: "#c0392b" }}>Phát sinh: +{fmtN(extraCharge)}</span>}
+                                                                    {cancelFee > 0 && <span style={{ color: "#c0392b" }}>Phí hủy: {fmtN(cancelFee)}</span>}
+                                                                    {refund > 0 && <span style={{ color: "#00875a", fontWeight: 700 }}>Hoàn: {fmtN(refund)} ({String(m.refund_method) === "bank" ? "Ngân hàng" : "Ví"})</span>}
+                                                                    <span style={{ padding: "0.1rem 0.5rem", borderRadius: 99, fontSize: "0.75rem", fontWeight: 700, background: `${modStatusColor[String(m.status)]}18`, color: modStatusColor[String(m.status)] ?? "#6b8cbf" }}>
+                                                                        {modStatusLabel[String(m.status)] ?? String(m.status)}
+                                                                    </span>
+                                                                </div>
+                                                                {m.new_check_in && (
+                                                                    <div style={{ marginTop: "0.2rem", color: "#0052cc", fontSize: "0.8rem" }}>
+                                                                        Ngày mới: {String(m.new_check_in).slice(0, 10)} → {String(m.new_check_out ?? "").slice(0, 10)}
+                                                                    </div>
+                                                                )}
+                                                                {m.admin_note && <div style={{ marginTop: "0.2rem", color: "#6b8cbf", fontStyle: "italic" }}>{String(m.admin_note)}</div>}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
         </>
     );
 }

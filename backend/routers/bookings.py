@@ -4,7 +4,7 @@ from sqlalchemy import text
 from database import engine
 from auth import get_current_user
 from pydantic import BaseModel
-from email_service import send_booking_confirmation_email, send_cancel_confirmation_email
+from email_service import send_booking_confirmation_email, send_cancel_confirmation_email, send_reschedule_confirmation_email
 from datetime import date as ddate, datetime as dt
 from routers.notifications import create_notification
 
@@ -198,11 +198,24 @@ with engine.begin() as _conn:
     except Exception:
         pass  # Cột đã tồn tại
 
+# ── Thêm cột adults / children vào booking_items nếu chưa có ───
+with engine.begin() as _conn:
+    for col_sql in [
+        "ALTER TABLE booking_items ADD COLUMN adults INT NOT NULL DEFAULT 1",
+        "ALTER TABLE booking_items ADD COLUMN children INT NOT NULL DEFAULT 0",
+    ]:
+        try:
+            _conn.execute(text(col_sql))
+        except Exception:
+            pass
+
 # ── Thêm cột new_seat_class + reschedule_fee vào booking_modifications nếu chưa có ─
 with engine.begin() as _conn:
     for col_sql in [
         "ALTER TABLE booking_modifications ADD COLUMN new_seat_class VARCHAR(30) NULL",
         "ALTER TABLE booking_modifications ADD COLUMN reschedule_fee DECIMAL(12,2) DEFAULT 0",
+        "ALTER TABLE booking_modifications ADD COLUMN approved_by INT NULL",
+        "ALTER TABLE booking_modifications ADD COLUMN approved_at DATETIME NULL",
     ]:
         try:
             _conn.execute(text(col_sql))
@@ -217,9 +230,12 @@ class BookingRequest(BaseModel):
     check_out_date: str | None = None
     guests:         int = 1
     passengers:     int = 1
+    quantity:       int = 1   # số phòng (hotel) hoặc số ghế (transport)
+    adults:         int = 1
+    children:       int = 0
     seat_class:     str | None = None
     total_price:    float
-    final_price:    float | None = None   # giá sau khi áp mã giảm giá
+    final_price:    float | None = None
     promo_id:       int | None = None
 
 
@@ -264,6 +280,34 @@ def get_my_bookings(user_id: int = Depends(get_current_user)):
                 LEFT JOIN trains t ON t.train_id = bi.entity_id AND bi.entity_type = 'train'
 
                 WHERE b.user_id = :user_id
+                  AND (
+                    -- Chờ thanh toán: luôn hiện
+                    b.status = 'pending'
+
+                    -- Còn hoàn tiền chờ admin xử lý: giữ hiện dù dịch vụ đã xong
+                    OR EXISTS (
+                        SELECT 1 FROM booking_modifications m
+                        WHERE m.booking_id = b.booking_id
+                          AND m.status = 'pending'
+                          AND m.refund_amount > 0
+                    )
+
+                    -- Confirmed và dịch vụ chưa kết thúc
+                    OR (
+                        b.status = 'confirmed'
+                        AND (
+                            (bi.entity_type = 'room'
+                                AND COALESCE(bi.check_out_date, DATE_ADD(CURDATE(), INTERVAL 1 DAY)) >= CURDATE())
+                            OR (bi.entity_type = 'flight'
+                                AND COALESCE(f.arrive_time, DATE_ADD(NOW(), INTERVAL 1 DAY)) >= NOW())
+                            OR (bi.entity_type = 'bus'
+                                AND COALESCE(bs.arrive_time, DATE_ADD(NOW(), INTERVAL 1 DAY)) >= NOW())
+                            OR (bi.entity_type = 'train'
+                                AND COALESCE(t.arrive_time, DATE_ADD(NOW(), INTERVAL 1 DAY)) >= NOW())
+                            OR bi.entity_type NOT IN ('room', 'flight', 'bus', 'train')
+                        )
+                    )
+                  )
                 ORDER BY b.booking_date DESC
             """),
             {"user_id": user_id}
@@ -272,10 +316,54 @@ def get_my_bookings(user_id: int = Depends(get_current_user)):
         return [dict(row._mapping) for row in result]
 
 
+# Toàn bộ lịch sử giao dịch (không lọc theo ngày/trạng thái)
+@router.get("/history")
+def get_booking_history(user_id: int = Depends(get_current_user)):
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("""
+                SELECT
+                    b.*,
+                    bi.entity_type,
+                    bi.entity_id,
+                    bi.price AS item_price,
+                    COALESCE(bi.check_in_date, CASE bi.entity_type WHEN 'flight' THEN f.depart_time WHEN 'bus' THEN bs.depart_time WHEN 'train' THEN t.depart_time ELSE NULL END) AS check_in_date,
+                    COALESCE(bi.check_out_date, CASE bi.entity_type WHEN 'flight' THEN f.arrive_time WHEN 'bus' THEN bs.arrive_time WHEN 'train' THEN t.arrive_time ELSE NULL END) AS check_out_date,
+                    CASE bi.entity_type
+                        WHEN 'room'   THEN CONCAT(h.name, ' - ', rt.name)
+                        WHEN 'flight' THEN CONCAT(f.airline, ': ', f.from_city, ' → ', f.to_city)
+                        WHEN 'bus'    THEN CONCAT(bs.company, ': ', bs.from_city, ' → ', bs.to_city)
+                        WHEN 'train'  THEN CONCAT('Tàu ', t.train_code, ': ', t.from_city, ' → ', t.to_city)
+                        ELSE CONCAT(bi.entity_type, ' #', bi.entity_id)
+                    END AS entity_name,
+                    CASE bi.entity_type WHEN 'flight' THEN f.from_city WHEN 'bus' THEN bs.from_city WHEN 'train' THEN t.from_city ELSE NULL END AS from_city,
+                    CASE bi.entity_type WHEN 'flight' THEN f.to_city WHEN 'bus' THEN bs.to_city WHEN 'train' THEN t.to_city ELSE NULL END AS to_city,
+                    CASE bi.entity_type WHEN 'flight' THEN f.depart_time WHEN 'bus' THEN bs.depart_time WHEN 'train' THEN t.depart_time ELSE NULL END AS depart_time,
+                    CASE bi.entity_type WHEN 'flight' THEN f.arrive_time WHEN 'bus' THEN bs.arrive_time WHEN 'train' THEN t.arrive_time ELSE NULL END AS arrive_time
+                FROM bookings b
+                JOIN booking_items bi ON bi.booking_id = b.booking_id
+                    AND bi.item_id = (SELECT MIN(item_id) FROM booking_items WHERE booking_id = b.booking_id)
+                LEFT JOIN room_types rt ON rt.room_type_id = bi.entity_id AND bi.entity_type = 'room'
+                LEFT JOIN hotels h ON h.hotel_id = rt.hotel_id
+                LEFT JOIN flights f ON f.flight_id = bi.entity_id AND bi.entity_type = 'flight'
+                LEFT JOIN buses bs ON bs.bus_id = bi.entity_id AND bi.entity_type = 'bus'
+                LEFT JOIN trains t ON t.train_id = bi.entity_id AND bi.entity_type = 'train'
+                WHERE b.user_id = :user_id
+                ORDER BY b.booking_date DESC
+            """),
+            {"user_id": user_id}
+        ).fetchall()
+        return [dict(row._mapping) for row in result]
+
+
 # Tạo booking mới
 @router.post("")
 def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user)):
-    quantity = data.passengers if data.entity_type in ("flight", "bus", "train") else data.guests
+    if data.entity_type in ("flight", "bus", "train"):
+        quantity = data.passengers
+    else:
+        # hotel: dùng quantity (số phòng) nếu có, fallback về 1
+        quantity = data.quantity if data.quantity > 0 else 1
 
     with engine.begin() as conn:
         # Kiểm tra đã qua giờ khởi hành chưa
@@ -301,12 +389,13 @@ def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user
             if depart and depart < dt.now():
                 raise HTTPException(400, "Chuyến tàu này đã khởi hành, không thể đặt vé.")
 
-        # Kiểm tra đủ ghế trước khi đặt (cho flight)
+        # Kiểm tra đủ ghế trước khi đặt (cho flight) — FOR UPDATE tránh race condition
         if data.entity_type == "flight" and data.seat_class:
             avail = conn.execute(
                 text("""
                     SELECT COUNT(*) FROM flight_seats
                     WHERE flight_id = :fid AND seat_class = :cls AND is_booked = 0
+                    FOR UPDATE
                 """),
                 {"fid": data.entity_id, "cls": data.seat_class}
             ).scalar()
@@ -316,12 +405,13 @@ def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user
                     f"Không đủ ghế {data.seat_class}. Chỉ còn {avail} ghế trống."
                 )
 
-        # Kiểm tra đủ ghế trước khi đặt (cho bus)
+        # Kiểm tra đủ ghế trước khi đặt (cho bus) — FOR UPDATE tránh race condition
         if data.entity_type == "bus":
             avail = conn.execute(
                 text("""
                     SELECT COUNT(*) FROM bus_seats
                     WHERE bus_id = :bid AND is_booked = 0
+                    FOR UPDATE
                 """),
                 {"bid": data.entity_id}
             ).scalar()
@@ -329,6 +419,54 @@ def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user
                 raise HTTPException(
                     400,
                     f"Không đủ ghế. Chỉ còn {avail} ghế trống."
+                )
+
+        # Kiểm tra đủ ghế trước khi đặt (cho train) — FOR UPDATE tránh race condition
+        if data.entity_type == "train" and data.seat_class:
+            avail = conn.execute(
+                text("""
+                    SELECT COUNT(*) FROM train_seats
+                    WHERE train_id = :tid AND seat_class = :cls AND is_booked = 0
+                    FOR UPDATE
+                """),
+                {"tid": data.entity_id, "cls": data.seat_class}
+            ).scalar()
+            if avail < quantity:
+                raise HTTPException(
+                    400,
+                    f"Không đủ ghế {data.seat_class}. Chỉ còn {avail} ghế trống."
+                )
+
+        # Kiểm tra phòng trống cho khách sạn — FOR UPDATE tránh đặt phòng trùng
+        if data.entity_type == "room" and data.check_in_date and data.check_out_date:
+            rooms_needed = data.quantity or 1
+            row = conn.execute(
+                text("""
+                    SELECT GREATEST(0, rt.total_rooms - COALESCE((
+                        SELECT SUM(bi.quantity) FROM booking_items bi
+                        JOIN bookings b ON b.booking_id = bi.booking_id
+                        WHERE bi.entity_type = 'room'
+                          AND bi.entity_id = rt.room_type_id
+                          AND b.status IN ('pending','confirmed')
+                          AND bi.check_in_date  < :check_out
+                          AND bi.check_out_date > :check_in
+                    ), 0)) AS available,
+                    rt.name AS room_name
+                    FROM room_types rt
+                    WHERE rt.room_type_id = :rid
+                    FOR UPDATE
+                """),
+                {"rid": data.entity_id, "check_in": data.check_in_date, "check_out": data.check_out_date}
+            ).fetchone()
+            if not row:
+                raise HTTPException(404, "Loại phòng không tồn tại")
+            available = int(row.available or 0)
+            if available < rooms_needed:
+                raise HTTPException(
+                    400,
+                    f"Phòng \"{row.room_name}\" đã hết cho ngày đã chọn."
+                    if available == 0 else
+                    f"Phòng \"{row.room_name}\" chỉ còn {available} phòng, bạn cần {rooms_needed}."
                 )
 
         # Tính discount_amount và final_amount
@@ -355,9 +493,9 @@ def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user
         conn.execute(
             text("""
                 INSERT INTO booking_items
-                    (booking_id, entity_type, entity_id, quantity, price, seat_class, check_in_date, check_out_date)
+                    (booking_id, entity_type, entity_id, quantity, price, seat_class, check_in_date, check_out_date, adults, children)
                 VALUES
-                    (:booking_id, :entity_type, :entity_id, :quantity, :price, :seat_class, :check_in, :check_out)
+                    (:booking_id, :entity_type, :entity_id, :quantity, :price, :seat_class, :check_in, :check_out, :adults, :children)
             """),
             {
                 "booking_id":  booking_id,
@@ -368,6 +506,8 @@ def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user
                 "seat_class":  data.seat_class,
                 "check_in":    data.check_in_date,
                 "check_out":   data.check_out_date,
+                "adults":      data.adults,
+                "children":    data.children,
             }
         )
 
@@ -381,10 +521,10 @@ def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user
                 """),
                 {"fid": data.entity_id, "cls": data.seat_class, "n": quantity}
             ).fetchall()
-            seat_ids = [str(r.seat_id) for r in seat_rows]
-            if seat_ids:
+            for r in seat_rows:
                 conn.execute(
-                    text(f"UPDATE flight_seats SET is_booked = 1 WHERE seat_id IN ({','.join(seat_ids)})")
+                    text("UPDATE flight_seats SET is_booked = 1 WHERE seat_id = :sid"),
+                    {"sid": r.seat_id}
                 )
 
         # Trừ ghế trong bus_seats
@@ -397,10 +537,10 @@ def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user
                 """),
                 {"bid": data.entity_id, "n": quantity}
             ).fetchall()
-            seat_ids = [str(r.seat_id) for r in seat_rows]
-            if seat_ids:
+            for r in seat_rows:
                 conn.execute(
-                    text(f"UPDATE bus_seats SET is_booked = 1 WHERE seat_id IN ({','.join(seat_ids)})")
+                    text("UPDATE bus_seats SET is_booked = 1 WHERE seat_id = :sid"),
+                    {"sid": r.seat_id}
                 )
 
         # Trừ ghế trong train_seats
@@ -413,10 +553,10 @@ def create_booking(data: BookingRequest, user_id: int = Depends(get_current_user
                 """),
                 {"tid": data.entity_id, "cls": data.seat_class, "n": quantity}
             ).fetchall()
-            seat_ids = [str(r.seat_id) for r in seat_rows]
-            if seat_ids:
+            for r in seat_rows:
                 conn.execute(
-                    text(f"UPDATE train_seats SET is_booked = 1 WHERE seat_id IN ({','.join(seat_ids)})")
+                    text("UPDATE train_seats SET is_booked = 1 WHERE seat_id = :sid"),
+                    {"sid": r.seat_id}
                 )
 
         # Tăng used_count và ghi nhận per-user usage nếu có mã giảm giá
@@ -468,9 +608,9 @@ def _get_booking_email_info(conn, booking_id: int, user_id: int):
 @router.post("/{booking_id}/pay-wallet")
 def pay_with_wallet(booking_id: int, background_tasks: BackgroundTasks, user_id: int = Depends(get_current_user)):
     with engine.begin() as conn:
-        # Lấy thông tin booking
+        # Lock booking row trước — tránh double payment
         booking = conn.execute(
-            text("SELECT * FROM bookings WHERE booking_id = :id AND user_id = :uid"),
+            text("SELECT * FROM bookings WHERE booking_id = :id AND user_id = :uid FOR UPDATE"),
             {"id": booking_id, "uid": user_id}
         ).fetchone()
 
@@ -485,9 +625,9 @@ def pay_with_wallet(booking_id: int, background_tasks: BackgroundTasks, user_id:
         if amount <= 0:
             raise HTTPException(400, "Số tiền thanh toán không hợp lệ")
 
-        # Lấy số dư ví từ bảng users
+        # Lock wallet row — tránh overdraft do 2 request song song
         user_row = conn.execute(
-            text("SELECT wallet FROM users WHERE user_id = :uid"),
+            text("SELECT wallet FROM users WHERE user_id = :uid FOR UPDATE"),
             {"uid": user_id}
         ).fetchone()
 
@@ -582,7 +722,7 @@ class PayCombinedRequest(BaseModel):
 def pay_combined(booking_id: int, data: PayCombinedRequest, background_tasks: BackgroundTasks, user_id: int = Depends(get_current_user)):
     with engine.begin() as conn:
         booking = conn.execute(
-            text("SELECT * FROM bookings WHERE booking_id = :id AND user_id = :uid"),
+            text("SELECT * FROM bookings WHERE booking_id = :id AND user_id = :uid FOR UPDATE"),
             {"id": booking_id, "uid": user_id}
         ).fetchone()
 
@@ -597,7 +737,7 @@ def pay_combined(booking_id: int, data: PayCombinedRequest, background_tasks: Ba
 
         if wallet_amount > 0:
             user_row = conn.execute(
-                text("SELECT wallet FROM users WHERE user_id = :uid"),
+                text("SELECT wallet FROM users WHERE user_id = :uid FOR UPDATE"),
                 {"uid": user_id}
             ).fetchone()
 
@@ -770,7 +910,23 @@ def get_booking(booking_id: int, user_id: int = Depends(get_current_user)):
 
             policy = default_policy.copy()
 
-            if entity_type in ("flight", "bus", "train") and eid:
+            if entity_type == "room" and eid:
+                h = conn.execute(text("""
+                    SELECT h.allows_refund, h.amenities
+                    FROM room_types rt JOIN hotels h ON h.hotel_id = rt.hotel_id
+                    WHERE rt.room_type_id = :id
+                """), {"id": eid}).fetchone()
+                if h:
+                    import json as _json
+                    try:
+                        amenities = _json.loads(h.amenities or "[]") if isinstance(h.amenities, str) else (h.amenities or [])
+                    except Exception:
+                        amenities = []
+                    no_reschedule = any("không đổi lịch" in a.lower() for a in amenities)
+                    policy["allows_reschedule"] = not no_reschedule
+                    policy["allows_refund"] = bool(h.allows_refund) if h.allows_refund is not None else True
+
+            elif entity_type in ("flight", "bus", "train") and eid:
                 if entity_type == "flight":
                     r = conn.execute(text("SELECT airline FROM flights WHERE flight_id=:id"), {"id": eid}).fetchone()
                     carrier = r.airline if r else ""
@@ -785,18 +941,47 @@ def get_booking(booking_id: int, user_id: int = Depends(get_current_user)):
                     if not seat_class:
                         seat_class = "hard_seat" if entity_type == "train" else "standard" if entity_type == "bus" else "economy"
                     raw = _get_policy(conn, entity_type, carrier, seat_class)
+                    allows_cancel      = bool(raw.get("allows_cancel", True))
+                    cancel_fee_percent = float(raw.get("cancel_fee_percent", 0))
                     policy = {
                         "allows_reschedule":      bool(raw.get("allows_reschedule", True)),
-                        "allows_cancel":          bool(raw.get("allows_cancel", True)),
+                        "allows_cancel":          allows_cancel,
                         "reschedule_fee_percent": float(raw.get("reschedule_fee_percent", 0)),
-                        "cancel_fee_percent":     float(raw.get("cancel_fee_percent", 0)),
+                        "cancel_fee_percent":     cancel_fee_percent,
                         "refund_on_downgrade":    bool(raw.get("refund_on_downgrade", True)),
                         "min_hours_before":       int(raw.get("min_hours_before", 0)),
+                        "allows_refund":          allows_cancel and cancel_fee_percent < 100,
                     }
         except Exception:
             policy = default_policy
 
         result["policy"] = policy
+
+        # Payment transactions
+        payments = conn.execute(text("""
+            SELECT method, amount, status, paid_at, transaction_ref
+            FROM payment_transactions
+            WHERE booking_id = :id
+            ORDER BY paid_at ASC
+        """), {"id": booking_id}).fetchall()
+        result["payments"] = [dict(p._mapping) for p in payments]
+
+        # Booking modifications (reschedule / cancel history)
+        try:
+            mods = conn.execute(text("""
+                SELECT mod_id, type, status,
+                       old_price, new_price, price_diff,
+                       reschedule_fee, cancel_fee, refund_amount, refund_method,
+                       new_seat_class, new_check_in, new_check_out, new_entity_id,
+                       bank_info, admin_note, created_at, approved_at
+                FROM booking_modifications
+                WHERE booking_id = :id
+                ORDER BY created_at ASC
+            """), {"id": booking_id}).fetchall()
+            result["modifications"] = [dict(m._mapping) for m in mods]
+        except Exception:
+            result["modifications"] = []
+
         return result
 
 
@@ -825,6 +1010,38 @@ def _get_policy(conn, entity_type: str, carrier: str, seat_class: str) -> dict:
         "allows_cancel": True, "cancel_fee_percent": 10,
         "min_hours_before": 2,
     }
+
+def _check_transport_time(conn, entity_type: str, entity_id: int, seat_class: str, action: str = "reschedule"):
+    """Ném HTTPException nếu còn ít hơn min_hours_before trước giờ khởi hành."""
+    if entity_type == "flight":
+        row = conn.execute(text("SELECT airline, depart_time FROM flights WHERE flight_id = :id"), {"id": entity_id}).fetchone()
+        if not row: return
+        carrier, depart_time = row.airline, row.depart_time
+    elif entity_type == "bus":
+        row = conn.execute(text("SELECT company, depart_time FROM buses WHERE bus_id = :id"), {"id": entity_id}).fetchone()
+        if not row: return
+        carrier, depart_time = row.company, row.depart_time
+    elif entity_type == "train":
+        row = conn.execute(text("SELECT depart_time FROM trains WHERE train_id = :id"), {"id": entity_id}).fetchone()
+        if not row: return
+        carrier, depart_time = "Đường sắt Việt Nam", row.depart_time
+    else:
+        return
+
+    depart_dt  = dt.fromisoformat(str(depart_time))
+    hours_left = (depart_dt - dt.now()).total_seconds() / 3600
+    action_vn  = "đổi lịch" if action == "reschedule" else "hủy vé"
+
+    if hours_left < 0:
+        raise HTTPException(400, f"Chuyến đã khởi hành, không thể {action_vn}")
+
+    policy    = _get_policy(conn, entity_type, carrier, seat_class or "economy")
+    min_hours = float(policy.get("min_hours_before", 2))
+    if hours_left < min_hours:
+        raise HTTPException(400,
+            f"Chỉ còn {hours_left:.0f} giờ trước khởi hành. "
+            f"Cần ít nhất {min_hours:.0f} giờ để {action_vn} theo chính sách hãng.")
+
 
 def _hotel_reschedule_fee(hours_until_checkin: float, user_rank: str) -> dict:
     """Tính phí đổi lịch khách sạn theo khoảng thời gian còn lại và hạng thành viên.
@@ -870,26 +1087,32 @@ def _hotel_reschedule_fee(hours_until_checkin: float, user_rank: str) -> dict:
     }
 
 
-def _classes_for_flight(conn, flight_id: int, base_price: float) -> list[dict]:
+def _classes_for_flight(conn, flight_id: int, base_price: float, cur_class: str = "economy") -> list[dict]:
     """Trả về danh sách hạng ghế còn chỗ với giá tương ứng cho 1 chuyến bay."""
+    # Normalize base_price về economy base (base_price đã bao gồm multiplier của cur_class)
+    cur_mult = FLIGHT_CLASS_MULTIPLIER.get(cur_class, 1.0)
+    economy_base = base_price / cur_mult
     result = []
     for cls, mult in FLIGHT_CLASS_MULTIPLIER.items():
         cnt = conn.execute(text("""
             SELECT COUNT(*) FROM flight_seats
             WHERE flight_id = :fid AND seat_class = :cls AND is_booked = 0
         """), {"fid": flight_id, "cls": cls}).scalar() or 0
-        result.append({"seat_class": cls, "available": cnt, "price": round(base_price * mult)})
+        result.append({"seat_class": cls, "available": cnt, "price": round(economy_base * mult)})
     return result
 
-def _classes_for_bus(conn, bus_id: int, base_price: float) -> list[dict]:
+def _classes_for_bus(conn, bus_id: int, base_price: float, cur_class: str = "standard") -> list[dict]:
     """Trả về danh sách hạng ghế còn chỗ với giá tương ứng cho 1 chuyến xe."""
+    # Normalize base_price về standard base
+    cur_mult = BUS_CLASS_MULTIPLIER.get(cur_class, 1.0)
+    standard_base = base_price / cur_mult
     result = []
     for cls, mult in BUS_CLASS_MULTIPLIER.items():
         cnt = conn.execute(text("""
             SELECT COUNT(*) FROM bus_seats
             WHERE bus_id = :bid AND seat_class = :cls AND is_booked = 0
         """), {"bid": bus_id, "cls": cls}).scalar() or 0
-        result.append({"seat_class": cls, "available": cnt, "price": round(base_price * mult)})
+        result.append({"seat_class": cls, "available": cnt, "price": round(standard_base * mult)})
     return result
 
 def _classes_for_train(conn, train_id: int) -> list[dict]:
@@ -933,12 +1156,14 @@ def get_class_options(booking_id: int, user_id: int = Depends(get_current_user))
         if entity_type not in ("flight", "bus", "train"):
             raise HTTPException(400, "Chỉ hỗ trợ đổi hạng cho vé phương tiện")
 
+        _check_transport_time(conn, entity_type, eid, cur_class, "reschedule")
+
         if entity_type == "flight":
-            classes = _classes_for_flight(conn, eid, base_price)
+            classes = _classes_for_flight(conn, eid, base_price, cur_class)
             r = conn.execute(text("SELECT airline FROM flights WHERE flight_id=:id"), {"id": eid}).fetchone()
             carrier = r.airline if r else ""
         elif entity_type == "bus":
-            classes = _classes_for_bus(conn, eid, base_price)
+            classes = _classes_for_bus(conn, eid, base_price, cur_class)
             r = conn.execute(text("SELECT company FROM buses WHERE bus_id=:id"), {"id": eid}).fetchone()
             carrier = r.company if r else ""
         else:
@@ -1025,7 +1250,7 @@ def get_reschedule_options(
             nights = max(1, (d2 - d1).days)
             rows = conn.execute(text("""
                 SELECT rt.room_type_id, rt.name, rt.price_per_night, h.name AS hotel_name,
-                       ROUND(rt.price_per_night * :nights * 1.21) AS total_price,
+                       ROUND(rt.price_per_night * :nights * :qty * 1.21) AS total_price,
                        (SELECT image_url FROM images
                         WHERE entity_type='hotel' AND entity_id=h.hotel_id LIMIT 1) AS image_url
                 FROM room_types rt
@@ -1040,7 +1265,7 @@ def get_reschedule_options(
                     AND bi.check_in_date < :check_out AND bi.check_out_date > :check_in
                 )
                 ORDER BY rt.price_per_night ASC
-            """), {"hotel_id": hotel_id, "nights": nights,
+            """), {"hotel_id": hotel_id, "nights": nights, "qty": int(item_d.get("quantity") or 1),
                    "check_in": check_in, "check_out": check_out, "bid": booking_id}).fetchall()
             # Lấy allows_refund của khách sạn
             hr = conn.execute(text("""
@@ -1230,61 +1455,56 @@ def _transfer_seats(conn, entity_type: str, old_entity_id: int, new_entity_id: i
                     old_seat_class: str, new_seat_class: str, quantity: int):
     """Release ghế cũ, book ghế mới — trong cùng transaction."""
     if entity_type == "flight":
-        # Release ghế cũ
         old_seats = conn.execute(text("""
             SELECT seat_id FROM flight_seats
             WHERE flight_id = :fid AND seat_class = :cls AND is_booked = 1 LIMIT :n
         """), {"fid": old_entity_id, "cls": old_seat_class, "n": quantity}).fetchall()
-        if old_seats:
-            ids = ",".join(str(r.seat_id) for r in old_seats)
-            conn.execute(text(f"UPDATE flight_seats SET is_booked = 0 WHERE seat_id IN ({ids})"))
-        # Book ghế mới
+        for r in old_seats:
+            conn.execute(text("UPDATE flight_seats SET is_booked = 0 WHERE seat_id = :sid"), {"sid": r.seat_id})
         new_seats = conn.execute(text("""
             SELECT seat_id FROM flight_seats
             WHERE flight_id = :fid AND seat_class = :cls AND is_booked = 0 LIMIT :n
         """), {"fid": new_entity_id, "cls": new_seat_class, "n": quantity}).fetchall()
         if not new_seats:
             raise HTTPException(400, f"Chuyến bay mới không còn ghế {new_seat_class}")
-        ids = ",".join(str(r.seat_id) for r in new_seats)
-        conn.execute(text(f"UPDATE flight_seats SET is_booked = 1 WHERE seat_id IN ({ids})"))
+        for r in new_seats:
+            conn.execute(text("UPDATE flight_seats SET is_booked = 1 WHERE seat_id = :sid"), {"sid": r.seat_id})
 
     elif entity_type == "bus":
         old_seats = conn.execute(text("""
             SELECT seat_id FROM bus_seats
             WHERE bus_id = :bid AND seat_class = :cls AND is_booked = 1 LIMIT :n
         """), {"bid": old_entity_id, "cls": old_seat_class, "n": quantity}).fetchall()
-        if old_seats:
-            ids = ",".join(str(r.seat_id) for r in old_seats)
-            conn.execute(text(f"UPDATE bus_seats SET is_booked = 0 WHERE seat_id IN ({ids})"))
+        for r in old_seats:
+            conn.execute(text("UPDATE bus_seats SET is_booked = 0 WHERE seat_id = :sid"), {"sid": r.seat_id})
         new_seats = conn.execute(text("""
             SELECT seat_id FROM bus_seats
             WHERE bus_id = :bid AND seat_class = :cls AND is_booked = 0 LIMIT :n
         """), {"bid": new_entity_id, "cls": new_seat_class, "n": quantity}).fetchall()
         if not new_seats:
             raise HTTPException(400, f"Chuyến xe mới không còn ghế {new_seat_class}")
-        ids = ",".join(str(r.seat_id) for r in new_seats)
-        conn.execute(text(f"UPDATE bus_seats SET is_booked = 1 WHERE seat_id IN ({ids})"))
+        for r in new_seats:
+            conn.execute(text("UPDATE bus_seats SET is_booked = 1 WHERE seat_id = :sid"), {"sid": r.seat_id})
 
     elif entity_type == "train":
         old_seats = conn.execute(text("""
             SELECT seat_id FROM train_seats
             WHERE train_id = :tid AND seat_class = :cls AND is_booked = 1 LIMIT :n
         """), {"tid": old_entity_id, "cls": old_seat_class, "n": quantity}).fetchall()
-        if old_seats:
-            ids = ",".join(str(r.seat_id) for r in old_seats)
-            conn.execute(text(f"UPDATE train_seats SET is_booked = 0 WHERE seat_id IN ({ids})"))
+        for r in old_seats:
+            conn.execute(text("UPDATE train_seats SET is_booked = 0 WHERE seat_id = :sid"), {"sid": r.seat_id})
         new_seats = conn.execute(text("""
             SELECT seat_id FROM train_seats
             WHERE train_id = :tid AND seat_class = :cls AND is_booked = 0 LIMIT :n
         """), {"tid": new_entity_id, "cls": new_seat_class, "n": quantity}).fetchall()
         if not new_seats:
             raise HTTPException(400, f"Chuyến tàu mới không còn ghế {new_seat_class}")
-        ids = ",".join(str(r.seat_id) for r in new_seats)
-        conn.execute(text(f"UPDATE train_seats SET is_booked = 1 WHERE seat_id IN ({ids})"))
+        for r in new_seats:
+            conn.execute(text("UPDATE train_seats SET is_booked = 1 WHERE seat_id = :sid"), {"sid": r.seat_id})
 
 
 @router.post("/{booking_id}/reschedule")
-def reschedule_booking(booking_id: int, data: RescheduleRequest, user_id: int = Depends(get_current_user)):
+def reschedule_booking(booking_id: int, data: RescheduleRequest, background_tasks: BackgroundTasks, user_id: int = Depends(get_current_user)):
     with engine.begin() as conn:
         booking = conn.execute(
             text("SELECT * FROM bookings WHERE booking_id = :id AND user_id = :uid AND status = 'confirmed'"),
@@ -1300,6 +1520,12 @@ def reschedule_booking(booking_id: int, data: RescheduleRequest, user_id: int = 
             raise HTTPException(404, "Không tìm thấy thông tin đặt chỗ")
         item_d = dict(item._mapping)
 
+        user_info = conn.execute(
+            text("SELECT full_name, email FROM users WHERE user_id = :uid"), {"uid": user_id}
+        ).fetchone()
+        user_email = user_info.email if user_info else None
+        user_name  = (user_info.full_name if user_info else None) or "Quý khách"
+
         entity_type    = item_d["entity_type"]
         old_entity_id  = item_d["entity_id"]
         old_seat_class = item_d.get("seat_class") or ""
@@ -1313,9 +1539,72 @@ def reschedule_booking(booking_id: int, data: RescheduleRequest, user_id: int = 
             if ci_date < ddate.today():
                 raise HTTPException(400, "Không thể đổi lịch booking đã quá ngày sử dụng")
 
-        # ── Tính toán giá (backend tự tính, không tin frontend) ─
-        old_price = float(dict(booking._mapping)["final_amount"])
-        new_price = float(data.new_price)   # frontend gửi giá đúng từ reschedule-options
+        # ── Tính toán giá — verify từ DB, không tin frontend ───────
+        old_price     = float(dict(booking._mapping)["final_amount"])
+        new_entity_id = data.new_entity_id or old_entity_id
+
+        # Tính giá thực từ DB
+        # - Cùng entity (đổi hạng): dùng booking_items.price làm base (khớp với class-options endpoint)
+        # - Khác entity (đổi chuyến): dùng giá từ DB × multiplier × quantity
+        actual_new_price: float | None = None
+        old_item_price = float(item_d.get("price") or 0)  # booking_items.price (total đã lưu)
+        same_entity = (new_entity_id == old_entity_id)
+
+        if entity_type == "room":
+            rt_row = conn.execute(
+                text("SELECT price_per_night FROM room_types WHERE room_type_id = :rid"),
+                {"rid": new_entity_id}
+            ).fetchone()
+            if rt_row:
+                ci = ddate.fromisoformat(data.new_check_in) if data.new_check_in else (
+                    item_d["check_in_date"] if isinstance(item_d["check_in_date"], ddate)
+                    else ddate.fromisoformat(str(item_d["check_in_date"])))
+                co = ddate.fromisoformat(data.new_check_out) if data.new_check_out else (
+                    item_d["check_out_date"] if isinstance(item_d["check_out_date"], ddate)
+                    else ddate.fromisoformat(str(item_d["check_out_date"])))
+                nights = max(1, (co - ci).days)
+                actual_new_price = round(float(rt_row.price_per_night) * nights * quantity * 1.21)
+        elif entity_type == "flight":
+            if same_entity:
+                # Normalize về economy base trước, rồi nhân với multiplier của hạng mới
+                cur_mult = FLIGHT_CLASS_MULTIPLIER.get(old_seat_class, 1.0)
+                economy_base = old_item_price / cur_mult
+                new_mult = FLIGHT_CLASS_MULTIPLIER.get(new_seat_class, 1.0)
+                actual_new_price = round(economy_base * new_mult)
+            else:
+                f_row = conn.execute(
+                    text("SELECT price FROM flights WHERE flight_id = :id"), {"id": new_entity_id}
+                ).fetchone()
+                if f_row:
+                    mult = FLIGHT_CLASS_MULTIPLIER.get(new_seat_class, 1.0)
+                    actual_new_price = round(float(f_row.price) * mult * quantity)
+        elif entity_type == "bus":
+            if same_entity:
+                cur_mult = BUS_CLASS_MULTIPLIER.get(old_seat_class, 1.0)
+                standard_base = old_item_price / cur_mult
+                new_mult = BUS_CLASS_MULTIPLIER.get(new_seat_class, 1.0)
+                actual_new_price = round(standard_base * new_mult)
+            else:
+                b_row = conn.execute(
+                    text("SELECT price FROM buses WHERE bus_id = :id"), {"id": new_entity_id}
+                ).fetchone()
+                if b_row:
+                    mult = BUS_CLASS_MULTIPLIER.get(new_seat_class, 1.0)
+                    actual_new_price = round(float(b_row.price) * mult * quantity)
+        elif entity_type == "train":
+            ts_row = conn.execute(
+                text("SELECT MIN(price) AS price FROM train_seats WHERE train_id = :id AND seat_class = :cls AND is_booked = 0"),
+                {"id": new_entity_id, "cls": new_seat_class}
+            ).fetchone()
+            if ts_row and ts_row.price:
+                # train_seats.price là giá per-seat; class-options trả về per-seat → nhân quantity
+                actual_new_price = round(float(ts_row.price) * quantity)
+
+        submitted = float(data.new_price)
+        if actual_new_price is not None and abs(submitted - actual_new_price) > 1:
+            raise HTTPException(400, f"Giá không hợp lệ. Giá thực tế: {actual_new_price:,.0f}₫")
+
+        new_price = actual_new_price if actual_new_price is not None else submitted
         raw_diff  = round(new_price - old_price, 2)
 
         if entity_type == "room":
@@ -1364,6 +1653,8 @@ def reschedule_booking(booking_id: int, data: RescheduleRequest, user_id: int = 
             policy = _get_policy(conn, entity_type, carrier, new_seat_class or old_seat_class or "economy")
             if not policy["allows_reschedule"]:
                 raise HTTPException(400, "Loại vé này không được phép đổi lịch theo chính sách hãng")
+            _check_transport_time(conn, entity_type, old_entity_id,
+                                  new_seat_class or old_seat_class or "economy", "reschedule")
 
             reschedule_fee   = round(old_price * float(policy["reschedule_fee_percent"]) / 100, 0)
             refund_on_dgrade = bool(policy["refund_on_downgrade"])
@@ -1381,8 +1672,6 @@ def reschedule_booking(booking_id: int, data: RescheduleRequest, user_id: int = 
             # Vé đắt hơn: trả thêm chênh lệch + phí đổi
             amount_to_pay   = raw_diff + reschedule_fee
             refund_amount   = 0.0
-
-        new_entity_id = data.new_entity_id or old_entity_id
 
         # ── Helper: áp dụng thay đổi vào booking ───────────────
         def _apply(conn_):
@@ -1412,6 +1701,39 @@ def reschedule_booking(booking_id: int, data: RescheduleRequest, user_id: int = 
             "diff": raw_diff, "rfee": reschedule_fee,
         }
 
+        # Build service name for email
+        try:
+            eid = item_d["entity_id"]
+            if entity_type == "room":
+                _r = conn.execute(text(
+                    "SELECT h.name, rt.name AS rn FROM room_types rt JOIN hotels h ON h.hotel_id=rt.hotel_id WHERE rt.room_type_id=:id"
+                ), {"id": eid}).fetchone()
+                _svc = f"{_r.name} - {_r.rn}" if _r else f"Đặt chỗ #{booking_id}"
+            elif entity_type == "flight":
+                _r = conn.execute(text("SELECT airline, from_city, to_city FROM flights WHERE flight_id=:id"), {"id": eid}).fetchone()
+                _svc = f"{_r.airline}: {_r.from_city} → {_r.to_city}" if _r else f"Đặt chỗ #{booking_id}"
+            elif entity_type == "bus":
+                _r = conn.execute(text("SELECT company, from_city, to_city FROM buses WHERE bus_id=:id"), {"id": eid}).fetchone()
+                _svc = f"{_r.company}: {_r.from_city} → {_r.to_city}" if _r else f"Đặt chỗ #{booking_id}"
+            elif entity_type == "train":
+                _r = conn.execute(text("SELECT train_code, from_city, to_city FROM trains WHERE train_id=:id"), {"id": eid}).fetchone()
+                _svc = f"Tàu {_r.train_code}: {_r.from_city} → {_r.to_city}" if _r else f"Đặt chỗ #{booking_id}"
+            else:
+                _svc = f"Đặt chỗ #{booking_id}"
+        except Exception:
+            _svc = f"Đặt chỗ #{booking_id}"
+
+        def _send_reschedule_email(note: str = ""):
+            if user_email:
+                background_tasks.add_task(
+                    send_reschedule_confirmation_email,
+                    email=user_email,
+                    name=user_name,
+                    booking_id=booking_id,
+                    service_name=_svc,
+                    note=note,
+                )
+
         if amount_to_pay < 1 and refund_amount < 1:
             # Không thu không hoàn → áp dụng ngay
             _apply(conn)
@@ -1422,6 +1744,7 @@ def reschedule_booking(booking_id: int, data: RescheduleRequest, user_id: int = 
                 VALUES (:bid, :uid, 'reschedule', 'approved', :neid, :nsc,
                         :nci, :nco, :op, :np, :diff, :rfee)
             """), mod_base)
+            _send_reschedule_email()
             return {"status": "confirmed", "message": "Đổi lịch thành công!"}
 
         elif amount_to_pay >= 1:
@@ -1460,6 +1783,7 @@ def reschedule_booking(booking_id: int, data: RescheduleRequest, user_id: int = 
                     VALUES (:bid, :uid, 'reschedule', 'approved', :neid, :nsc,
                             :nci, :nco, :op, :np, :diff, :rfee, :ra, 'wallet')
                 """), mod_base)
+                _send_reschedule_email(f"Hoàn {refund_amount:,.0f}₫ vào ví VIVU của bạn.")
                 return {"status": "confirmed",
                         "message": f"Đổi lịch thành công! Hoàn {refund_amount:,.0f}₫ vào ví."}
             else:
@@ -1469,18 +1793,19 @@ def reschedule_booking(booking_id: int, data: RescheduleRequest, user_id: int = 
                          new_check_in, new_check_out, old_price, new_price, price_diff,
                          reschedule_fee, refund_amount, refund_method, bank_info)
                     VALUES (:bid, :uid, 'reschedule', 'pending', :neid, :nsc,
-                            :nci, :nco, :op, :np, :diff, :rfee, :ra, 'bank', :bi)
+                            :nci, :nco, :op, :np, :diff, :rfee, :ra, :rm, :bi)
                 """), mod_base)
+                _send_reschedule_email(f"Hoàn {refund_amount:,.0f}₫ về tài khoản ngân hàng trong 2–5 ngày làm việc.")
                 return {"status": "confirmed",
                         "message": "Đổi lịch thành công! Tiền sẽ được hoàn về ngân hàng trong 2–5 ngày."}
 
 
 # ── PAY EXTRA FOR RESCHEDULE (wallet) ──────────────────────────
 @router.post("/modifications/{mod_id}/pay-extra")
-def pay_extra_reschedule(mod_id: int, user_id: int = Depends(get_current_user)):
+def pay_extra_reschedule(mod_id: int, background_tasks: BackgroundTasks, user_id: int = Depends(get_current_user)):
     with engine.begin() as conn:
         mod = conn.execute(
-            text("SELECT * FROM booking_modifications WHERE mod_id = :id AND user_id = :uid AND status = 'pending'"),
+            text("SELECT * FROM booking_modifications WHERE mod_id = :id AND user_id = :uid AND status = 'pending' FOR UPDATE"),
             {"id": mod_id, "uid": user_id},
         ).fetchone()
         if not mod:
@@ -1493,7 +1818,7 @@ def pay_extra_reschedule(mod_id: int, user_id: int = Depends(get_current_user)):
         booking_id = mod_d["booking_id"]
 
         # Check wallet
-        user_row = conn.execute(text("SELECT wallet FROM users WHERE user_id = :uid"), {"uid": user_id}).fetchone()
+        user_row = conn.execute(text("SELECT wallet, full_name, email FROM users WHERE user_id = :uid FOR UPDATE"), {"uid": user_id}).fetchone()
         balance = float(user_row.wallet or 0)
         if balance < price_diff:
             raise HTTPException(400, f"Số dư ví không đủ. Cần {price_diff:,.0f}₫, hiện có {balance:,.0f}₫")
@@ -1506,16 +1831,35 @@ def pay_extra_reschedule(mod_id: int, user_id: int = Depends(get_current_user)):
             VALUES (:uid, :amt, 'payment', :desc, 'success')
         """), {"uid": user_id, "amt": -price_diff, "desc": f"Thanh toán thêm đổi lịch #{booking_id}"})
 
+        # Transfer seats for transport bookings before applying changes
+        item_row = conn.execute(
+            text("SELECT entity_type, entity_id, seat_class, quantity FROM booking_items WHERE booking_id = :bid"),
+            {"bid": booking_id}
+        ).fetchone()
+        if item_row:
+            item_info = dict(item_row._mapping)
+            etype = item_info["entity_type"]
+            if etype in ("flight", "bus", "train"):
+                old_eid = item_info["entity_id"]
+                old_sc = item_info["seat_class"] or ""
+                new_eid = mod_d["new_entity_id"] or old_eid
+                new_sc = mod_d["new_seat_class"] or old_sc
+                qty = int(item_info["quantity"] or 1)
+                if old_eid != new_eid or old_sc != new_sc:
+                    _transfer_seats(conn, etype, old_eid, new_eid, old_sc, new_sc, qty)
+
         # Apply booking changes
         if mod_d["new_entity_id"]:
             conn.execute(text("UPDATE booking_items SET entity_id = :eid WHERE booking_id = :bid"),
                          {"eid": mod_d["new_entity_id"], "bid": booking_id})
+        if mod_d.get("new_seat_class"):
+            conn.execute(text("UPDATE booking_items SET seat_class = :sc WHERE booking_id = :bid"),
+                         {"sc": mod_d["new_seat_class"], "bid": booking_id})
         if mod_d["new_check_in"]:
             conn.execute(text("UPDATE booking_items SET check_in_date = :ci, check_out_date = :co WHERE booking_id = :bid"),
                          {"ci": str(mod_d["new_check_in"]), "co": str(mod_d["new_check_out"]), "bid": booking_id})
         conn.execute(text("UPDATE bookings SET total_price = :np, final_amount = :np WHERE booking_id = :bid"),
                      {"np": float(mod_d["new_price"]), "bid": booking_id})
-        # Cập nhật price trong booking_items để lần đổi lịch tiếp theo tính đúng old_price
         conn.execute(text("UPDATE booking_items SET price = :np WHERE booking_id = :bid"),
                      {"np": float(mod_d["new_price"]), "bid": booking_id})
 
@@ -1523,7 +1867,17 @@ def pay_extra_reschedule(mod_id: int, user_id: int = Depends(get_current_user)):
         conn.execute(text("UPDATE booking_modifications SET status = 'approved' WHERE mod_id = :id"),
                      {"id": mod_id})
 
-        return {"message": "Đổi lịch thành công!", "new_balance": balance - price_diff}
+    if user_row and user_row.email:
+        background_tasks.add_task(
+            send_reschedule_confirmation_email,
+            email=user_row.email,
+            name=user_row.full_name or "Quý khách",
+            booking_id=booking_id,
+            service_name=f"Đặt chỗ #{booking_id}",
+            note=f"Đã thanh toán thêm {price_diff:,.0f}₫ từ ví VIVU.",
+        )
+
+    return {"message": "Đổi lịch thành công!", "new_balance": balance - price_diff}
 
 
 # ── Helper: tính cancel_fee dựa theo transport_policy hoặc rank ─
@@ -1686,6 +2040,10 @@ def preview_cancel_booking(booking_id: int, user_id: int = Depends(get_current_u
             if svc_date < ddate.today():
                 raise HTTPException(400, "Không thể hủy booking đã quá ngày sử dụng")
 
+        if entity_type in ("flight", "bus", "train"):
+            _check_transport_time(conn, entity_type, item_d["entity_id"],
+                                  item_d.get("seat_class") or "economy", "cancel")
+
         user_row  = conn.execute(
             text("SELECT COALESCE(user_rank, 'bronze') AS user_rank FROM users WHERE user_id = :uid"),
             {"uid": user_id}
@@ -1711,7 +2069,7 @@ class CancelRequest(BaseModel):
 def cancel_booking(booking_id: int, data: CancelRequest, background_tasks: BackgroundTasks, user_id: int = Depends(get_current_user)):
     with engine.begin() as conn:
         booking = conn.execute(
-            text("SELECT * FROM bookings WHERE booking_id = :id AND user_id = :uid AND status = 'confirmed'"),
+            text("SELECT * FROM bookings WHERE booking_id = :id AND user_id = :uid AND status = 'confirmed' FOR UPDATE"),
             {"id": booking_id, "uid": user_id},
         ).fetchone()
         if not booking:
@@ -1754,12 +2112,16 @@ def cancel_booking(booking_id: int, data: CancelRequest, background_tasks: Backg
         """), {"bid": booking_id}).fetchone()
         service_name = dict(svc_name_row._mapping)["service_name"] if svc_name_row else f"Đặt chỗ #{booking_id}"
 
-        # Kiểm tra đã quá ngày chưa
+        # Kiểm tra đã quá ngày/giờ chưa
         check_in_raw = item_d.get("check_in_date")
         if check_in_raw:
             svc_date_c = check_in_raw if isinstance(check_in_raw, ddate) else ddate.fromisoformat(str(check_in_raw))
             if svc_date_c < ddate.today():
                 raise HTTPException(400, "Không thể hủy booking đã quá ngày sử dụng")
+
+        if entity_type in ("flight", "bus", "train"):
+            _check_transport_time(conn, entity_type, item_d["entity_id"],
+                                  item_d.get("seat_class") or "economy", "cancel")
 
         # Calculate cancel fee theo policy (transport) hoặc rank (room)
         fee_result    = _calc_cancel_fee(conn, entity_type, item_d, total_price, user_rank)
@@ -1777,17 +2139,22 @@ def cancel_booking(booking_id: int, data: CancelRequest, background_tasks: Backg
                 text("SELECT seat_id FROM bus_seats WHERE bus_id = :eid AND is_booked = 1 LIMIT :n"),
                 {"eid": item_d["entity_id"], "n": item_d["quantity"]}
             ).fetchall()
-            seat_ids = [str(r.seat_id) for r in booked_bus_seats]
-            if seat_ids:
-                conn.execute(text(f"UPDATE bus_seats SET is_booked = 0 WHERE seat_id IN ({','.join(seat_ids)})"))
+            for r in booked_bus_seats:
+                conn.execute(text("UPDATE bus_seats SET is_booked = 0 WHERE seat_id = :sid"), {"sid": r.seat_id})
         elif entity_type == "flight":
             booked_flight_seats = conn.execute(
                 text("SELECT seat_id FROM flight_seats WHERE flight_id = :eid AND is_booked = 1 LIMIT :n"),
                 {"eid": item_d["entity_id"], "n": item_d["quantity"]}
             ).fetchall()
-            seat_ids = [str(r.seat_id) for r in booked_flight_seats]
-            if seat_ids:
-                conn.execute(text(f"UPDATE flight_seats SET is_booked = 0 WHERE seat_id IN ({','.join(seat_ids)})"))
+            for r in booked_flight_seats:
+                conn.execute(text("UPDATE flight_seats SET is_booked = 0 WHERE seat_id = :sid"), {"sid": r.seat_id})
+        elif entity_type == "train":
+            booked_train_seats = conn.execute(
+                text("SELECT seat_id FROM train_seats WHERE train_id = :eid AND is_booked = 1 LIMIT :n"),
+                {"eid": item_d["entity_id"], "n": item_d["quantity"]}
+            ).fetchall()
+            for r in booked_train_seats:
+                conn.execute(text("UPDATE train_seats SET is_booked = 0 WHERE seat_id = :sid"), {"sid": r.seat_id})
 
         if refund_amount > 0 and data.refund_method == "wallet":
             # Hoàn tiền ngay vào ví — không cần admin duyệt
@@ -1862,6 +2229,7 @@ def cancel_booking(booking_id: int, data: CancelRequest, background_tasks: Backg
             refund_amount=refund_amount,
             cancel_fee=cancel_fee,
             refund_method=data.refund_method,
+            non_refundable=non_refundable,
         )
 
     return {

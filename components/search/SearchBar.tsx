@@ -55,9 +55,12 @@ export default function SearchBar() {
     const [paxOpen, setPaxOpen]         = useState(false);
     const paxRef = useRef<HTMLDivElement>(null);
 
+    // ── Validation errors ────────────────────────────────────────
+    const [errors, setErrors] = useState<Record<string, string>>({});
+
     // Giá trị hiệu dụng: dùng state nếu user đã chọn, không thì fallback về ngày client
-    const effectiveCheckIn   = checkIn    || clientToday;
-    const effectiveCheckOut  = checkOut   || clientTomorrow;
+    const effectiveCheckIn    = checkIn    || clientToday;
+    const effectiveCheckOut   = checkOut   || (effectiveCheckIn ? addDays(effectiveCheckIn, 1) : clientTomorrow);
     const effectiveDepartDate = departDate || clientToday;
 
     useEffect(() => {
@@ -89,16 +92,25 @@ export default function SearchBar() {
 
     const handleSearch = () => {
         if (activeTab === "hotel") {
+            const errs: Record<string, string> = {};
+            if (!hotelQuery.trim()) errs.hotelQuery = "Vui lòng nhập điểm đến";
+            if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+            setErrors({});
             logSearch(hotelQuery);
             const p = new URLSearchParams();
-            if (hotelQuery) p.set("search", hotelQuery);
-            if (checkIn)    p.set("check_in", checkIn);
-            if (checkOut)   p.set("check_out", checkOut);
+            if (hotelQuery)       p.set("search", hotelQuery);
+            if (effectiveCheckIn)  p.set("check_in", effectiveCheckIn);
+            if (effectiveCheckOut) p.set("check_out", effectiveCheckOut);
             p.set("adults", String(adults));
             p.set("children", String(children));
             p.set("rooms", String(rooms));
             router.push(`/hotels?${p.toString()}`);
         } else {
+            const errs: Record<string, string> = {};
+            if (!fromCity.trim()) errs.fromCity = "Vui lòng nhập điểm đi";
+            if (!toCity.trim())   errs.toCity   = "Vui lòng nhập điểm đến";
+            if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+            setErrors({});
             logSearch(`${fromCity} → ${toCity}`);
             const p = new URLSearchParams();
             if (fromCity)   p.set("from", fromCity);
@@ -162,7 +174,7 @@ export default function SearchBar() {
                 }
                 .sb-field {
                     display: flex; flex-direction: column; gap: 0.3rem;
-                    flex: 1; min-width: 140px;
+                    flex: 1; min-width: 140px; position: relative;
                 }
                 .sb-field-label {
                     font-size: 0.7rem; font-weight: 700;
@@ -233,9 +245,28 @@ export default function SearchBar() {
                     font-family: 'Nunito', sans-serif; font-size: 0.95rem; font-weight: 800;
                     cursor: pointer; white-space: nowrap; flex-shrink: 0;
                     transition: opacity 0.15s, transform 0.15s;
-                    align-self: flex-end;
+                    margin-left: auto; align-self: flex-end;
                 }
                 .sb-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+                .sb-field-error {
+                    position: absolute; top: calc(100% + 4px); left: 0;
+                    font-size: 0.7rem; color: #fff;
+                    background: #e74c3c; border-radius: 6px;
+                    padding: 0.2rem 0.55rem;
+                    display: flex; align-items: center; gap: 0.3rem;
+                    white-space: nowrap; z-index: 10;
+                    box-shadow: 0 2px 8px rgba(231,76,60,0.3);
+                    animation: errFadeIn 0.15s ease;
+                }
+                .sb-field-error::before {
+                    content: ""; position: absolute; top: -5px; left: 10px;
+                    border: 5px solid transparent; border-bottom-color: #e74c3c;
+                    border-top: none;
+                }
+                @keyframes errFadeIn {
+                    from { opacity: 0; transform: translateY(-4px); }
+                    to   { opacity: 1; transform: translateY(0); }
+                }
 
                 @media (max-width: 640px) {
                     .sb-fields { flex-direction: column; }
@@ -250,7 +281,7 @@ export default function SearchBar() {
                         <button
                             key={tab.id}
                             className={`sb-tab${activeTab === tab.id ? " active" : ""}`}
-                            onClick={() => setActiveTab(tab.id)}
+                            onClick={() => { setActiveTab(tab.id); setErrors({}); }}
                         >
                             {tab.label}
                         </button>
@@ -266,11 +297,12 @@ export default function SearchBar() {
                                 <label className="sb-field-label">🔍 Điểm đến</label>
                                 <DestinationInput
                                     value={hotelQuery}
-                                    onChange={setHotelQuery}
+                                    onChange={v => { setHotelQuery(v); if (v.trim()) setErrors(p => ({ ...p, hotelQuery: "" })); }}
                                     placeholder="Tên khách sạn hoặc thành phố..."
                                     cityMode
-                                    inputStyle={{ height: "2.9rem", fontSize: "0.9rem" }}
+                                    inputStyle={{ height: "2.9rem", fontSize: "0.9rem", ...(errors.hotelQuery ? { borderColor: "#e74c3c", boxShadow: "0 0 0 3px rgba(231,76,60,0.12)" } : {}) }}
                                 />
+                                {errors.hotelQuery && <span className="sb-field-error">⚠ {errors.hotelQuery}</span>}
                             </div>
                             {/* Nhận phòng */}
                             <div className="sb-field">
@@ -283,10 +315,8 @@ export default function SearchBar() {
                                     onChange={e => {
                                         const v = e.target.value;
                                         setCheckIn(v);
-                                        if (checkOut && checkOut <= v) {
-                                            const d = new Date(v);
-                                            d.setDate(d.getDate() + 1);
-                                            setCheckOut(d.toISOString().split("T")[0]);
+                                        if (!checkOut || checkOut <= v) {
+                                            setCheckOut(addDays(v, 1));
                                         }
                                     }}
                                 />
@@ -361,22 +391,24 @@ export default function SearchBar() {
                                 <label className="sb-field-label">🛫 Điểm đi</label>
                                 <DestinationInput
                                     value={fromCity}
-                                    onChange={setFromCity}
+                                    onChange={v => { setFromCity(v); if (v.trim()) setErrors(p => ({ ...p, fromCity: "" })); }}
                                     placeholder="Thành phố khởi hành..."
                                     cityMode
-                                    inputStyle={{ height: "2.9rem", fontSize: "0.9rem" }}
+                                    inputStyle={{ height: "2.9rem", fontSize: "0.9rem", ...(errors.fromCity ? { borderColor: "#e74c3c", boxShadow: "0 0 0 3px rgba(231,76,60,0.12)" } : {}) }}
                                 />
+                                {errors.fromCity && <span className="sb-field-error">⚠ {errors.fromCity}</span>}
                             </div>
                             {/* Điểm đến */}
                             <div className="sb-field" style={{ flex: 1.2, minWidth: 160 }}>
                                 <label className="sb-field-label">🛬 Điểm đến</label>
                                 <DestinationInput
                                     value={toCity}
-                                    onChange={setToCity}
+                                    onChange={v => { setToCity(v); if (v.trim()) setErrors(p => ({ ...p, toCity: "" })); }}
                                     placeholder="Thành phố đến..."
                                     cityMode
-                                    inputStyle={{ height: "2.9rem", fontSize: "0.9rem" }}
+                                    inputStyle={{ height: "2.9rem", fontSize: "0.9rem", ...(errors.toCity ? { borderColor: "#e74c3c", boxShadow: "0 0 0 3px rgba(231,76,60,0.12)" } : {}) }}
                                 />
+                                {errors.toCity && <span className="sb-field-error">⚠ {errors.toCity}</span>}
                             </div>
                             {/* Ngày đi */}
                             <div className="sb-field">

@@ -158,7 +158,10 @@ export default function BookingPage() {
                     entity_id: booking.roomTypeId,
                     check_in_date: booking.checkIn,
                     check_out_date: booking.checkOut,
+                    quantity: booking.quantity,
                     guests: booking.guests,
+                    adults: booking.adultsCount ?? booking.guests,
+                    children: booking.childrenCount ?? 0,
                 };
             } else if (booking.type === "flight") {
                 payload = {

@@ -79,8 +79,14 @@ export default function BusesPage() {
         if (!isSwapping.current) setToCity("");
     }, [fromCity]);
 
+    const [errors, setErrors] = useState<Record<string, string>>({});
+
     const handleSearch = useCallback(async () => {
-        if (!fromCity || !toCity) return;
+        const errs: Record<string, string> = {};
+        if (!fromCity.trim()) errs.fromCity = "Vui lòng nhập điểm đi";
+        if (!toCity.trim())   errs.toCity   = "Vui lòng nhập điểm đến";
+        if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+        setErrors({});
         try {
             setLoading(true); setSearched(true); setError(null);
             const price = PRICE_OPTIONS[priceIdx];
@@ -156,7 +162,7 @@ export default function BusesPage() {
                     box-shadow: 0 8px 40px rgba(0,0,0,0.18);
                 }
                 .bp-search-row { display: flex; gap: 0.75rem; align-items: flex-end; flex-wrap: wrap; }
-                .bp-search-field { display: flex; flex-direction: column; gap: 0.35rem; flex: 1; min-width: 130px; }
+                .bp-search-field { display: flex; flex-direction: column; gap: 0.35rem; flex: 1; min-width: 130px; position: relative; }
                 .bp-search-label { font-size: 0.72rem; font-weight: 600; color: #6b778c; text-transform: uppercase; letter-spacing: 0.4px; }
                 .bp-search-input {
                     border: 1.5px solid #dde3f0; border-radius: 10px;
@@ -345,10 +351,12 @@ export default function BusesPage() {
                                 <label className="bp-search-label">📍 Điểm đi</label>
                                 <DestinationInput
                                     value={fromCity}
-                                    onChange={setFromCity}
+                                    onChange={v => { setFromCity(v); if (v.trim()) setErrors(p => ({ ...p, fromCity: "" })); }}
                                     placeholder="Hà Nội, Hồ Chí Minh..."
                                     cityMode
+                                    inputStyle={errors.fromCity ? { borderColor: "#e74c3c", boxShadow: "0 0 0 3px rgba(231,76,60,0.12)" } : {}}
                                 />
+                                {errors.fromCity && <span style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, fontSize: "0.7rem", color: "#fff", background: "#e74c3c", borderRadius: "6px", padding: "0.2rem 0.55rem", display: "flex", alignItems: "center", gap: "0.3rem", whiteSpace: "nowrap", zIndex: 10, boxShadow: "0 2px 8px rgba(231,76,60,0.3)" }}>⚠ {errors.fromCity}</span>}
                             </div>
 
                             <button className="bp-swap-btn" onClick={handleSwap} title="Đổi chiều">⇄</button>
@@ -357,11 +365,13 @@ export default function BusesPage() {
                                 <label className="bp-search-label">🏁 Điểm đến</label>
                                 <DestinationInput
                                     value={toCity}
-                                    onChange={setToCity}
+                                    onChange={v => { setToCity(v); if (v.trim()) setErrors(p => ({ ...p, toCity: "" })); }}
                                     placeholder={fromCity ? "Chọn điểm đến..." : "Đà Lạt, Nha Trang..."}
                                     cityMode
                                     cities={destinationCities.length > 0 ? destinationCities : undefined}
+                                    inputStyle={errors.toCity ? { borderColor: "#e74c3c", boxShadow: "0 0 0 3px rgba(231,76,60,0.12)" } : {}}
                                 />
+                                {errors.toCity && <span style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, fontSize: "0.7rem", color: "#fff", background: "#e74c3c", borderRadius: "6px", padding: "0.2rem 0.55rem", display: "flex", alignItems: "center", gap: "0.3rem", whiteSpace: "nowrap", zIndex: 10, boxShadow: "0 2px 8px rgba(231,76,60,0.3)" }}>⚠ {errors.toCity}</span>}
                             </div>
 
                             <div className="bp-search-field">
@@ -388,7 +398,6 @@ export default function BusesPage() {
                             <button
                                 className="bp-search-btn"
                                 onClick={handleSearch}
-                                disabled={!fromCity || !toCity}
                             >
                                 Tìm chuyến
                             </button>

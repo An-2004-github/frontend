@@ -4,6 +4,31 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import api from "@/lib/axios";
 
+interface PaymentRecord {
+    method: string;
+    amount: number;
+    status: string;
+    paid_at?: string;
+    transaction_ref?: string;
+}
+
+interface ModRecord {
+    type: "reschedule" | "cancel";
+    status: string;
+    price_diff?: number;
+    reschedule_fee?: number;
+    cancel_fee?: number;
+    refund_amount?: number;
+    refund_method?: string;
+    created_at?: string;
+    admin_note?: string;
+}
+
+interface BookingDetail {
+    payments?: PaymentRecord[];
+    modifications?: ModRecord[];
+}
+
 interface Booking {
     booking_id: number;
     booking_date: string;
@@ -52,9 +77,11 @@ export default function TransactionsPage() {
 
     // Detail modal
     const [detail, setDetail] = useState<Booking | null>(null);
+    const [detailData, setDetailData] = useState<BookingDetail | null>(null);
+    const [detailLoading, setDetailLoading] = useState(false);
 
     useEffect(() => {
-        api.get("/api/bookings/my")
+        api.get("/api/bookings/history")
             .then(res => setBookings(res.data))
             .catch(() => setBookings([]))
             .finally(() => setLoading(false));
@@ -82,6 +109,28 @@ export default function TransactionsPage() {
 
     const fmtDate = (s?: string) => s ? new Date(s).toLocaleDateString("vi-VN") : "—";
     const fmtDateTime = (s?: string) => s ? new Date(s).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—";
+
+    const METHOD_LABEL: Record<string, string> = {
+        wallet: "Ví VIVU",
+        qr_transfer: "Chuyển khoản QR",
+        combined: "Kết hợp Ví + QR",
+    };
+
+    const openDetail = async (b: Booking) => {
+        setDetail(b);
+        setDetailData(null);
+        setDetailLoading(true);
+        try {
+            const res = await api.get(`/api/bookings/${b.booking_id}`);
+            setDetailData({ payments: res.data.payments ?? [], modifications: res.data.modifications ?? [] });
+        } catch {
+            setDetailData({ payments: [], modifications: [] });
+        } finally {
+            setDetailLoading(false);
+        }
+    };
+
+    const closeDetail = () => { setDetail(null); setDetailData(null); };
 
     return (
         <>
@@ -216,7 +265,7 @@ export default function TransactionsPage() {
                                     <span className="txn-status" style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}` }}>
                                         {st.label}
                                     </span>
-                                    <button className="txn-detail-btn" onClick={() => setDetail(b)}>Xem chi tiết →</button>
+                                    <button className="txn-detail-btn" onClick={() => openDetail(b)}>Xem chi tiết →</button>
                                 </div>
                             </div>
                         );
@@ -228,12 +277,27 @@ export default function TransactionsPage() {
             {detail && (() => {
                 const st = STATUS_MAP[detail.status] ?? STATUS_MAP.cancelled;
                 const tp = TYPE_MAP[detail.entity_type] ?? { icon: "🎫", label: detail.entity_type, color: "#6b8cbf" };
+                const payments = detailData?.payments ?? [];
+                const mods = detailData?.modifications ?? [];
+
+                // Derive payment method label from payment records
+                const methodLabel = (() => {
+                    if (detailLoading) return "...";
+                    if (!payments.length) return "—";
+                    const methods = [...new Set(payments.map(p => p.method))];
+                    if (methods.length === 1) return METHOD_LABEL[methods[0]] ?? methods[0];
+                    return "Kết hợp Ví + QR";
+                })();
+
+                // Actual transaction date from first successful payment
+                const paidAt = payments.find(p => p.status === "success")?.paid_at;
+
                 return (
-                    <div className="txn-modal-overlay" onClick={() => setDetail(null)}>
+                    <div className="txn-modal-overlay" onClick={closeDetail}>
                         <div className="txn-modal" onClick={e => e.stopPropagation()}>
                             <div className="txn-modal-header">
                                 <div className="txn-modal-title">{tp.icon} Chi tiết giao dịch #{detail.booking_id}</div>
-                                <button className="txn-modal-close" onClick={() => setDetail(null)}>×</button>
+                                <button className="txn-modal-close" onClick={closeDetail}>×</button>
                             </div>
                             <div className="txn-modal-body">
                                 <div className="txn-modal-row">
@@ -262,7 +326,11 @@ export default function TransactionsPage() {
                                 )}
                                 <div className="txn-modal-row">
                                     <span className="txn-modal-label">Phương thức TT</span>
-                                    <span className="txn-modal-value">Ví VIVU / Chuyển khoản</span>
+                                    <span className="txn-modal-value">{methodLabel}</span>
+                                </div>
+                                <div className="txn-modal-row">
+                                    <span className="txn-modal-label">Ngày giờ giao dịch</span>
+                                    <span className="txn-modal-value">{fmtDateTime(paidAt || detail.booking_date)}</span>
                                 </div>
                                 <div className="txn-modal-row">
                                     <span className="txn-modal-label">Tổng tiền</span>
@@ -276,10 +344,40 @@ export default function TransactionsPage() {
                                         {st.label}
                                     </span>
                                 </div>
-                                <div className="txn-modal-row">
-                                    <span className="txn-modal-label">Ngày giờ giao dịch</span>
-                                    <span className="txn-modal-value">{fmtDateTime(detail.booking_date)}</span>
-                                </div>
+
+                                {/* Modification history */}
+                                {mods.length > 0 && (
+                                    <div style={{ marginTop: "1rem" }}>
+                                        <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#6b8cbf", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "0.5rem" }}>
+                                            Lịch sử thay đổi
+                                        </div>
+                                        {mods.map((m, i) => {
+                                            const extraCharge = Number(m.reschedule_fee || 0) + Number(m.price_diff || 0);
+                                            const refund = Number(m.refund_amount || 0);
+                                            return (
+                                                <div key={i} style={{ background: "#f8f9ff", borderRadius: 8, padding: "0.6rem 0.75rem", marginBottom: "0.4rem", fontSize: "0.82rem" }}>
+                                                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600, color: "#1a3c6b" }}>
+                                                        <span>{m.type === "reschedule" ? "🔄 Đổi lịch" : "❌ Hủy đặt chỗ"}</span>
+                                                        <span style={{ color: "#6b8cbf", fontWeight: 400 }}>{fmtDateTime(m.created_at)}</span>
+                                                    </div>
+                                                    {extraCharge > 0 && (
+                                                        <div style={{ color: "#c0392b", marginTop: "0.2rem" }}>
+                                                            Phát sinh thêm: +{extraCharge.toLocaleString("vi-VN")}₫
+                                                        </div>
+                                                    )}
+                                                    {refund > 0 && (
+                                                        <div style={{ color: "#00875a", marginTop: "0.2rem" }}>
+                                                            Hoàn tiền: {refund.toLocaleString("vi-VN")}₫ ({m.refund_method === "bank" ? "Tài khoản ngân hàng" : "Ví VIVU"})
+                                                        </div>
+                                                    )}
+                                                    {m.admin_note && (
+                                                        <div style={{ color: "#6b8cbf", fontStyle: "italic", marginTop: "0.2rem" }}>{m.admin_note}</div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
 
                                 {detail.status === "confirmed" && (
                                     <Link href={`/invoice/${detail.booking_id}`} className="txn-modal-invoice">

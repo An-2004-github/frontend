@@ -26,7 +26,7 @@ export default function PaymentPage() {
     const [checking, setChecking] = useState(false);
     const [checkMsg, setCheckMsg] = useState<string | null>(null);
     const [paid, setPaid] = useState(false);
-    const [useWallet, setUseWallet] = useState(false);
+
     const [localPayment, setLocalPayment] = useState<{ totalAmount: number; description: string } | null>(null);
     const [loadingBooking, setLoadingBooking] = useState(false);
     const [timeLeft, setTimeLeft] = useState<number | null>(null);
@@ -45,8 +45,7 @@ export default function PaymentPage() {
     const cashbackRate = CASHBACK_RATES[userRank] ?? 0.005;
     const cashbackAmount = Math.round(amount * cashbackRate);
 
-    const walletDeduction = useWallet ? Math.min(balance, amount) : 0;
-    const qrAmount = Math.max(0, amount - walletDeduction);
+    const qrAmount = amount;
 
     const qrUrl =
         `https://img.vietqr.io/image/${BANK_ID}-${ACCOUNT_NO}-compact2.png` +
@@ -126,26 +125,10 @@ export default function PaymentPage() {
         }
     };
 
-    // Xác nhận sau khi chuyển khoản (có thể kết hợp ví)
+    // Xác nhận sau khi chuyển khoản — polling kiểm tra booking được xác nhận qua webhook
     const handleQrConfirm = async () => {
         setChecking(true);
         setCheckMsg(null);
-        // Nếu dùng ví kết hợp: gọi pay-combined luôn (tin tưởng user đã CK phần còn lại)
-        if (useWallet && walletDeduction > 0) {
-            try {
-                await api.post(`/api/bookings/${bookingId}/pay-combined`, { wallet_amount: walletDeduction });
-                await refreshBalance();
-                clearPayment();
-                setPaid(true);
-                setChecking(false);
-                setTimeout(() => router.push(`/invoice/${bookingId}`), 1800);
-            } catch (err: unknown) {
-                setChecking(false);
-                const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-                setCheckMsg(`❌ ${detail || "Thanh toán thất bại, vui lòng thử lại"}`);
-            }
-        }
-        // Không dùng ví: polling kiểm tra booking được xác nhận qua webhook
     };
 
     // Đếm ngược timer chung cho toàn trang thanh toán
@@ -174,7 +157,7 @@ export default function PaymentPage() {
 
     // QR polling (chỉ khi không dùng ví)
     useEffect(() => {
-        if (!checking || (useWallet && walletDeduction > 0)) return;
+        if (!checking) return;
         let attempts = 0;
         const MAX = 24;
         const interval = setInterval(async () => {
@@ -564,43 +547,6 @@ export default function PaymentPage() {
                                 )}
                             </div>
 
-                            {/* Checkbox dùng ví — ẩn với guest */}
-                            {!isGuest && (
-                            <label
-                                className={`pay-use-wallet${useWallet ? " checked" : ""}`}
-                                onClick={() => setUseWallet(v => !v)}
-                            >
-                                <input
-                                    type="checkbox"
-                                    checked={useWallet}
-                                    onChange={() => setUseWallet(v => !v)}
-                                    onClick={e => e.stopPropagation()}
-                                />
-                                <span className="pay-use-wallet-label">💰 Sử dụng số dư Ví VIVU</span>
-                                <span className="pay-use-wallet-balance">{balance.toLocaleString("vi-VN")}₫</span>
-                            </label>
-                            )}
-
-                            {/* Breakdown khi dùng ví */}
-                            {!isGuest && useWallet && (
-                                <div className="pay-breakdown">
-                                    <div className="pay-breakdown-row">
-                                        <span className="pay-breakdown-label">Tổng đặt chỗ</span>
-                                        <span className="pay-breakdown-value">{amount.toLocaleString("vi-VN")}₫</span>
-                                    </div>
-                                    <div className="pay-breakdown-row">
-                                        <span className="pay-breakdown-label">Trừ từ ví</span>
-                                        <span className="pay-breakdown-value" style={{ color: "#00875a" }}>
-                                            -{walletDeduction.toLocaleString("vi-VN")}₫
-                                        </span>
-                                    </div>
-                                    <hr className="pay-breakdown-divider" />
-                                    <div className="pay-breakdown-row">
-                                        <span className="pay-breakdown-total-label">Cần chuyển khoản</span>
-                                        <span className="pay-breakdown-total-value">{qrAmount.toLocaleString("vi-VN")}₫</span>
-                                    </div>
-                                </div>
-                            )}
 
                             {/* Cashback info — ẩn với guest */}
                             {!isGuest && (
@@ -686,10 +632,7 @@ export default function PaymentPage() {
                             )}
 
                             <div className="pay-warning" style={{ marginTop: "1rem" }}>
-                                ⚠️ <strong>Lưu ý:</strong>{" "}
-                                {useWallet && walletDeduction > 0
-                                    ? `Số dư ví (${walletDeduction.toLocaleString("vi-VN")}₫) sẽ được trừ tự động khi xác nhận.`
-                                    : "Nhập đúng nội dung chuyển khoản để hệ thống tự động xác nhận đặt chỗ."}
+                                ⚠️ <strong>Lưu ý:</strong> Nhập đúng nội dung chuyển khoản để hệ thống tự động xác nhận đặt chỗ.
                             </div>
 
                             <button
@@ -700,11 +643,11 @@ export default function PaymentPage() {
                                 {checking ? (
                                     <><div className="pay-spinner" /> Đang xử lý...</>
                                 ) : (
-                                    qrAmount === 0 ? "✅ Xác nhận thanh toán bằng ví" : "✅ Tôi đã chuyển khoản xong"
+                                    "✅ Tôi đã chuyển khoản xong"
                                 )}
                             </button>
 
-                            {checking && !(useWallet && walletDeduction > 0) && (
+                            {checking && (
                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "0.75rem" }}>
                                     <p style={{ fontSize: "0.8rem", color: "#6b8cbf", margin: 0 }}>
                                         Đang kiểm tra giao dịch (tối đa 2 phút)...

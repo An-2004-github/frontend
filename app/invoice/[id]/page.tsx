@@ -14,9 +14,14 @@ interface BookingItem {
     check_out_date?: string;
     from_city?: string;
     to_city?: string;
+    from_station?: string;
+    to_station?: string;
     depart_time?: string;
     arrive_time?: string;
     quantity: number;
+    seat_class?: string;
+    adults?: number;
+    children?: number;
 }
 
 interface InvoiceData {
@@ -30,6 +35,13 @@ interface InvoiceData {
     items: BookingItem[];
     user: { full_name: string; email: string; phone?: string };
 }
+
+const CLASS_LABEL: Record<string, string> = {
+    economy: "Phổ thông", business: "Thương gia", first: "Hạng nhất",
+    standard: "Ghế thường", vip: "Ghế VIP", sleeper: "Giường nằm",
+    hard_seat: "Ngồi cứng", soft_seat: "Ngồi mềm",
+    hard_sleeper: "Nằm cứng", soft_sleeper: "Nằm mềm",
+};
 
 const TYPE_CONFIG: Record<string, { icon: string; label: string; color: string }> = {
     room:   { icon: "🏨", label: "Khách sạn",  color: "#0052cc" },
@@ -227,6 +239,22 @@ export default function InvoicePage() {
                                 {/* Khách sạn */}
                                 {item.entity_type === "room" && (
                                     <>
+                                        <div className="inv-row">
+                                            <span className="inv-label">🛏 Số phòng</span>
+                                            <span className="inv-value">{item.quantity} phòng</span>
+                                        </div>
+                                        {(item.adults ?? 0) > 0 && (
+                                            <div className="inv-row">
+                                                <span className="inv-label">👤 Người lớn</span>
+                                                <span className="inv-value">{item.adults} người</span>
+                                            </div>
+                                        )}
+                                        {(item.children ?? 0) > 0 && (
+                                            <div className="inv-row">
+                                                <span className="inv-label">🧒 Trẻ em</span>
+                                                <span className="inv-value">{item.children} trẻ em</span>
+                                            </div>
+                                        )}
                                         {item.check_in_date && (
                                             <div className="inv-row">
                                                 <span className="inv-label">📅 Nhận phòng</span>
@@ -259,6 +287,12 @@ export default function InvoicePage() {
                                                 <span className="inv-value">{item.from_city} → {item.to_city}</span>
                                             </div>
                                         )}
+                                        {item.entity_type === "train" && item.from_station && item.to_station && (
+                                            <div className="inv-row">
+                                                <span className="inv-label">🚉 Ga đi / Ga đến</span>
+                                                <span className="inv-value">{item.from_station} → {item.to_station}</span>
+                                            </div>
+                                        )}
                                         {item.depart_time && (
                                             <div className="inv-row">
                                                 <span className="inv-label">🛫 Khởi hành</span>
@@ -269,6 +303,16 @@ export default function InvoicePage() {
                                             <div className="inv-row">
                                                 <span className="inv-label">🛬 Đến nơi</span>
                                                 <span className="inv-value">{fmtDateTime(item.arrive_time)}</span>
+                                            </div>
+                                        )}
+                                        <div className="inv-row">
+                                            <span className="inv-label">👥 Số hành khách</span>
+                                            <span className="inv-value">{item.quantity} người</span>
+                                        </div>
+                                        {item.seat_class && (
+                                            <div className="inv-row">
+                                                <span className="inv-label">💺 Hạng ghế</span>
+                                                <span className="inv-value">{CLASS_LABEL[item.seat_class] ?? item.seat_class}</span>
                                             </div>
                                         )}
                                     </>

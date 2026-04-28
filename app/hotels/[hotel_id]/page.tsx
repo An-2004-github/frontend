@@ -147,11 +147,15 @@ export default function HotelDetailPage() {
             checkOut,
             nights,
             guests,
+            adultsCount: adults,
+            childrenCount: children,
             basePrice,
             taxAndFees,
             totalPrice: basePrice + taxAndFees,
             checkInTime: selectedRoom.check_in_time || hotel.check_in_time || "14:00",
             checkOutTime: selectedRoom.check_out_time || hotel.check_out_time || "12:00",
+            allowsRefund: hotel.allows_refund !== false,
+            allowsReschedule: hotel.allows_reschedule !== false,
         });
 
         router.push("/booking");
@@ -165,7 +169,9 @@ export default function HotelDetailPage() {
     if (!hotel) return null;
 
     const amenities: string[] = (() => {
-        try { return JSON.parse(hotel.amenities as unknown as string) || []; }
+        const raw = hotel.amenities;
+        if (Array.isArray(raw)) return raw;
+        try { return JSON.parse(raw as unknown as string) || []; }
         catch { return []; }
     })();
 

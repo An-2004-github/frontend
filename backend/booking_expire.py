@@ -51,11 +51,8 @@ def _cancel_expired_bookings():
                     WHERE flight_id = :fid AND is_booked = 1
                     LIMIT :n
                 """), {"fid": eid, "n": qty}).fetchall()
-                seat_ids = [str(s.seat_id) for s in booked_seats]
-                if seat_ids:
-                    conn.execute(text(
-                        f"UPDATE flight_seats SET is_booked = 0 WHERE seat_id IN ({','.join(seat_ids)})"
-                    ))
+                for s in booked_seats:
+                    conn.execute(text("UPDATE flight_seats SET is_booked = 0 WHERE seat_id = :sid"), {"sid": s.seat_id})
 
             # Giải phóng ghế bus
             elif etype == "bus":
@@ -64,11 +61,8 @@ def _cancel_expired_bookings():
                     WHERE bus_id = :bid AND is_booked = 1
                     LIMIT :n
                 """), {"bid": eid, "n": qty}).fetchall()
-                seat_ids = [str(s.seat_id) for s in booked_seats]
-                if seat_ids:
-                    conn.execute(text(
-                        f"UPDATE bus_seats SET is_booked = 0 WHERE seat_id IN ({','.join(seat_ids)})"
-                    ))
+                for s in booked_seats:
+                    conn.execute(text("UPDATE bus_seats SET is_booked = 0 WHERE seat_id = :sid"), {"sid": s.seat_id})
 
             # Giải phóng ghế train
             elif etype == "train":
@@ -77,19 +71,14 @@ def _cancel_expired_bookings():
                     WHERE train_id = :tid AND is_booked = 1
                     LIMIT :n
                 """), {"tid": eid, "n": qty}).fetchall()
-                seat_ids = [str(s.seat_id) for s in booked_seats]
-                if seat_ids:
-                    conn.execute(text(
-                        f"UPDATE train_seats SET is_booked = 0 WHERE seat_id IN ({','.join(seat_ids)})"
-                    ))
+                for s in booked_seats:
+                    conn.execute(text("UPDATE train_seats SET is_booked = 0 WHERE seat_id = :sid"), {"sid": s.seat_id})
 
             cancelled_ids.append(bid)
 
         if cancelled_ids:
-            id_list = ",".join(str(i) for i in cancelled_ids)
-            conn.execute(text(
-                f"UPDATE bookings SET status = 'cancelled' WHERE booking_id IN ({id_list})"
-            ))
+            for bid in cancelled_ids:
+                conn.execute(text("UPDATE bookings SET status = 'cancelled' WHERE booking_id = :bid"), {"bid": bid})
             logger.info(f"[BookingExpire] Auto-cancelled {len(cancelled_ids)} booking(s): {cancelled_ids}")
 
         return len(cancelled_ids)

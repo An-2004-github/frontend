@@ -123,7 +123,7 @@ async def sepay_webhook(request: Request):
         if booking_id:
             with engine.begin() as conn:
                 booking = conn.execute(
-                    text("SELECT * FROM bookings WHERE booking_id = :bid AND user_id = :uid"),
+                    text("SELECT * FROM bookings WHERE booking_id = :bid AND user_id = :uid FOR UPDATE"),
                     {"bid": booking_id, "uid": user_id}
                 ).fetchone()
 

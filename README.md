@@ -33,3 +33,18 @@ uvicorn main:app --reload
  
 #NGhĩa
 #GEMINI_API_KEY=AIzaSyAdEC9mZY_-_rHelf4VT1mi4Vz4zbI9XiI
+
+
+
+NOTE MAI SỬA:
+tranh chấp dữ liệu 
+Sửa phương thức thanh toán / ngày giờ giao dịch
+Email đổi phòng
+Được đổi nhiều lần và lần nào update lần đấy
+Bỏ hoàn về đâu đối với không được phần không được hoàn 
+Trang admin đặt chỗ có xem chi tiết để hiển thị lịch sử đổi/ hủy
+sửa email hủy đối với không hoàn tiền
+yêu cầu đổi hủy có thể hiện người duyệt 
+Sửa phần Thời gian khi chọn sẽ tự động cập nhật loại lịch trình 
+Sửa phần tìm kiếm khách sạn khi link từ trang gợi ý
+ Sửa phần đổi lịch 

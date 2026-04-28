@@ -265,8 +265,7 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
             setCancelPreview(res.data);
             setStep(2);
         } catch (e: unknown) {
-            alert("Không thể tính phí hủy lúc này.");
-            setStep(2); // Vẫn cho đi tiếp nhưng không hiện chi tiết
+            alert("Không thể tính phí hủy lúc này. Vui lòng thử lại.");
         } finally {
             setLoadingPreview(false);
         }
@@ -608,8 +607,11 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
 
                         <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
                             <button onClick={() => setStep(1)} style={outlineBtn}>← Quay lại</button>
-                            <button onClick={() => setStep(3)} style={{ ...primaryBtn, flex: 1,
-                                ...(cancelPreview?.non_refundable ? { background: "linear-gradient(135deg,#bf2600,#e74c3c)" } : {}) }}>
+                            <button
+                                onClick={() => cancelPreview?.non_refundable ? setStep(3) : setStep(3)}
+                                style={{ ...primaryBtn, flex: 1,
+                                    ...(cancelPreview?.non_refundable ? { background: "linear-gradient(135deg,#bf2600,#e74c3c)" } : {}) }}
+                            >
                                 Tiếp tục →
                             </button>
                         </div>
@@ -618,23 +620,47 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
 
                 {step === 3 && (
                     <>
-                        <p style={sectionLabel}>💰 Chọn phương thức hoàn tiền</p>
-                        <RefundMethodPicker
-                            value={refundMethod}
-                            onChange={setRefundMethod}
-                            bankInfo={bankInfo}
-                            onBankInfoChange={setBankInfo}
-                        />
-                        <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
-                            <button onClick={() => setStep(2)} style={outlineBtn}>← Quay lại</button>
-                            <button
-                                onClick={submitCancel}
-                                disabled={submitting || (refundMethod === "bank" && !bankInfo.trim())}
-                                style={{ ...primaryBtn, flex: 1, background: "linear-gradient(135deg,#c0392b,#e74c3c)", opacity: submitting ? 0.6 : 1 }}
-                            >
-                                {submitting ? "Đang xử lý..." : "❌ Xác nhận hủy"}
-                            </button>
-                        </div>
+                        {cancelPreview?.non_refundable ? (
+                            <>
+                                <div style={{ background: "#fff0ee", border: "2px solid #e74c3c", borderRadius: 12, padding: "1rem", marginBottom: "0.75rem", textAlign: "center" }}>
+                                    <div style={{ fontSize: "1.5rem", marginBottom: "0.5rem" }}>⛔</div>
+                                    <div style={{ fontWeight: 700, color: "#bf2600", fontSize: "0.95rem" }}>Không hoàn tiền</div>
+                                    <div style={{ fontSize: "0.85rem", color: "#7b0000", marginTop: "0.4rem" }}>
+                                        Đặt chỗ này không được hoàn tiền. Bạn sẽ mất <strong>{fmt(totalPrice)}</strong>.
+                                    </div>
+                                </div>
+                                <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+                                    <button onClick={() => setStep(2)} style={outlineBtn}>← Quay lại</button>
+                                    <button
+                                        onClick={submitCancel}
+                                        disabled={submitting}
+                                        style={{ ...primaryBtn, flex: 1, background: "linear-gradient(135deg,#c0392b,#e74c3c)", opacity: submitting ? 0.6 : 1 }}
+                                    >
+                                        {submitting ? "Đang xử lý..." : "❌ Xác nhận hủy"}
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <p style={sectionLabel}>💰 Chọn phương thức hoàn tiền</p>
+                                <RefundMethodPicker
+                                    value={refundMethod}
+                                    onChange={setRefundMethod}
+                                    bankInfo={bankInfo}
+                                    onBankInfoChange={setBankInfo}
+                                />
+                                <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+                                    <button onClick={() => setStep(2)} style={outlineBtn}>← Quay lại</button>
+                                    <button
+                                        onClick={submitCancel}
+                                        disabled={submitting || (refundMethod === "bank" && !bankInfo.trim())}
+                                        style={{ ...primaryBtn, flex: 1, background: "linear-gradient(135deg,#c0392b,#e74c3c)", opacity: submitting ? 0.6 : 1 }}
+                                    >
+                                        {submitting ? "Đang xử lý..." : "❌ Xác nhận hủy"}
+                                    </button>
+                                </div>
+                            </>
+                        )}
                     </>
                 )}
             </Overlay>
@@ -822,15 +848,29 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
                                         const isOptSelected = selectedOpt === opt;
                                         const oldPrice = Number(optionsData.old_price || 0);
 
+                                        // Disable cùng hạng phòng khi ngày không đổi
+                                        const origCheckIn  = item?.check_in_date?.slice(0, 10)  ?? "";
+                                        const origCheckOut = item?.check_out_date?.slice(0, 10) ?? "";
+                                        const sameDate = isRoom && newCheckIn === origCheckIn && newCheckOut === origCheckOut;
+                                        const isSameRoom = isRoom && (opt as { room_type_id: number }).room_type_id === item?.entity_id;
+                                        const isDisabled = sameDate && isSameRoom;
+
                                         return (
-                                            <div key={idx} style={{ border: `2px solid ${isOptSelected ? "#0052cc" : "#e8f0fe"}`, borderRadius: 12, overflow: "hidden" }}>
+                                            <div key={idx} style={{ border: `2px solid ${isDisabled ? "#e8e8e8" : isOptSelected ? "#0052cc" : "#e8f0fe"}`, borderRadius: 12, overflow: "hidden", opacity: isDisabled ? 0.5 : 1 }}>
                                                 {/* Header chuyến */}
                                                 <div
-                                                    onClick={() => { setSelectedOpt(opt); setSelectedClass(null); }}
-                                                    style={{ padding: "0.85rem", cursor: "pointer", background: isOptSelected ? "#eef4ff" : "#fff" }}
+                                                    onClick={() => { if (!isDisabled) { setSelectedOpt(opt); setSelectedClass(null); } }}
+                                                    style={{ padding: "0.85rem", cursor: isDisabled ? "not-allowed" : "pointer", background: isOptSelected ? "#eef4ff" : "#fff" }}
                                                 >
                                                     {isRoom ? (
-                                                        <RoomOption opt={opt} nights={Number(optionsData.nights || 1)} diff={Number((opt as {total_price:number}).total_price) - oldPrice} />
+                                                        <>
+                                                            <RoomOption opt={opt} nights={Number(optionsData.nights || 1)} diff={Number((opt as {total_price:number}).total_price) - oldPrice} />
+                                                            {isDisabled && (
+                                                                <div style={{ fontSize: "0.72rem", color: "#bf2600", marginTop: 4 }}>
+                                                                    🚫 Không thể chọn hạng phòng hiện tại khi cùng ngày
+                                                                </div>
+                                                            )}
+                                                        </>
                                                     ) : (
                                                         <TransportOption opt={opt} entityType={entityType} diff={0} />
                                                     )}
@@ -926,18 +966,25 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
                         const rawDiff   = Math.round(newPrice - oldPrice);
                         const curPolicy = classOnly ? undefined : (optionsData?.current_policy as Record<string, unknown> | undefined);
 
+                        // classOnly: lấy policy từ class HIỆN TẠI (vé gốc đã mua), không phải class mới chọn
+                        // vì quy tắc hoàn tiền / phí đổi lịch theo điều khoản vé đang giữ
+                        type ClassInfo = { seat_class: string; is_current?: boolean; refund_on_downgrade?: boolean; reschedule_fee_percent?: number };
+                        const currentClassInfo = classOnly
+                            ? (classOptions?.classes as ClassInfo[] | undefined)?.find(c => c.is_current)
+                            : undefined;
+
                         // Phí đổi lịch: hotel dùng reschedule_fee_info từ API, transport dùng policy
                         const hotelFeeInfo = isRoom
                             ? (optionsData?.reschedule_fee_info as { fee_percent: number; note: string } | undefined)
                             : undefined;
                         const feePercent = isRoom
                             ? (hotelFeeInfo?.fee_percent ?? 0)
-                            : Number(selectedClass?.reschedule_fee_percent ?? curPolicy?.reschedule_fee_percent ?? 0);
+                            : Number(currentClassInfo?.reschedule_fee_percent ?? selectedClass?.reschedule_fee_percent ?? curPolicy?.reschedule_fee_percent ?? 0);
                         const rFee = Math.round(oldPrice * feePercent / 100);
-                        // Hotel: dùng allows_refund từ API; transport: theo policy hãng
+                        // Hotel: dùng allows_refund từ API; transport: theo policy của class HIỆN TẠI
                         const rod = isRoom
                             ? (optionsData?.allows_refund !== false)
-                            : (selectedClass?.refund_on_downgrade ?? Boolean(curPolicy?.refund_on_downgrade ?? true));
+                            : (currentClassInfo?.refund_on_downgrade ?? selectedClass?.refund_on_downgrade ?? Boolean(curPolicy?.refund_on_downgrade ?? true));
 
                         // Tính số tiền thực sự cần thu/hoàn
                         let amountToPay = 0, amountToRefund = 0;
@@ -977,13 +1024,24 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
                                             {selectedClass && <InfoRow label="Hạng ghế mới" value={CLASS_LABEL[selectedClass.seat_class] ?? selectedClass.seat_class} valueColor="#0052cc" />}
                                         </>
                                     )}
-                                    <InfoRow label="Giá cũ" value={fmt(oldPrice)} />
-                                    <InfoRow label="Giá mới" value={fmt(newPrice)} />
-                                    {rFee > 0 && <InfoRow label={`Phí đổi lịch (${feePercent}%)`} value={fmt(rFee)} valueColor="#e67e22" />}
-                                    {amountToPay > 0 && <InfoRow label="Cần thanh toán thêm" value={fmt(amountToPay)} valueColor="#c0392b" />}
-                                    {amountToRefund > 0 && <InfoRow label="Được hoàn lại" value={fmt(amountToRefund)} valueColor="#00875a" />}
-                                    {amountToPay === 0 && amountToRefund === 0 && <InfoRow label="Chênh lệch" value="Không đổi" valueColor="#00875a" />}
-                                    {rawDiff < 0 && !rod && rFee === 0 && <InfoRow label="Lưu ý" value="Không hoàn chênh lệch theo chính sách hãng" valueColor="#7b5700" />}
+                                    <InfoRow label="Giá vé cũ" value={fmt(oldPrice)} />
+                                    <InfoRow label="Giá vé mới" value={fmt(newPrice)} />
+                                    <InfoRow
+                                        label={`Chênh lệch giá`}
+                                        value={(rawDiff > 0 ? "+" : "") + fmt(rawDiff)}
+                                        valueColor={rawDiff > 0 ? "#c0392b" : rawDiff < 0 ? "#00875a" : "#555"}
+                                    />
+                                    <InfoRow
+                                        label={`Phí đổi lịch (${feePercent}%)`}
+                                        value={rFee > 0 ? fmt(rFee) : "Miễn phí"}
+                                        valueColor={rFee > 0 ? "#e67e22" : "#00875a"}
+                                    />
+                                    {rawDiff < 0 && !rod && <InfoRow label="Lưu ý" value="Không hoàn chênh lệch theo chính sách hãng" valueColor="#7b5700" />}
+                                    <div style={{ borderTop: "1px solid #e8f0fe", marginTop: "0.4rem", paddingTop: "0.4rem" }}>
+                                        {amountToPay > 0 && <InfoRow label="Cần thanh toán thêm" value={fmt(amountToPay)} valueColor="#c0392b" />}
+                                        {amountToRefund > 0 && <InfoRow label="Được hoàn lại" value={fmt(amountToRefund)} valueColor="#00875a" />}
+                                        {amountToPay === 0 && amountToRefund === 0 && <InfoRow label="Tổng cộng" value="Không thay đổi" valueColor="#00875a" />}
+                                    </div>
                                 </div>
 
                                 {amountToRefund > 0 && (
