@@ -12,8 +12,8 @@ interface GetHotelsParams {
 }
 
 export const hotelService = {
-    getHotels: async (params?: GetHotelsParams): Promise<Hotel[]> => {
-        const response = await axiosInstance.get("/api/hotels", { params });
+    getHotels: async (params?: GetHotelsParams, signal?: AbortSignal): Promise<Hotel[]> => {
+        const response = await axiosInstance.get("/api/hotels", { params, signal });
         return response.data;
     },
 

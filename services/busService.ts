@@ -12,8 +12,8 @@ interface SearchBusesParams {
 }
 
 export const busService = {
-    searchBuses: async (params?: SearchBusesParams): Promise<Bus[]> => {
-        const response = await axiosInstance.get("/api/buses", { params });
+    searchBuses: async (params?: SearchBusesParams, signal?: AbortSignal): Promise<Bus[]> => {
+        const response = await axiosInstance.get("/api/buses", { params, signal });
         return response.data;
     },
 

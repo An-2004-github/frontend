@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { useBookingStore } from "@/store/bookingStore";
@@ -15,6 +15,7 @@ export default function BookingPage() {
     const { booking, clearBooking } = useBookingStore();
     const { setPayment } = usePaymentStore();
     const [submitting, setSubmitting] = useState(false);
+    const submittingRef = useRef(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
     const passengerCount = (booking?.type === "flight" || booking?.type === "bus" || booking?.type === "train")
@@ -98,12 +99,14 @@ export default function BookingPage() {
             e.guestName = "Vui lòng nhập tên người được đặt";
 
         if (booking?.type === "flight") {
+            const intl = booking.isInternational;
             form.passengerList.forEach((p, i) => {
                 if (!p.gender) e[`passenger_${i}_gender`] = "Vui lòng chọn giới tính";
                 if (!p.lastName.trim()) e[`passenger_${i}_lastName`] = "Vui lòng nhập họ";
                 if (!p.firstName.trim()) e[`passenger_${i}_firstName`] = "Vui lòng nhập tên";
-                if (!p.nationality) e[`passenger_${i}_nationality`] = "Vui lòng chọn quốc tịch";
-                if (!p.passportNumber.trim()) e[`passenger_${i}_passportNumber`] = "Vui lòng nhập số hộ chiếu";
+                if (intl && !p.nationality) e[`passenger_${i}_nationality`] = "Vui lòng chọn quốc tịch";
+                if (!p.passportNumber.trim())
+                    e[`passenger_${i}_passportNumber`] = intl ? "Vui lòng nhập số hộ chiếu" : "Vui lòng nhập số CCCD/CMND";
             });
         }
 
@@ -115,11 +118,18 @@ export default function BookingPage() {
         }
 
         setErrors(e);
+        if (Object.keys(e).length > 0) {
+            setTimeout(() => {
+                document.querySelector(".bf-err")?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }, 50);
+        }
         return Object.keys(e).length === 0;
     };
 
     const handleContinue = async (promoId?: number, discountAmount?: number) => {
         if (!validate() || !booking) return;
+        if (submittingRef.current) return;
+        submittingRef.current = true;
         setSubmitting(true);
         try {
             // Nếu chưa đăng nhập → tạo guest account rồi lấy token
@@ -207,10 +217,14 @@ export default function BookingPage() {
             router.push(`/payment/${bookingId}`);
             clearBooking();
         } catch (err: unknown) {
-            const detail = (err as { response?: { data?: { detail?: string } } })
-                ?.response?.data?.detail;
-            alert(`❌ ${detail || "Đặt chỗ thất bại, vui lòng thử lại"}`);
+            const status = (err as { response?: { status?: number } })?.response?.status;
+            const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+            const msg = status === 500
+                ? "Hệ thống đang bận (có thể do tranh chấp đặt chỗ), vui lòng thử lại sau vài giây"
+                : (detail || "Đặt chỗ thất bại, vui lòng thử lại");
+            alert(`❌ ${msg}`);
         } finally {
+            submittingRef.current = false;
             setSubmitting(false);
         }
     };
@@ -239,6 +253,7 @@ export default function BookingPage() {
                                 errors={errors}
                                 bookingType={booking.type}
                                 flightRoute={booking.type === "flight" ? { fromCity: booking.fromCity, toCity: booking.toCity } : undefined}
+                                isInternational={booking.type === "flight" ? booking.isInternational : undefined}
                                 passengerCount={passengerCount}
                                 onChange={handleChange}
                                 onPassengerChange={handlePassengerChange}

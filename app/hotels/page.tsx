@@ -75,7 +75,7 @@ export default function HotelsPage() {
     const [priceIdx, setPriceIdx] = useState(0);
     const [ratingIdx, setRatingIdx] = useState(0);
     const [sortVal, setSortVal] = useState("rating");
-    const [refundOnly, setRefundOnly] = useState(false);
+    const [refundFilter, setRefundFilter] = useState<"all" | "refundable" | "non_refundable">("all");
     const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
     const [selectedCity, setSelectedCity] = useState<string | null>(null);
     const [checkIn, setCheckIn] = useState(() => localDate(0));
@@ -157,8 +157,13 @@ export default function HotelsPage() {
             .then(setPromos).catch(() => { });
     }, []);
 
+    const fetchAbortRef = useRef<AbortController | null>(null);
+
     // ── Fetch filtered hotels ─────────────────────────────────────
     const fetchHotels = useCallback(async (keyword?: string) => {
+        fetchAbortRef.current?.abort();
+        const controller = new AbortController();
+        fetchAbortRef.current = controller;
         setLoadingHotels(true);
         try {
             const price = PRICE_OPTIONS[priceIdx];
@@ -168,11 +173,12 @@ export default function HotelsPage() {
                 max_price: price.max,
                 sort: sortVal as "rating" | "price_asc" | "price_desc",
                 min_guests: guestsPerRoom,
-            });
+            }, controller.signal);
             let filtered = data;
             const minRating = RATING_OPTIONS[ratingIdx].min;
             if (minRating > 0) filtered = filtered.filter(h => (h.avg_rating ?? 0) >= minRating);
-            if (refundOnly) filtered = filtered.filter(h => h.allows_refund === true);
+            if (refundFilter === "refundable") filtered = filtered.filter(h => h.allows_refund === true);
+            if (refundFilter === "non_refundable") filtered = filtered.filter(h => h.allows_refund === false);
             if (selectedAmenities.length > 0) {
                 filtered = filtered.filter(h => {
                     const hAmens: string[] = Array.isArray(h.amenities) ? h.amenities : [];
@@ -182,17 +188,20 @@ export default function HotelsPage() {
                 });
             }
             setHotels(filtered);
+        } catch (err) {
+            if ((err as { name?: string })?.name === "CanceledError" || (err as { name?: string })?.name === "AbortError") return;
+            setHotels([]);
         } finally {
             setLoadingHotels(false);
         }
-    }, [priceIdx, ratingIdx, sortVal, guestsPerRoom, refundOnly, selectedAmenities]);
+    }, [priceIdx, ratingIdx, sortVal, guestsPerRoom, refundFilter, selectedAmenities]);
 
     // Tự động re-fetch khi filter/sort thay đổi (chỉ khi đã tìm kiếm)
     useEffect(() => {
         if (!showFilter) return;
         fetchHotels(search);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [priceIdx, ratingIdx, sortVal, guestsPerRoom, refundOnly, selectedAmenities]);
+    }, [priceIdx, ratingIdx, sortVal, guestsPerRoom, refundFilter, selectedAmenities]);
 
     const handleSearch = () => {
         if (!searchInput.trim()) { setSearchError("Vui lòng nhập tên khách sạn hoặc địa điểm"); return; }
@@ -207,7 +216,7 @@ export default function HotelsPage() {
         setSearchInput("");
         setPriceIdx(0); setRatingIdx(0);
         setSortVal("rating"); setSelectedCity(null);
-        setRefundOnly(false); setSelectedAmenities([]);
+        setRefundFilter("all"); setSelectedAmenities([]);
         setShowFilter(false); setHotels([]);
     };
 
@@ -927,13 +936,23 @@ export default function HotelsPage() {
 
                                     {/* Refund policy */}
                                     <div className="hp-filter-group">
-                                        <div className="hp-filter-group-label">Chính sách</div>
+                                        <div className="hp-filter-group-label">Chính sách hoàn tiền</div>
                                         <button
-                                            className={`hp-refund-toggle${refundOnly ? " active" : ""}`}
-                                            onClick={() => setRefundOnly(v => !v)}
+                                            className={`hp-refund-toggle${refundFilter === "refundable" ? " active" : ""}`}
+                                            onClick={() => setRefundFilter(v => v === "refundable" ? "all" : "refundable")}
                                         >
-                                            <span className="hp-toggle-box">{refundOnly ? "✓" : ""}</span>
+                                            <span className="hp-toggle-box">{refundFilter === "refundable" ? "✓" : ""}</span>
                                             ✅ Có thể hoàn tiền
+                                        </button>
+                                        <button
+                                            className={`hp-refund-toggle${refundFilter === "non_refundable" ? " active" : ""}`}
+                                            style={refundFilter === "non_refundable" ? { background: "#fff0ee", borderColor: "#f5c0b8", color: "#bf2600", fontWeight: 600 } : {}}
+                                            onClick={() => setRefundFilter(v => v === "non_refundable" ? "all" : "non_refundable")}
+                                        >
+                                            <span className="hp-toggle-box" style={{ borderColor: refundFilter === "non_refundable" ? "#bf2600" : undefined, background: refundFilter === "non_refundable" ? "#bf2600" : undefined }}>
+                                                {refundFilter === "non_refundable" ? "✓" : ""}
+                                            </span>
+                                            ❌ Không hoàn tiền
                                         </button>
                                     </div>
 

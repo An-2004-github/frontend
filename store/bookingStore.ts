@@ -39,6 +39,7 @@ export interface FlightBooking {
     basePrice: number;
     taxAndFees: number;
     totalPrice: number;
+    isInternational: boolean;
 }
 
 export interface BusBooking {

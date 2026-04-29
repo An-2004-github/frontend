@@ -116,13 +116,14 @@ interface Props {
     errors: Record<string, string>;
     bookingType: BookingType;
     flightRoute?: { fromCity: string; toCity: string };
+    isInternational?: boolean;
     passengerCount?: number;
     onChange: <K extends keyof ContactForm>(field: K, value: ContactForm[K]) => void;
     onPassengerChange: (index: number, field: keyof PassengerInfo, value: string) => void;
 }
 
 export default function BookingForm({
-    form, errors, bookingType, flightRoute, passengerCount = 1,
+    form, errors, bookingType, flightRoute, isInternational = false, passengerCount = 1,
     onChange, onPassengerChange,
 }: Props) {
     const { user } = useAuthStore();
@@ -384,7 +385,7 @@ export default function BookingForm({
                                     </div>
                                 </div>
 
-                                {/* Ngày sinh | Quốc tịch */}
+                                {/* Ngày sinh | Quốc tịch (quốc tịch chỉ cần cho bay quốc tế) */}
                                 <div className="bf-grid2" style={{ marginTop: "1rem" }}>
                                     <div>
                                         <label className="bf-label">Ngày sinh</label>
@@ -428,87 +429,109 @@ export default function BookingForm({
                                             {p.type === "infant" && "Dưới 2 tuổi"}
                                         </div>
                                     </div>
-                                    <div>
-                                        <label className="bf-label">Quốc tịch<em>*</em></label>
-                                        <div className="bf-select-wrap">
-                                            <select
-                                                className={`bf-select${errors[`passenger_${i}_nationality`] ? " err" : ""}`}
-                                                value={p.nationality}
-                                                onChange={e => onPassengerChange(i, "nationality", e.target.value)}
-                                            >
-                                                <option value=""></option>
-                                                {NATIONALITIES.map(n => <option key={n} value={n}>{n}</option>)}
-                                            </select>
+                                    {isInternational && (
+                                        <div>
+                                            <label className="bf-label">Quốc tịch<em>*</em></label>
+                                            <div className="bf-select-wrap">
+                                                <select
+                                                    className={`bf-select${errors[`passenger_${i}_nationality`] ? " err" : ""}`}
+                                                    value={p.nationality}
+                                                    onChange={e => onPassengerChange(i, "nationality", e.target.value)}
+                                                >
+                                                    <option value=""></option>
+                                                    {NATIONALITIES.map(n => <option key={n} value={n}>{n}</option>)}
+                                                </select>
+                                            </div>
+                                            {errors[`passenger_${i}_nationality`] && (
+                                                <div className="bf-err">{errors[`passenger_${i}_nationality`]}</div>
+                                            )}
                                         </div>
-                                        {errors[`passenger_${i}_nationality`] && (
-                                            <div className="bf-err">{errors[`passenger_${i}_nationality`]}</div>
-                                        )}
-                                    </div>
+                                    )}
                                 </div>
 
-                                {/* Thông tin hộ chiếu */}
+                                {/* Giấy tờ tùy thân: CCCD nội địa / Hộ chiếu quốc tế */}
                                 <div className="bf-passport-section">
-                                    <div className="bf-title" style={{ fontSize: "0.92rem", marginBottom: "0.75rem" }}>
-                                        Thông tin hộ chiếu — {getPassengerLabel(p.type, i)}
-                                    </div>
-                                    <div className="bf-passport-note">
-                                        Nếu hành khách chưa có hộ chiếu hoặc hộ chiếu đã hết hạn, bạn vẫn có thể tiếp tục đặt vé.{" "}
-                                        <a href="#">Tìm hiểu thêm</a>
-                                    </div>
-                                    <div style={{ marginBottom: "1rem" }}>
-                                        <label className="bf-label">Số hộ chiếu<em>*</em></label>
-                                        <input
-                                            className={`bf-input${errors[`passenger_${i}_passportNumber`] ? " err" : ""}`}
-                                            value={p.passportNumber}
-                                            onChange={e => onPassengerChange(i, "passportNumber", e.target.value.toUpperCase())}
-                                            placeholder="VD: B1234567"
-                                        />
-                                        {isMinor && (
-                                            <div className="bf-child-note">
-                                                ℹ️ Đối với hành khách là trẻ em hoặc trẻ sơ sinh, vui lòng nhập giấy tờ tùy thân của người giám hộ đi cùng trẻ.
+                                    {isInternational ? (
+                                        <>
+                                            <div className="bf-title" style={{ fontSize: "0.92rem", marginBottom: "0.75rem" }}>
+                                                🛂 Hộ chiếu — {getPassengerLabel(p.type, i)}
                                             </div>
-                                        )}
-                                        {errors[`passenger_${i}_passportNumber`] && (
-                                            <div className="bf-err">{errors[`passenger_${i}_passportNumber`]}</div>
-                                        )}
-                                    </div>
-                                    <div>
-                                        <label className="bf-label">Ngày hết hạn</label>
-                                        <div className="bf-date-row">
-                                            <div className="bf-select-wrap">
-                                                <select
-                                                    className="bf-select"
-                                                    value={p.passportExpDay}
-                                                    onChange={e => onPassengerChange(i, "passportExpDay", e.target.value)}
-                                                >
-                                                    <option value="">Ngày</option>
-                                                    {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
-                                                </select>
+                                            <div className="bf-passport-note">
+                                                Nếu hành khách chưa có hộ chiếu hoặc hộ chiếu đã hết hạn, bạn vẫn có thể tiếp tục đặt vé.{" "}
+                                                <a href="#">Tìm hiểu thêm</a>
                                             </div>
-                                            <div className="bf-select-wrap">
-                                                <select
-                                                    className="bf-select"
-                                                    value={p.passportExpMonth}
-                                                    onChange={e => onPassengerChange(i, "passportExpMonth", e.target.value)}
-                                                >
-                                                    <option value="">Tháng</option>
-                                                    {MONTHS.map((m, mi) => (
-                                                        <option key={mi} value={String(mi + 1).padStart(2, "0")}>{m}</option>
-                                                    ))}
-                                                </select>
+                                            <div style={{ marginBottom: "1rem" }}>
+                                                <label className="bf-label">Số hộ chiếu<em>*</em></label>
+                                                <input
+                                                    className={`bf-input${errors[`passenger_${i}_passportNumber`] ? " err" : ""}`}
+                                                    value={p.passportNumber}
+                                                    onChange={e => onPassengerChange(i, "passportNumber", e.target.value.toUpperCase())}
+                                                    placeholder="VD: B1234567"
+                                                />
+                                                {isMinor && (
+                                                    <div className="bf-child-note">
+                                                        ℹ️ Đối với trẻ em hoặc trẻ sơ sinh, vui lòng nhập giấy tờ của người giám hộ đi cùng.
+                                                    </div>
+                                                )}
+                                                {errors[`passenger_${i}_passportNumber`] && (
+                                                    <div className="bf-err">{errors[`passenger_${i}_passportNumber`]}</div>
+                                                )}
                                             </div>
-                                            <div className="bf-select-wrap">
-                                                <select
-                                                    className="bf-select"
-                                                    value={p.passportExpYear}
-                                                    onChange={e => onPassengerChange(i, "passportExpYear", e.target.value)}
-                                                >
-                                                    <option value="">Năm</option>
-                                                    {PASSPORT_EXP_YEARS.map(y => <option key={y} value={String(y)}>{y}</option>)}
-                                                </select>
+                                            <div>
+                                                <label className="bf-label">Ngày hết hạn hộ chiếu</label>
+                                                <div className="bf-date-row">
+                                                    <div className="bf-select-wrap">
+                                                        <select className="bf-select" value={p.passportExpDay} onChange={e => onPassengerChange(i, "passportExpDay", e.target.value)}>
+                                                            <option value="">Ngày</option>
+                                                            {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div className="bf-select-wrap">
+                                                        <select className="bf-select" value={p.passportExpMonth} onChange={e => onPassengerChange(i, "passportExpMonth", e.target.value)}>
+                                                            <option value="">Tháng</option>
+                                                            {MONTHS.map((m, mi) => (
+                                                                <option key={mi} value={String(mi + 1).padStart(2, "0")}>{m}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                    <div className="bf-select-wrap">
+                                                        <select className="bf-select" value={p.passportExpYear} onChange={e => onPassengerChange(i, "passportExpYear", e.target.value)}>
+                                                            <option value="">Năm</option>
+                                                            {PASSPORT_EXP_YEARS.map(y => <option key={y} value={String(y)}>{y}</option>)}
+                                                        </select>
+                                                    </div>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="bf-title" style={{ fontSize: "0.92rem", marginBottom: "0.75rem" }}>
+                                                🪪 CCCD / CMND — {getPassengerLabel(p.type, i)}
+                                            </div>
+                                            <div className="bf-passport-note">
+                                                Nhập số CCCD/CMND chính xác như trên thẻ. Hành khách cần mang theo giấy tờ gốc khi làm thủ tục.
+                                            </div>
+                                            <div>
+                                                <label className="bf-label">Số CCCD / CMND<em>*</em></label>
+                                                <input
+                                                    className={`bf-input${errors[`passenger_${i}_passportNumber`] ? " err" : ""}`}
+                                                    value={p.passportNumber}
+                                                    onChange={e => onPassengerChange(i, "passportNumber", e.target.value.replace(/\D/g, ""))}
+                                                    placeholder="VD: 001234567890"
+                                                    maxLength={12}
+                                                    inputMode="numeric"
+                                                />
+                                                {isMinor && (
+                                                    <div className="bf-child-note">
+                                                        ℹ️ Đối với trẻ em dưới 14 tuổi chưa có CCCD, nhập số khai sinh hoặc CCCD của người giám hộ đi cùng.
+                                                    </div>
+                                                )}
+                                                {errors[`passenger_${i}_passportNumber`] && (
+                                                    <div className="bf-err">{errors[`passenger_${i}_passportNumber`]}</div>
+                                                )}
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         );
@@ -646,7 +669,10 @@ export default function BookingForm({
                 <>
                     <div className="bf-passport-remind">
                         <span>ℹ️</span>
-                        <span>Mỗi hành khách phải mang theo hộ chiếu còn hiệu lực ít nhất <strong>6 tháng</strong> sau ngày khởi hành.</span>
+                        {isInternational
+                            ? <span>Chuyến bay quốc tế — mỗi hành khách phải mang theo <strong>hộ chiếu</strong> còn hiệu lực ít nhất <strong>6 tháng</strong> sau ngày khởi hành.</span>
+                            : <span>Chuyến bay nội địa — mỗi hành khách phải mang theo <strong>CCCD/CMND</strong> còn hiệu lực khi làm thủ tục tại sân bay.</span>
+                        }
                     </div>
 
                     <div className="bf-essentials-card">

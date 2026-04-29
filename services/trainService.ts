@@ -2,8 +2,8 @@ import axiosInstance from "@/lib/axios";
 import { Train, TrainDetail, TrainSearchParams } from "@/types/train";
 
 export const trainService = {
-    searchTrains: async (params?: TrainSearchParams): Promise<Train[]> => {
-        const response = await axiosInstance.get("/api/trains", { params });
+    searchTrains: async (params?: TrainSearchParams, signal?: AbortSignal): Promise<Train[]> => {
+        const response = await axiosInstance.get("/api/trains", { params, signal });
         return response.data;
     },
 

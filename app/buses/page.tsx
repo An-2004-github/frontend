@@ -80,6 +80,7 @@ export default function BusesPage() {
     }, [fromCity]);
 
     const [errors, setErrors] = useState<Record<string, string>>({});
+    const searchAbortRef = useRef<AbortController | null>(null);
 
     const handleSearch = useCallback(async () => {
         const errs: Record<string, string> = {};
@@ -87,6 +88,9 @@ export default function BusesPage() {
         if (!toCity.trim())   errs.toCity   = "Vui lòng nhập điểm đến";
         if (Object.keys(errs).length > 0) { setErrors(errs); return; }
         setErrors({});
+        searchAbortRef.current?.abort();
+        const controller = new AbortController();
+        searchAbortRef.current = controller;
         try {
             setLoading(true); setSearched(true); setError(null);
             const price = PRICE_OPTIONS[priceIdx];
@@ -98,7 +102,7 @@ export default function BusesPage() {
                 min_price: price.min,
                 max_price: price.max,
                 sort: sortVal as "price_asc" | "price_desc" | "depart_asc" | "duration",
-            });
+            }, controller.signal);
 
             // Filter theo giờ đi client-side
             const time = TIME_OPTIONS[timeIdx];
@@ -108,7 +112,8 @@ export default function BusesPage() {
             });
 
             setBuses(filtered);
-        } catch {
+        } catch (err) {
+            if ((err as { name?: string })?.name === "CanceledError" || (err as { name?: string })?.name === "AbortError") return;
             setError("Không thể tải dữ liệu. Vui lòng thử lại.");
         } finally {
             setLoading(false);

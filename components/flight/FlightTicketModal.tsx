@@ -43,6 +43,20 @@ function formatDate(dateStr: string) {
 
 const ACCENT = "#0052cc";
 
+const VN_CITIES = new Set([
+    "hà nội", "ha noi", "hồ chí minh", "ho chi minh", "tp. hồ chí minh", "tp hồ chí minh",
+    "sài gòn", "sai gon", "đà nẵng", "da nang", "huế", "hue", "nha trang",
+    "đà lạt", "da lat", "phú quốc", "phu quoc", "hải phòng", "hai phong",
+    "cần thơ", "can tho", "vinh", "đồng hới", "dong hoi", "rạch giá", "rach gia",
+    "côn đảo", "con dao", "buôn ma thuột", "buon ma thuot", "pleiku", "chu lai",
+    "tuy hòa", "tuy hoa", "cà mau", "ca mau", "liên khương", "lien khuong",
+    "điện biên", "dien bien", "quy nhơn", "quy nhon", "thanh hóa", "thanh hoa",
+]);
+
+function isDomesticFlight(fromCity: string, toCity: string): boolean {
+    return VN_CITIES.has(fromCity.toLowerCase()) && VN_CITIES.has(toCity.toLowerCase());
+}
+
 function PolicyTag({ ok, label }: { ok: boolean; label: string }) {
     return (
         <div style={{
@@ -78,21 +92,22 @@ export default function FlightTicketModal({ flight, passengers, adults, children
         const basePrice  = selected.price * passengers;
         const taxAndFees = Math.round(basePrice * 0.1);
         setBooking({
-            type:          "flight",
-            flightId:      flight.flight_id,
-            airline:       flight.airline,
-            fromCity:      flight.from_city,
-            toCity:        flight.to_city,
-            departTime:    flight.depart_time,
-            arriveTime:    flight.arrive_time,
-            seatClass:     selected.seat_class,
+            type:            "flight",
+            flightId:        flight.flight_id,
+            airline:         flight.airline,
+            fromCity:        flight.from_city,
+            toCity:          flight.to_city,
+            departTime:      flight.depart_time,
+            arriveTime:      flight.arrive_time,
+            seatClass:       selected.seat_class,
             passengers,
-            adultsCount:   adults,
+            adultsCount:     adults,
             childrenCount,
-            infantsCount:  infants,
+            infantsCount:    infants,
             basePrice,
             taxAndFees,
-            totalPrice:    basePrice + taxAndFees,
+            totalPrice:      basePrice + taxAndFees,
+            isInternational: !isDomesticFlight(flight.from_city, flight.to_city),
         });
         onClose();
         router.push("/booking");

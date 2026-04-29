@@ -40,15 +40,23 @@ const POPULAR_ROUTES = [
 
 const TODAY = new Date().toISOString().split("T")[0];
 
+function addDays(dateStr: string, days: number): string {
+    const d = new Date(dateStr);
+    d.setDate(d.getDate() + days);
+    return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0")].join("-");
+}
+
 export default function FlightsPage() {
     const searchParams = useSearchParams();
 
     // Search form
-    const [tripType, setTripType] = useState<"one_way" | "round_trip">("one_way");
+    const [tripType, setTripType] = useState<"one_way" | "round_trip">(
+        (searchParams.get("trip_type") as "one_way" | "round_trip") || "one_way"
+    );
     const [fromCity, setFromCity] = useState(searchParams.get("from") || "");
     const [toCity, setToCity] = useState(searchParams.get("to") || "");
     const [departDate, setDepartDate] = useState(searchParams.get("date") || TODAY);
-    const [returnDate, setReturnDate] = useState("");
+    const [returnDate, setReturnDate] = useState(searchParams.get("return_date") || "");
 
     // Passenger picker
     const [adults, setAdults] = useState(1);
@@ -73,6 +81,7 @@ export default function FlightsPage() {
     const [loading, setLoading] = useState(false);
     const [searched, setSearched] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const searchAbortRef = useRef<AbortController | null>(null);
 
     // Close passenger picker on outside click
     useEffect(() => {
@@ -112,6 +121,9 @@ export default function FlightsPage() {
 
     const handleSearch = useCallback(async () => {
         if (!fromCity || !toCity) return;
+        searchAbortRef.current?.abort();
+        const controller = new AbortController();
+        searchAbortRef.current = controller;
         try {
             setLoading(true); setSearched(true); setError(null);
             const price = PRICE_OPTIONS[priceIdx];
@@ -123,7 +135,7 @@ export default function FlightsPage() {
                 min_price: price.min,
                 max_price: price.max,
                 sort: sortVal as "price_asc" | "price_desc" | "depart_asc" | "duration",
-            });
+            }, controller.signal);
 
             // Filter theo giờ bay client-side
             const time = TIME_OPTIONS[timeIdx];
@@ -133,7 +145,8 @@ export default function FlightsPage() {
             });
 
             setFlights(filtered);
-        } catch {
+        } catch (err) {
+            if ((err as { name?: string })?.name === "CanceledError" || (err as { name?: string })?.name === "AbortError") return;
             setError("Không thể tải dữ liệu. Vui lòng thử lại.");
         } finally {
             setLoading(false);
@@ -445,7 +458,10 @@ export default function FlightsPage() {
                         </button>
                         <button
                             className={`fp-trip-btn${tripType === "round_trip" ? " active" : ""}`}
-                            onClick={() => setTripType("round_trip")}
+                            onClick={() => {
+                                setTripType("round_trip");
+                                if (!returnDate) setReturnDate(addDays(departDate || TODAY, 2));
+                            }}
                         >
                             Khứ hồi
                         </button>
@@ -484,7 +500,11 @@ export default function FlightsPage() {
                                     type="date"
                                     value={departDate}
                                     min={TODAY}
-                                    onChange={(e) => setDepartDate(e.target.value)}
+                                    onChange={(e) => {
+                                        setDepartDate(e.target.value);
+                                        if (returnDate && returnDate <= e.target.value)
+                                            setReturnDate(addDays(e.target.value, 2));
+                                    }}
                                 />
                             </div>
 

@@ -12,8 +12,8 @@ interface SearchFlightsParams {
 }
 
 export const flightService = {
-    searchFlights: async (params?: SearchFlightsParams): Promise<Flight[]> => {
-        const response = await axiosInstance.get("/api/flights", { params });
+    searchFlights: async (params?: SearchFlightsParams, signal?: AbortSignal): Promise<Flight[]> => {
+        const response = await axiosInstance.get("/api/flights", { params, signal });
         return response.data;
     },
 

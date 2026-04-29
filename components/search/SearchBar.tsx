@@ -50,6 +50,8 @@ export default function SearchBar() {
     const [fromCity, setFromCity]       = useState("");
     const [toCity, setToCity]           = useState("");
     const [departDate, setDepartDate]   = useState("");
+    const [returnDate, setReturnDate]   = useState("");
+    const [tripType, setTripType]       = useState<"one_way" | "round_trip">("one_way");
     const [paxAdults, setPaxAdults]     = useState(1);
     const [paxChildren, setPaxChildren] = useState(0);
     const [paxOpen, setPaxOpen]         = useState(false);
@@ -118,6 +120,10 @@ export default function SearchBar() {
             if (departDate) p.set("date", departDate);
             p.set("adults", String(paxAdults));
             p.set("children", String(paxChildren));
+            if (activeTab === "flight") {
+                p.set("trip_type", tripType);
+                if (tripType === "round_trip" && returnDate) p.set("return_date", returnDate);
+            }
             router.push(`/${activeTab}s?${p.toString()}`);
         }
     };
@@ -386,6 +392,40 @@ export default function SearchBar() {
                         </>
                     ) : (
                         <>
+                            {/* Trip type toggle — chỉ hiện cho tab máy bay */}
+                            {activeTab === "flight" && (
+                                <div style={{ width: "100%", marginBottom: "0.1rem" }}>
+                                    <div style={{ display: "inline-flex", gap: "0.25rem", background: "#f0f4ff", borderRadius: "8px", padding: "3px" }}>
+                                        <button
+                                            style={{
+                                                padding: "0.3rem 1rem", border: "none", borderRadius: "6px",
+                                                fontFamily: "'DM Sans',sans-serif", fontSize: "0.82rem", fontWeight: 500,
+                                                cursor: "pointer", transition: "background 0.15s, color 0.15s",
+                                                background: tripType === "one_way" ? "#0052cc" : "transparent",
+                                                color: tripType === "one_way" ? "#fff" : "#6b8cbf",
+                                            }}
+                                            onClick={() => setTripType("one_way")}
+                                        >
+                                            Một chiều
+                                        </button>
+                                        <button
+                                            style={{
+                                                padding: "0.3rem 1rem", border: "none", borderRadius: "6px",
+                                                fontFamily: "'DM Sans',sans-serif", fontSize: "0.82rem", fontWeight: 500,
+                                                cursor: "pointer", transition: "background 0.15s, color 0.15s",
+                                                background: tripType === "round_trip" ? "#0052cc" : "transparent",
+                                                color: tripType === "round_trip" ? "#fff" : "#6b8cbf",
+                                            }}
+                                            onClick={() => {
+                                                setTripType("round_trip");
+                                                if (!returnDate) setReturnDate(addDays(effectiveDepartDate, 2));
+                                            }}
+                                        >
+                                            Khứ hồi
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                             {/* Điểm đi */}
                             <div className="sb-field" style={{ flex: 1.2, minWidth: 160 }}>
                                 <label className="sb-field-label">🛫 Điểm đi</label>
@@ -418,9 +458,27 @@ export default function SearchBar() {
                                     type="date"
                                     value={effectiveDepartDate}
                                     min={clientToday}
-                                    onChange={e => setDepartDate(e.target.value)}
+                                    onChange={e => {
+                                        setDepartDate(e.target.value);
+                                        if (returnDate && returnDate <= e.target.value)
+                                            setReturnDate(addDays(e.target.value, 2));
+                                    }}
                                 />
                             </div>
+                            {/* Ngày về — chỉ hiện khi khứ hồi và tab máy bay */}
+                            {activeTab === "flight" && tripType === "round_trip" && (
+                                <div className="sb-field">
+                                    <label className="sb-field-label">📅 Ngày về</label>
+                                    <input
+                                        className="sb-input"
+                                        type="date"
+                                        value={returnDate}
+                                        min={effectiveDepartDate ? addDays(effectiveDepartDate, 1) : clientToday}
+                                        onChange={e => setReturnDate(e.target.value)}
+                                        placeholder="Chọn ngày về"
+                                    />
+                                </div>
+                            )}
                             {/* Hành khách */}
                             <div className="sb-field" style={{ minWidth: 200, position: "relative" }} ref={paxRef}>
                                 <label className="sb-field-label">👥 Hành khách</label>
