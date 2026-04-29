@@ -11,7 +11,7 @@ export interface User {
     address?: string
 
     role?: "USER" | "ADMIN"
-    provider?: "local" | "google"
+    provider?: "local" | "google" | "guest"
     password?: string
     wallet?: number
     created_at?: string

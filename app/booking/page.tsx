@@ -1,5 +1,6 @@
 "use client";
 
+import "@/styles/booking.css";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
@@ -8,6 +9,7 @@ import { usePaymentStore } from "@/store/paymentStore";
 import BookingForm, { ContactForm, PassengerInfo, emptyPassenger } from "@/components/booking/BookingForm";
 import BookingCard from "@/components/booking/BookingCard";
 import api from "@/lib/axios";
+import { toast } from "@/store/toastStore";
 
 export default function BookingPage() {
     const router = useRouter();
@@ -222,26 +224,32 @@ export default function BookingPage() {
             const msg = status === 500
                 ? "Hệ thống đang bận (có thể do tranh chấp đặt chỗ), vui lòng thử lại sau vài giây"
                 : (detail || "Đặt chỗ thất bại, vui lòng thử lại");
-            alert(`❌ ${msg}`);
+            toast.error(msg);
         } finally {
             submittingRef.current = false;
             setSubmitting(false);
         }
     };
 
-    if (!booking) return null;
+    if (!booking) return (
+        <div className="bk-root">
+            <div className="bk-content">
+                <div style={{ height: 28, width: 200, background: "#e8f0fe", borderRadius: 6, marginBottom: "1.5rem", animation: "pulse 1.4s ease-in-out infinite" }} />
+                <div className="bk-layout">
+                    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                        {[120, 80, 100, 80].map((h, i) => (
+                            <div key={i} style={{ height: h, background: "#e8f0fe", borderRadius: 12, animation: "pulse 1.4s ease-in-out infinite" }} />
+                        ))}
+                    </div>
+                    <div style={{ height: 320, background: "#e8f0fe", borderRadius: 12, animation: "pulse 1.4s ease-in-out infinite" }} />
+                </div>
+            </div>
+            <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.45} }`}</style>
+        </div>
+    );
 
     return (
         <>
-            <style>{`
-                .bk-root { min-height: 100vh; background: #f0f4ff; font-family: 'DM Sans', sans-serif; }
-                .bk-content { max-width: 1100px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
-                .bk-title { font-size: 1.3rem; font-weight: 800; color: #1a3c6b; margin-bottom: 1.25rem; font-family: 'Nunito', sans-serif; }
-                .bk-layout { display: grid; grid-template-columns: 1fr 380px; gap: 1.5rem; align-items: start; }
-                @media (max-width: 860px) {
-                    .bk-layout { grid-template-columns: 1fr; }
-                }
-            `}</style>
 
             <div className="bk-root">
                 <div className="bk-content">

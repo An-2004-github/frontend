@@ -7,6 +7,7 @@ import { GoogleLogin } from "@react-oauth/google";
 import { useAuthStore } from "@/store/authStore";
 import axios from "axios";
 import api from "@/lib/axios";
+import { toast } from "@/store/toastStore";
 
 type FormErrors = {
     name?: string;
@@ -63,14 +64,14 @@ export default function RegisterPage() {
                 email: formData.email,
                 password: formData.password,
             });
-            alert("Đăng ký thành công!");
+            toast.success("Đăng ký thành công!");
             setFormData({ name: "", email: "", password: "", confirmPassword: "" });
             router.push("/login");
         } catch (err: unknown) {
             if (axios.isAxiosError<{ message: string }>(err)) {
-                alert(err.response?.data?.message || "Đăng ký thất bại");
+                toast.error(err.response?.data?.message || "Đăng ký thất bại");
             } else {
-                alert("Có lỗi xảy ra");
+                toast.error("Có lỗi xảy ra");
             }
         } finally {
             setIsLoading(false);
@@ -476,10 +477,10 @@ export default function RegisterPage() {
                                         router.push("/");
                                     } catch (err) {
                                         console.error(err);
-                                        alert("Đăng ký Google thất bại");
+                                        toast.error("Đăng ký Google thất bại");
                                     }
                                 }}
-                                onError={() => alert("Google login lỗi")}
+                                onError={() => toast.error("Google login lỗi")}
                                 width="380"
                             />
                         </div>

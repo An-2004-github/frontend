@@ -111,7 +111,7 @@ export default function HotelCard({ hotel, adults = 1, childrenCount = 0, rooms 
                             padding: "0.2rem 0.6rem", borderRadius: 99,
                             background: "#e6f9f0", color: "#00875a", border: "1px solid #b7dfbb",
                         }}>
-                            ✓ Có thể hoàn tiền
+                            ✓ Có hoàn tiền
                         </div>
                     )}
                 </div>

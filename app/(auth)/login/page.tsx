@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/axios";
 import { useAuthStore } from "@/store/authStore";
 import { LoginRequest, LoginResponse, ErrorResponse } from "@/types/auth";
@@ -11,6 +11,8 @@ import { GoogleLogin } from "@react-oauth/google";
 
 export default function LoginPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const isExpired = searchParams.get("expired") === "1";
     const login = useAuthStore((state) => state.login);
 
     const [formData, setFormData] = useState<LoginRequest>({
@@ -18,7 +20,9 @@ export default function LoginPage() {
         password: "",
     });
 
-    const [error, setError] = useState<string>("");
+    const [error, setError] = useState<string>(
+        isExpired ? "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại." : ""
+    );
     const [isLoading, setIsLoading] = useState<boolean>(false);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {

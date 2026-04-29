@@ -191,6 +191,11 @@ export default function InvoicePage() {
                         <div className="inv-hero-title">Thanh toán thành công!</div>
                         <div className="inv-hero-sub">Cảm ơn bạn đã sử dụng dịch vụ VIVU Travel</div>
                         <div className="inv-booking-id">Mã đặt chỗ: #{invoice.booking_id}</div>
+                        {invoice.user?.email && (
+                            <div style={{ marginTop: "0.75rem", fontSize: "0.8rem", color: "rgba(255,255,255,0.8)", position: "relative" }}>
+                                📧 Email xác nhận đã gửi đến <strong style={{ color: "#fff" }}>{invoice.user.email}</strong>
+                            </div>
+                        )}
                     </div>
 
                     <div className="inv-card">

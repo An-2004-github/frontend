@@ -48,3 +48,39 @@ yêu cầu đổi hủy có thể hiện người duyệt
 Sửa phần Thời gian khi chọn sẽ tự động cập nhật loại lịch trình 
 Sửa phần tìm kiếm khách sạn khi link từ trang gợi ý
  Sửa phần đổi lịch 
+
+
+ 🔴 Vấn đề nghiêm trọng (cần fix ngay)
+Bảo mật
+
+BANK_ID, ACCOUNT_NO hardcode trực tiếp trong client code — nên chuyển vào .env
+Google OAuth ClientID hardcode trong app/layout.tsx thay vì process.env
+Token lưu localStorage không có cơ chế refresh/expiry an toàn
+Crash không xử lý được
+
+Không có file error.tsx nào → khi API lỗi, trang sẽ crash trắng
+Không có not-found.tsx → URL sai trả về lỗi xấu
+Không có loading.tsx → không có skeleton khi chuyển trang
+🟠 UX/UI quan trọng
+alert() dùng ở nhiều nơi (profile, payment) → cần thay bằng toast notification
+Không có flow retry khi QR payment hết 15 phút → user bị kẹt
+Không có email xác nhận sau khi đặt chỗ thành công
+Không có trang itinerary sau thanh toán — user không biết đặt gì xong
+Thiếu skeleton loader trên BookingCard và SearchBar trong lúc fetch API
+🟡 SEO & Performance
+app/layout.tsx dùng "use client" → không thể export metadata → Google không index được
+Không có og:image, og:title cho từng trang
+Không có robots.txt, sitemap.xml
+Wallet polling 30 giây bất kể user có dùng hay không → lãng phí request
+🔵 Code quality
+Vấn đề	Gợi ý
+Validate form tự viết ở mỗi chỗ	Dùng react-hook-form + zod
+alert() scattered	Dùng react-hot-toast
+Không có error boundary	Thêm error.tsx mỗi route segment
+Không có accessibility	Thêm aria-label cho buttons/icons
+🟢 Tính năng còn thiếu (nên có)
+Flow huỷ đặt chỗ + hoàn tiền rõ ràng
+Trang lịch trình (itinerary) sau thanh toán
+Multi-language (i18n) — hiện chỉ có tiếng Việt
+Lưu phương thức thanh toán yêu thích
+Tìm kiếm kết hợp (combo flight + hotel)

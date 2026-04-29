@@ -1,5 +1,6 @@
 "use client";
 
+import "@/styles/booking-form.css";
 import Link from "next/link";
 import { useAuthStore } from "@/store/authStore";
 
@@ -143,93 +144,6 @@ export default function BookingForm({
 
     return (
         <>
-            <style>{`
-                .bf-banner { background: #e8f4fd; border: 1px solid #bee3f8; border-radius: 10px; padding: 0.7rem 1rem; margin-bottom: 1rem; font-size: 0.85rem; color: #1a3c6b; display: flex; align-items: center; gap: 0.6rem; }
-                .bf-banner-icon { width: 28px; height: 28px; border-radius: 50%; background: #0052cc; color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 0.85rem; }
-                .bf-card { background: #fff; border-radius: 12px; border: 1px solid #dde3f0; padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
-                .bf-title { font-size: 1rem; font-weight: 700; color: #1a3c6b; margin-bottom: 0.2rem; }
-                .bf-sub { font-size: 0.8rem; color: #6b8cbf; margin-bottom: 1.1rem; line-height: 1.5; }
-                .bf-label { font-size: 0.78rem; font-weight: 600; color: #555; margin-bottom: 0.3rem; display: block; }
-                .bf-label em { color: #e00; font-style: normal; }
-                .bf-input { width: 100%; border: 1.5px solid #dde3f0; border-radius: 8px; padding: 0.6rem 0.85rem; font-size: 0.9rem; color: #1a3c6b; outline: none; transition: border-color 0.2s; font-family: inherit; }
-                .bf-input:focus { border-color: #0052cc; box-shadow: 0 0 0 3px rgba(0,82,204,0.1); }
-                .bf-input.err { border-color: #d32f2f; }
-                .bf-select { width: 100%; border: 1.5px solid #dde3f0; border-radius: 8px; padding: 0.6rem 0.85rem; font-size: 0.9rem; color: #1a3c6b; outline: none; background: #fff; font-family: inherit; appearance: none; cursor: pointer; }
-                .bf-select:focus { border-color: #0052cc; }
-                .bf-select.err { border-color: #d32f2f; }
-                .bf-select-wrap { position: relative; }
-                .bf-select-wrap::after { content: "▾"; position: absolute; right: 0.85rem; top: 50%; transform: translateY(-50%); color: #6b8cbf; pointer-events: none; font-size: 0.85rem; }
-                .bf-hint { font-size: 0.72rem; color: #aaa; margin-top: 0.2rem; }
-                .bf-err { font-size: 0.75rem; color: #d32f2f; margin-top: 0.25rem; }
-                .bf-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
-                .bf-phone-wrap { display: flex; }
-                .bf-phone-code { border: 1.5px solid #dde3f0; border-right: none; border-radius: 8px 0 0 8px; padding: 0 0.65rem; background: #f5f7ff; display: flex; align-items: center; white-space: nowrap; gap: 0.3rem; }
-                .bf-phone-code select { border: none; background: transparent; color: #1a3c6b; font-size: 0.9rem; outline: none; cursor: pointer; font-family: inherit; }
-                .bf-phone-input { flex: 1; border: 1.5px solid #dde3f0; border-left: none; border-radius: 0 8px 8px 0; padding: 0.6rem 0.85rem; font-size: 0.9rem; color: #1a3c6b; outline: none; font-family: inherit; }
-                .bf-phone-input:focus { border-color: #0052cc; }
-                .bf-phone-input.err { border-color: #d32f2f; }
-                .bf-divider { border: none; border-top: 1px solid #eef0f8; margin: 0.25rem 0 0.75rem; }
-                .bf-check-row { display: flex; align-items: center; gap: 0.65rem; cursor: pointer; padding: 0.4rem 0; user-select: none; }
-                .bf-checkbox { width: 20px; height: 20px; border-radius: 5px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: background 0.15s; }
-                .bf-checkbox.on { background: #0052cc; border: 2px solid #0052cc; }
-                .bf-checkbox.off { background: #fff; border: 2px solid #c0cce8; }
-                .bf-check-label { font-size: 0.9rem; color: #1a3c6b; font-weight: 500; }
-                .bf-user-row { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0; }
-                .bf-user-name { font-size: 0.92rem; color: #1a3c6b; }
-                .bf-edit-link { font-size: 0.82rem; color: #0052cc; font-weight: 600; text-decoration: none; }
-                .bf-edit-link:hover { text-decoration: underline; }
-                .bf-special-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 0.25rem; }
-                .bf-special-item { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.84rem; color: #1a3c6b; user-select: none; }
-                .bf-mini-box { width: 17px; height: 17px; border-radius: 4px; border: 1.5px solid #c0cce8; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
-                .bf-mini-box.on { background: #0052cc; border-color: #0052cc; }
-
-                /* Flight specific */
-                .bf-passenger-header {
-                    display: flex; align-items: center; justify-content: space-between;
-                    background: #e8f0fe; border-radius: 8px;
-                    padding: 0.55rem 0.85rem; margin-bottom: 1rem;
-                }
-                .bf-passenger-header-title { font-size: 0.9rem; font-weight: 700; color: #0052cc; }
-                .bf-passenger-type-badge {
-                    font-size: 0.72rem; font-weight: 600; padding: 0.2rem 0.6rem;
-                    border-radius: 99px; background: #0052cc; color: #fff;
-                }
-                .bf-passenger-type-badge.child { background: #00875a; }
-                .bf-passenger-type-badge.infant { background: #f5a623; color: #1a1208; }
-                .bf-passenger-separator { border: none; border-top: 2px dashed #e8f0fe; margin: 1.5rem 0; }
-                .bf-name-warn { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; }
-                .bf-name-warn-icon { color: #f5a623; margin-right: 0.3rem; }
-                .bf-name-warn p { font-size: 0.8rem; color: #7a5c00; margin: 0; line-height: 1.5; }
-                .bf-name-warn a { color: #0052cc; font-weight: 600; font-size: 0.8rem; text-decoration: none; }
-                .bf-name-warn a:hover { text-decoration: underline; }
-                .bf-date-row { display: grid; grid-template-columns: 70px 1fr 90px; gap: 0.5rem; }
-                .bf-passport-section { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid #eef0f8; }
-                .bf-passport-note { background: #f0f4ff; border-left: 3px solid #0052cc; border-radius: 4px; padding: 0.65rem 0.85rem; margin-bottom: 1rem; font-size: 0.8rem; color: #1a3c6b; line-height: 1.5; }
-                .bf-passport-note a { color: #0052cc; font-weight: 600; text-decoration: none; }
-                .bf-passport-note a:hover { text-decoration: underline; }
-                .bf-child-note { font-size: 0.75rem; color: #6b8cbf; margin-top: 0.4rem; line-height: 1.5; background: #f8faff; border-radius: 6px; padding: 0.5rem 0.7rem; border-left: 3px solid #c8d8ff; }
-
-                /* Flight essentials */
-                .bf-passport-remind { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 10px; padding: 0.7rem 1rem; margin-bottom: 1rem; font-size: 0.82rem; color: #7a5c00; display: flex; align-items: flex-start; gap: 0.5rem; }
-                .bf-essentials-card { background: #fff; border-radius: 12px; border: 1px solid #dde3f0; overflow: hidden; margin-bottom: 1rem; }
-                .bf-essentials-header { padding: 1rem 1.25rem; border-bottom: 1px solid #eef0f8; display: flex; align-items: center; gap: 0.65rem; }
-                .bf-essentials-icon { font-size: 1.5rem; }
-                .bf-essentials-title { font-size: 0.95rem; font-weight: 700; color: #1a3c6b; }
-                .bf-essentials-sub { font-size: 0.8rem; color: #6b8cbf; margin-top: 0.1rem; }
-                .bf-essentials-body { padding: 1rem 1.25rem; }
-                .bf-baggage-label { font-size: 0.8rem; color: #6b8cbf; margin-bottom: 0.75rem; }
-                .bf-baggage-legs { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-                .bf-baggage-leg { background: #f8faff; border-radius: 8px; border: 1px solid #e8f0fe; padding: 0.75rem; }
-                .bf-baggage-leg-title { font-size: 0.82rem; font-weight: 700; color: #1a3c6b; margin-bottom: 0.5rem; }
-                .bf-baggage-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: #4a5568; margin-bottom: 0.25rem; }
-
-                @media (max-width: 600px) {
-                    .bf-grid2 { grid-template-columns: 1fr; }
-                    .bf-special-grid { grid-template-columns: 1fr 1fr; }
-                    .bf-baggage-legs { grid-template-columns: 1fr; }
-                    .bf-date-row { grid-template-columns: 60px 1fr 80px; }
-                }
-            `}</style>
 
             {/* Login banner */}
             {user && (

@@ -40,17 +40,22 @@ axiosInstance.interceptors.request.use(
 axiosInstance.interceptors.response.use(
     (response) => response,
     (error) => {
-        if (error.response?.status === 401) {
-            // Xóa token cũ hết hạn khỏi localStorage để tránh lặp lại lỗi
+        if (error.response?.status === 401 && typeof window !== 'undefined') {
             try {
                 const raw = localStorage.getItem('auth-storage');
                 if (raw) {
                     const parsed = JSON.parse(raw);
+                    // Chỉ redirect khi user đang đăng nhập nhưng token hết hạn
                     if (parsed?.state?.token) {
                         parsed.state.token = null;
                         parsed.state.user = null;
                         parsed.state.isAuthenticated = false;
                         localStorage.setItem('auth-storage', JSON.stringify(parsed));
+
+                        // Không redirect nếu đang ở trang auth
+                        if (!window.location.pathname.startsWith('/auth')) {
+                            window.location.href = '/auth/login?expired=1';
+                        }
                     }
                 }
             } catch { }

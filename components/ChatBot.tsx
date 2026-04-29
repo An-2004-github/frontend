@@ -285,7 +285,6 @@ export default function ChatBot() {
     const clearChat = () => {
         abortRef.current?.abort();
         setMessages([{ ...INIT_MSG, ts: Date.now() }]);
-        setFeedbacks({});
         setLoading(false);
         setStreaming(false);
     };

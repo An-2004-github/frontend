@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import api from "@/lib/axios";
 import { useAuthStore } from "@/store/authStore";
+import { toast } from "@/store/toastStore";
 
 const refreshWalletGlobal = () => useAuthStore.getState().refreshWallet();
 
@@ -147,7 +148,7 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
             setOptionsData(res.data);
         } catch (e: unknown) {
             const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-            alert(msg || "Không thể tải danh sách");
+            toast.error(msg || "Không thể tải danh sách");
         } finally {
             setLoadingOpts(false);
         }
@@ -162,7 +163,7 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
             setClassOptions(res.data);
         } catch (e: unknown) {
             const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-            alert(msg || "Không thể tải hạng ghế");
+            toast.error(msg || "Không thể tải hạng ghế");
         } finally {
             setLoadingOpts(false);
         }
@@ -176,7 +177,7 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
         try {
             let body: Record<string, unknown>;
 
-            if (classOnly && classOptions) {
+            if (classOnly && classOptions && selectedClass) {
                 // Đổi hạng cùng chuyến — entity_id giữ nguyên
                 body = {
                     new_entity_id:  classOptions.entity_id,
@@ -215,7 +216,7 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
                 refreshWalletGlobal();
         } catch (e: unknown) {
             const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-            alert(msg || "Không thể gửi yêu cầu");
+            toast.error(msg || "Không thể gửi yêu cầu");
         } finally {
             setSubmitting(false);
         }
@@ -251,7 +252,7 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
             if (refundMethod === "wallet") refreshWalletGlobal();
         } catch (e: unknown) {
             const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-            alert(msg || "Không thể hủy đặt chỗ");
+            toast.error(msg || "Không thể hủy đặt chỗ");
         } finally {
             setSubmitting(false);
         }
@@ -265,7 +266,7 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
             setCancelPreview(res.data);
             setStep(2);
         } catch (e: unknown) {
-            alert("Không thể tính phí hủy lúc này. Vui lòng thử lại.");
+            toast.error("Không thể tính phí hủy lúc này. Vui lòng thử lại.");
         } finally {
             setLoadingPreview(false);
         }

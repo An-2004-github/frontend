@@ -6,17 +6,18 @@ import Image from "next/image";
 import api from "@/lib/axios";
 import { useAuthStore } from "@/store/authStore";
 import { usePaymentStore } from "@/store/paymentStore";
+import { toast } from "@/store/toastStore";
 
-const BANK_ID = "MB";
-const ACCOUNT_NO = "0944934501";
-const ACCOUNT_NAME = "LE HOANG AN";
+const BANK_ID = process.env.NEXT_PUBLIC_BANK_ID!;
+const ACCOUNT_NO = process.env.NEXT_PUBLIC_BANK_ACCOUNT_NO!;
+const ACCOUNT_NAME = process.env.NEXT_PUBLIC_BANK_ACCOUNT_NAME!;
 
 export default function PaymentPage() {
     const router = useRouter();
     const params = useParams();
     const bookingId = Number(params.booking_id);
 
-    const { user, login } = useAuthStore();
+    const { user, updateUser } = useAuthStore();
     const { payment, clearPayment } = usePaymentStore();
 
     const isGuest = user?.provider === "guest";
@@ -95,15 +96,7 @@ export default function PaymentPage() {
         const res = await api.get("/api/wallet/balance");
         const nb = res.data.balance;
         setBalance(nb);
-        if (user) {
-            let token = "";
-            try {
-                const raw = localStorage.getItem("auth-storage");
-                if (raw) token = JSON.parse(raw)?.state?.token ?? "";
-            } catch { }
-            if (!token) token = localStorage.getItem("token") ?? "";
-            login({ ...user, wallet: nb }, token);
-        }
+        updateUser({ wallet: nb });
         return nb;
     };
 
@@ -119,7 +112,7 @@ export default function PaymentPage() {
         } catch (err: unknown) {
             const detail = (err as { response?: { data?: { detail?: string } } })
                 ?.response?.data?.detail;
-            alert(`❌ ${detail || "Thanh toán thất bại, vui lòng thử lại"}`);
+            toast.error(detail || "Thanh toán thất bại, vui lòng thử lại");
         } finally {
             setPaying(false);
         }
@@ -458,16 +451,28 @@ export default function PaymentPage() {
                                     <div style={{ fontSize: "0.82rem", color: "#7b5700", marginBottom: "1.25rem" }}>
                                         Đơn đặt chỗ đã bị hủy tự động. Vui lòng đặt lại.
                                     </div>
-                                    <button
-                                        onClick={() => router.push("/")}
-                                        style={{
-                                            padding: "0.55rem 1.4rem", background: "#0052cc", color: "#fff",
-                                            border: "none", borderRadius: 8, fontWeight: 700,
-                                            fontSize: "0.88rem", cursor: "pointer",
-                                        }}
-                                    >
-                                        🏠 Về trang chủ
-                                    </button>
+                                    <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
+                                        <button
+                                            onClick={() => router.back()}
+                                            style={{
+                                                padding: "0.55rem 1.4rem", background: "#0052cc", color: "#fff",
+                                                border: "none", borderRadius: 8, fontWeight: 700,
+                                                fontSize: "0.88rem", cursor: "pointer",
+                                            }}
+                                        >
+                                            🔄 Đặt lại
+                                        </button>
+                                        <button
+                                            onClick={() => router.push("/")}
+                                            style={{
+                                                padding: "0.55rem 1.4rem", background: "#f0f4ff", color: "#0052cc",
+                                                border: "1px solid #c8d8ff", borderRadius: 8, fontWeight: 700,
+                                                fontSize: "0.88rem", cursor: "pointer",
+                                            }}
+                                        >
+                                            🏠 Về trang chủ
+                                        </button>
+                                    </div>
                                 </div>
                             ) : (
                                 <>
@@ -579,16 +584,28 @@ export default function PaymentPage() {
                                     <div style={{ fontSize: "0.82rem", color: "#7b5700", marginBottom: "1.25rem" }}>
                                         Đơn đặt chỗ đã bị hủy tự động. Vui lòng đặt lại.
                                     </div>
-                                    <button
-                                        onClick={() => router.push("/")}
-                                        style={{
-                                            padding: "0.55rem 1.4rem", background: "#0052cc", color: "#fff",
-                                            border: "none", borderRadius: 8, fontWeight: 700,
-                                            fontSize: "0.88rem", cursor: "pointer",
-                                        }}
-                                    >
-                                        🏠 Về trang chủ
-                                    </button>
+                                    <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
+                                        <button
+                                            onClick={() => router.back()}
+                                            style={{
+                                                padding: "0.55rem 1.4rem", background: "#0052cc", color: "#fff",
+                                                border: "none", borderRadius: 8, fontWeight: 700,
+                                                fontSize: "0.88rem", cursor: "pointer",
+                                            }}
+                                        >
+                                            🔄 Đặt lại
+                                        </button>
+                                        <button
+                                            onClick={() => router.push("/")}
+                                            style={{
+                                                padding: "0.55rem 1.4rem", background: "#f0f4ff", color: "#0052cc",
+                                                border: "1px solid #c8d8ff", borderRadius: 8, fontWeight: 700,
+                                                fontSize: "0.88rem", cursor: "pointer",
+                                            }}
+                                        >
+                                            🏠 Về trang chủ
+                                        </button>
+                                    </div>
                                 </div>
                             ) : (
                                 <>

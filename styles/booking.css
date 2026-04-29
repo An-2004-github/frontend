@@ -1,0 +1,8 @@
+.bk-root { min-height: 100vh; background: #f0f4ff; font-family: 'DM Sans', sans-serif; }
+.bk-content { max-width: 1100px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+.bk-title { font-size: 1.3rem; font-weight: 800; color: #1a3c6b; margin-bottom: 1.25rem; font-family: 'Nunito', sans-serif; }
+.bk-layout { display: grid; grid-template-columns: 1fr 380px; gap: 1.5rem; align-items: start; }
+
+@media (max-width: 860px) {
+    .bk-layout { grid-template-columns: 1fr; }
+}

@@ -7,7 +7,7 @@ import { useAuthStore } from "@/store/authStore";
 import CloudinaryUpload from "@/components/CloudinaryUpload";
 import CloudinaryMultiUpload from "@/components/CloudinaryMultiUpload";
 
-type Section = "dashboard" | "bookings" | "hotels" | "flights" | "buses" | "trains" | "users" | "wallets" | "promotions" | "banners" | "reviews";
+type Section = "dashboard" | "bookings" | "hotels" | "flights" | "buses" | "trains" | "users" | "wallets" | "withdrawals" | "promotions" | "banners" | "reviews";
 
 interface Stats {
     total_users: number; total_bookings: number; confirmed_bookings: number;
@@ -2600,8 +2600,8 @@ export default function AdminPage() {
                                                         {statusLabel[String(bookingDetail?.status)] || String(bookingDetail?.status)}
                                                     </span>
                                                 </div>
-                                                {item?.check_in_date && <div><span style={{ color: "#6b8cbf" }}>Nhận phòng: </span>{String(item.check_in_date).slice(0, 10)}</div>}
-                                                {item?.check_out_date && <div><span style={{ color: "#6b8cbf" }}>Trả phòng: </span>{String(item.check_out_date).slice(0, 10)}</div>}
+                                                {!!item?.check_in_date && <div><span style={{ color: "#6b8cbf" }}>Nhận phòng: </span>{String(item.check_in_date).slice(0, 10)}</div>}
+                                                {!!item?.check_out_date && <div><span style={{ color: "#6b8cbf" }}>Trả phòng: </span>{String(item.check_out_date).slice(0, 10)}</div>}
                                                 <div><span style={{ color: "#6b8cbf" }}>Tổng tiền: </span><strong style={{ color: "#0052cc" }}>{fmtN(bookingDetail?.final_amount)}</strong></div>
                                                 <div><span style={{ color: "#6b8cbf" }}>Ngày đặt: </span>{fmtDT(bookingDetail?.booking_date)}</div>
                                             </div>
@@ -2645,7 +2645,7 @@ export default function AdminPage() {
                                                                     <span style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{fmtDT(m.created_at)}</span>
                                                                 </div>
                                                                 <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
-                                                                    {m.old_price && m.new_price && (
+                                                                    {!!(m.old_price && m.new_price) && (
                                                                         <span style={{ color: "#6b8cbf" }}>{fmtN(m.old_price)} → <strong style={{ color: "#1a3c6b" }}>{fmtN(m.new_price)}</strong></span>
                                                                     )}
                                                                     {extraCharge > 0 && <span style={{ color: "#c0392b" }}>Phát sinh: +{fmtN(extraCharge)}</span>}
@@ -2655,12 +2655,12 @@ export default function AdminPage() {
                                                                         {modStatusLabel[String(m.status)] ?? String(m.status)}
                                                                     </span>
                                                                 </div>
-                                                                {m.new_check_in && (
+                                                                {!!m.new_check_in && (
                                                                     <div style={{ marginTop: "0.2rem", color: "#0052cc", fontSize: "0.8rem" }}>
                                                                         Ngày mới: {String(m.new_check_in).slice(0, 10)} → {String(m.new_check_out ?? "").slice(0, 10)}
                                                                     </div>
                                                                 )}
-                                                                {m.admin_note && <div style={{ marginTop: "0.2rem", color: "#6b8cbf", fontStyle: "italic" }}>{String(m.admin_note)}</div>}
+                                                                {!!m.admin_note && <div style={{ marginTop: "0.2rem", color: "#6b8cbf", fontStyle: "italic" }}>{String(m.admin_note)}</div>}
                                                             </div>
                                                         );
                                                     })}
