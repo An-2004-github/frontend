@@ -1723,7 +1723,12 @@ def reschedule_booking(booking_id: int, data: RescheduleRequest, background_task
         except Exception:
             _svc = f"Đặt chỗ #{booking_id}"
 
-        def _send_reschedule_email(note: str = ""):
+        _old_ci  = str(item_d.get("check_in_date",  "")) if entity_type == "room" else ""
+        _old_co  = str(item_d.get("check_out_date", "")) if entity_type == "room" else ""
+        _new_ci  = str(data.new_check_in  or "") if entity_type == "room" else ""
+        _new_co  = str(data.new_check_out or "") if entity_type == "room" else ""
+
+        def _send_reschedule_email(pay: float = 0, refund: float = 0, refund_meth: str = ""):
             if user_email:
                 background_tasks.add_task(
                     send_reschedule_confirmation_email,
@@ -1731,7 +1736,18 @@ def reschedule_booking(booking_id: int, data: RescheduleRequest, background_task
                     name=user_name,
                     booking_id=booking_id,
                     service_name=_svc,
-                    note=note,
+                    old_check_in=_old_ci,
+                    old_check_out=_old_co,
+                    new_check_in=_new_ci,
+                    new_check_out=_new_co,
+                    old_price=old_price,
+                    new_price=new_price,
+                    reschedule_fee=reschedule_fee,
+                    amount_to_pay=pay,
+                    refund_amount=refund,
+                    refund_method=refund_meth,
+                    quantity=quantity,
+                    entity_type=entity_type,
                 )
 
         if amount_to_pay < 1 and refund_amount < 1:
@@ -1745,7 +1761,7 @@ def reschedule_booking(booking_id: int, data: RescheduleRequest, background_task
                         :nci, :nco, :op, :np, :diff, :rfee)
             """), mod_base)
             _send_reschedule_email()
-            return {"status": "confirmed", "message": "Đổi lịch thành công!"}
+            return {"status": "confirmed", "message": "Đổi lịch thành công! Email xác nhận đã được gửi."}
 
         elif amount_to_pay >= 1:
             # Cần thu thêm tiền → pending
@@ -1783,7 +1799,7 @@ def reschedule_booking(booking_id: int, data: RescheduleRequest, background_task
                     VALUES (:bid, :uid, 'reschedule', 'approved', :neid, :nsc,
                             :nci, :nco, :op, :np, :diff, :rfee, :ra, 'wallet')
                 """), mod_base)
-                _send_reschedule_email(f"Hoàn {refund_amount:,.0f}₫ vào ví VIVU của bạn.")
+                _send_reschedule_email(refund=refund_amount, refund_meth="wallet")
                 return {"status": "confirmed",
                         "message": f"Đổi lịch thành công! Hoàn {refund_amount:,.0f}₫ vào ví."}
             else:
@@ -1795,7 +1811,7 @@ def reschedule_booking(booking_id: int, data: RescheduleRequest, background_task
                     VALUES (:bid, :uid, 'reschedule', 'pending', :neid, :nsc,
                             :nci, :nco, :op, :np, :diff, :rfee, :ra, :rm, :bi)
                 """), mod_base)
-                _send_reschedule_email(f"Hoàn {refund_amount:,.0f}₫ về tài khoản ngân hàng trong 2–5 ngày làm việc.")
+                _send_reschedule_email(refund=refund_amount, refund_meth="bank")
                 return {"status": "confirmed",
                         "message": "Đổi lịch thành công! Tiền sẽ được hoàn về ngân hàng trong 2–5 ngày."}
 
@@ -1868,13 +1884,50 @@ def pay_extra_reschedule(mod_id: int, background_tasks: BackgroundTasks, user_id
                      {"id": mod_id})
 
     if user_row and user_row.email:
+        # Lấy thêm thông tin để gửi email đầy đủ
+        try:
+            bi = conn.execute(
+                text("SELECT entity_type, entity_id, check_in_date, check_out_date, quantity FROM booking_items WHERE booking_id = :bid"),
+                {"bid": booking_id}
+            ).fetchone()
+            bi_d = dict(bi._mapping) if bi else {}
+            etype = bi_d.get("entity_type", "room")
+            eid   = bi_d.get("entity_id")
+            if etype == "room" and eid:
+                _r = conn.execute(text(
+                    "SELECT h.name, rt.name AS rn FROM room_types rt JOIN hotels h ON h.hotel_id=rt.hotel_id WHERE rt.room_type_id=:id"
+                ), {"id": eid}).fetchone()
+                _svc2 = f"{_r.name} - {_r.rn}" if _r else f"Đặt chỗ #{booking_id}"
+            elif etype == "flight" and eid:
+                _r = conn.execute(text("SELECT airline, from_city, to_city FROM flights WHERE flight_id=:id"), {"id": eid}).fetchone()
+                _svc2 = f"{_r.airline}: {_r.from_city} → {_r.to_city}" if _r else f"Đặt chỗ #{booking_id}"
+            elif etype == "bus" and eid:
+                _r = conn.execute(text("SELECT company, from_city, to_city FROM buses WHERE bus_id=:id"), {"id": eid}).fetchone()
+                _svc2 = f"{_r.company}: {_r.from_city} → {_r.to_city}" if _r else f"Đặt chỗ #{booking_id}"
+            elif etype == "train" and eid:
+                _r = conn.execute(text("SELECT train_code, from_city, to_city FROM trains WHERE train_id=:id"), {"id": eid}).fetchone()
+                _svc2 = f"Tàu {_r.train_code}: {_r.from_city} → {_r.to_city}" if _r else f"Đặt chỗ #{booking_id}"
+            else:
+                _svc2 = f"Đặt chỗ #{booking_id}"
+        except Exception:
+            bi_d, etype, _svc2 = {}, "room", f"Đặt chỗ #{booking_id}"
+
         background_tasks.add_task(
             send_reschedule_confirmation_email,
             email=user_row.email,
             name=user_row.full_name or "Quý khách",
             booking_id=booking_id,
-            service_name=f"Đặt chỗ #{booking_id}",
-            note=f"Đã thanh toán thêm {price_diff:,.0f}₫ từ ví VIVU.",
+            service_name=_svc2,
+            old_check_in=str(bi_d.get("check_in_date", "")) if etype == "room" else "",
+            old_check_out=str(bi_d.get("check_out_date", "")) if etype == "room" else "",
+            new_check_in=str(mod_d.get("new_check_in") or ""),
+            new_check_out=str(mod_d.get("new_check_out") or ""),
+            old_price=float(mod_d.get("old_price") or 0),
+            new_price=float(mod_d.get("new_price") or 0),
+            reschedule_fee=float(mod_d.get("reschedule_fee") or 0),
+            amount_to_pay=price_diff,
+            quantity=int(bi_d.get("quantity") or 1),
+            entity_type=etype,
         )
 
     return {"message": "Đổi lịch thành công!", "new_balance": balance - price_diff}

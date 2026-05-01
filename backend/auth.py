@@ -3,7 +3,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordBearer
-SECRET_KEY = "your_secret_key"
+import os
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 ngày
 

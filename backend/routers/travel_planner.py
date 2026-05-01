@@ -125,6 +125,7 @@ BUDGET_LABELS = {
 
 TRANSPORT_LABELS = {
     "flight":     "Máy bay",
+    "train":      "Tàu hỏa",
     "bus":        "Xe khách",
     "self_drive": "Tự lái xe",
     "any":        "Không quan trọng",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 
 export default function Error({
     error,
@@ -29,12 +30,12 @@ export default function Error({
                 >
                     Thử lại
                 </button>
-                <link
+                <Link
                     href="/"
                     className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold transition-colors"
                 >
                     Về trang chủ
-                </link>
+                </Link>
             </div>
             {process.env.NODE_ENV === "development" && (
                 <details className="mt-6 text-left max-w-lg">

@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -29,7 +30,7 @@ export default function DestinationRecommendations() {
                     setDestinations(withImg.slice(0, 8));
                 }
             })
-            .catch(() => {});
+            .catch(() => { });
     }, []);
 
     if (destinations.length === 0) return null;
@@ -113,9 +114,8 @@ export default function DestinationRecommendations() {
                     <h2 className="pop-title">🌏 Điểm đến phổ biến</h2>
                     <p className="pop-subtitle">Những thành phố được yêu thích nhất Việt Nam</p>
                 </div>
-                <a href="/hotels" className="pop-see-all">Xem tất cả →</a>
+                <Link href="/hotels" className="pop-see-all">Xem tất cả →</Link>
             </div>
-
             <div className="pop-grid">
                 {destinations.map((dest) => (
                     <div

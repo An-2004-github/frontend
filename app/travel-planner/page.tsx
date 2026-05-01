@@ -8,7 +8,7 @@ import DestinationInput from "@/components/ui/DestinationInput";
 
 // ── Types ──────────────────────────────────────────────────────────
 type Budget = "under5m" | "5to10m" | "10to20m" | "over20m";
-type Transport = "flight" | "bus" | "self_drive" | "any";
+type Transport = "flight" | "train" | "bus" | "self_drive" | "any";
 type ItineraryType = "short" | "medium" | "long";
 
 interface TrendingDest {
@@ -59,6 +59,7 @@ const BUDGETS: { id: Budget; label: string; desc: string }[] = [
 
 const TRANSPORTS: { id: Transport; icon: string; label: string }[] = [
     { id: "flight", icon: "✈️", label: "Máy bay" },
+    { id: "train", icon: "🚆", label: "Tàu hỏa" },
     { id: "bus", icon: "🚌", label: "Xe khách" },
     { id: "self_drive", icon: "🚗", label: "Tự lái" },
     { id: "any", icon: "🔄", label: "Linh hoạt" },
@@ -446,7 +447,7 @@ export default function TravelPlannerPage() {
                         )}
 
                         {!loading && suggestions.map((s, idx) => (
-                            <SuggestionCard key={idx} s={s} />
+                            <SuggestionCard key={idx} s={s} transport={transport} />
                         ))}
 
                         {!loading && submitted && suggestions.length === 0 && !error && (
@@ -531,7 +532,14 @@ function getToken(): string {
     return "";
 }
 
-function SuggestionCard({ s }: { s: Suggestion }) {
+const TRANSPORT_LINK: Record<string, { href: (city: string) => string; icon: string; label: string }> = {
+    flight:     { href: city => `/flights?to=${encodeURIComponent(city)}`,  icon: "✈️", label: "Vé máy bay" },
+    train:      { href: city => `/trains?to=${encodeURIComponent(city)}`,   icon: "🚆", label: "Vé tàu hỏa" },
+    bus:        { href: city => `/buses?to=${encodeURIComponent(city)}`,    icon: "🚌", label: "Vé xe khách" },
+    self_drive: { href: () => "",                                           icon: "",   label: "" },
+};
+
+function SuggestionCard({ s, transport }: { s: Suggestion; transport: string }) {
     const GRAD = ["from-blue-400 to-emerald-400", "from-orange-400 to-pink-500", "from-purple-500 to-indigo-500"];
     const gradIdx = Math.abs(s.city.charCodeAt(0)) % GRAD.length;
     const [feedback, setFeedback] = useState<"like" | "dislike" | null>(null);
@@ -617,26 +625,27 @@ function SuggestionCard({ s }: { s: Suggestion }) {
                 </div>
 
                 {/* Actions */}
-                <div className="tp-sug-actions">
-                    {s.destination_id ? (
-                        <Link
-                            href={`/hotels?destination_id=${s.destination_id}&search=${encodeURIComponent(s.city)}`}
-                            className="tp-sug-btn-primary"
-                        >
-                            🏨 Xem khách sạn tại {s.city}
-                        </Link>
-                    ) : (
-                        <Link
-                            href={`/hotels?search=${encodeURIComponent(s.city)}`}
-                            className="tp-sug-btn-primary"
-                        >
-                            🏨 Xem khách sạn tại {s.city}
-                        </Link>
-                    )}
-                    <Link href={`/flights?search=${encodeURIComponent(s.city)}`} className="tp-sug-btn-sec">
-                        ✈️ Vé bay
-                    </Link>
-                </div>
+                {(() => {
+                    const tLink = TRANSPORT_LINK[transport] ?? TRANSPORT_LINK["flight"];
+                    const transportHref = tLink.href(s.city);
+                    return (
+                        <div className="tp-sug-actions">
+                            <Link
+                                href={s.destination_id
+                                    ? `/hotels?destination_id=${s.destination_id}&search=${encodeURIComponent(s.city)}`
+                                    : `/hotels?search=${encodeURIComponent(s.city)}`}
+                                className="tp-sug-btn-primary"
+                            >
+                                🏨 Xem khách sạn tại {s.city}
+                            </Link>
+                            {transportHref && (
+                                <Link href={transportHref} className="tp-sug-btn-sec">
+                                    {tLink.icon} {tLink.label}
+                                </Link>
+                            )}
+                        </div>
+                    );
+                })()}
 
                 {/* Feedback */}
                 <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid #f0f4ff" }}>

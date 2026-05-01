@@ -429,28 +429,92 @@ async def send_cancel_confirmation_email(email: str, name: str, booking_id: int,
     ))
 
 
-async def send_reschedule_confirmation_email(email: str, name: str, booking_id: int,
-                                              service_name: str, note: str = ""):
+async def send_reschedule_confirmation_email(
+    email: str, name: str, booking_id: int, service_name: str,
+    old_check_in: str = "", old_check_out: str = "",
+    new_check_in: str = "", new_check_out: str = "",
+    old_price: float = 0, new_price: float = 0,
+    reschedule_fee: float = 0, amount_to_pay: float = 0,
+    refund_amount: float = 0, refund_method: str = "",
+    quantity: int = 1, entity_type: str = "room",
+):
+    def fmt(n): return f"{n:,.0f}₫"
+
+    # Bảng thông tin đặt chỗ
+    def row(label, val, color=""):
+        style = f'color:{color};font-weight:700' if color else 'color:#1a3c6b'
+        return f'<tr><td style="padding:6px 0;color:#6b8cbf;font-size:.85rem">{label}</td><td style="padding:6px 0;{style};font-size:.88rem;text-align:right">{val}</td></tr>'
+
+    date_rows = ""
+    if entity_type == "room":
+        qty_label = f"{quantity} phòng" if quantity > 1 else "1 phòng"
+        if old_check_in:
+            date_rows += row("Ngày nhận phòng cũ", old_check_in, "#bf2600")
+        if old_check_out:
+            date_rows += row("Ngày trả phòng cũ", old_check_out, "#bf2600")
+        if new_check_in:
+            date_rows += row("Ngày nhận phòng mới", new_check_in, "#00875a")
+        if new_check_out:
+            date_rows += row("Ngày trả phòng mới", new_check_out, "#00875a")
+        date_rows += row("Số phòng", qty_label)
+    else:
+        if old_check_in:
+            date_rows += row("Lịch cũ", old_check_in, "#bf2600")
+        if new_check_in:
+            date_rows += row("Lịch mới", new_check_in, "#00875a")
+
+    price_rows = ""
+    if old_price:
+        price_rows += row("Giá cũ", fmt(old_price))
+    if new_price:
+        price_rows += row("Giá mới", fmt(new_price))
+    if reschedule_fee > 0:
+        price_rows += row("Phí đổi lịch", fmt(reschedule_fee), "#bf2600")
+
+    # Thông báo thanh toán / hoàn tiền
+    payment_block = ""
+    if amount_to_pay >= 1:
+        payment_block = f'<div style="background:#fff3e0;border-left:4px solid #f57c00;padding:1rem;margin:1.2rem 0;border-radius:0 8px 8px 0"><strong style="color:#e65100">💳 Cần thanh toán thêm: {fmt(amount_to_pay)}</strong><br><span style="font-size:.82rem;color:#6b8cbf">Vui lòng hoàn tất thanh toán trên ứng dụng VIVU Travel.</span></div>'
+    elif refund_amount >= 1:
+        method_vn = "ví VIVU" if refund_method == "wallet" else "tài khoản ngân hàng (2–5 ngày làm việc)"
+        payment_block = f'<div style="background:#e8f5e9;border-left:4px solid #00875a;padding:1rem;margin:1.2rem 0;border-radius:0 8px 8px 0"><strong style="color:#00875a">💰 Hoàn tiền: {fmt(refund_amount)}</strong><br><span style="font-size:.82rem;color:#6b8cbf">Sẽ được hoàn vào {method_vn}.</span></div>'
+
     html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
-    <style>
-        body{{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4ff;margin:0;padding:0}}
-        .w{{max-width:520px;margin:40px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,82,204,.1)}}
-        .hd{{background:linear-gradient(135deg,#003580,#0052cc);padding:2rem;text-align:center;color:#fff}}
-        .hd h1{{margin:0;font-size:1.4rem}} .hd p{{margin:.4rem 0 0;opacity:.8;font-size:.9rem}}
-        .bd{{padding:2rem;font-size:.92rem;color:#1a3c6b}}
-        .note{{background:#e8f5e9;border-left:4px solid #00875a;padding:1rem;margin:1rem 0;border-radius:0 8px 8px 0;color:#00875a;font-weight:600}}
-        .ft{{background:#f8faff;padding:1rem 2rem;text-align:center;font-size:.8rem;color:#6b8cbf}}
-    </style></head><body>
-    <div class="w">
-        <div class="hd"><h1>🔄 Đổi lịch thành công</h1><p>Mã đặt chỗ #{booking_id}</p></div>
-        <div class="bd">
-            <p>Xin chào <strong>{name}</strong>,</p>
-            <p>Lịch đặt chỗ <strong>{service_name}</strong> của bạn đã được cập nhật thành công.</p>
-            {'<div class="note">' + note + '</div>' if note else ''}
-            <p>Vui lòng kiểm tra lại chi tiết đặt chỗ trên ứng dụng VIVU Travel.</p>
-        </div>
-        <div class="ft">VIVU Travel — Chúc bạn có chuyến đi vui vẻ!</div>
-    </div></body></html>"""
+<style>
+  body{{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4ff;margin:0;padding:0}}
+  .w{{max-width:540px;margin:40px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,82,204,.1)}}
+  .hd{{background:linear-gradient(135deg,#003580,#0052cc);padding:2rem;text-align:center;color:#fff}}
+  .hd h1{{margin:0;font-size:1.4rem}} .hd p{{margin:.4rem 0 0;opacity:.8;font-size:.9rem}}
+  .bd{{padding:2rem;font-size:.92rem;color:#1a3c6b}}
+  .box{{background:#f8faff;border-radius:10px;padding:1rem 1.25rem;margin:1.2rem 0}}
+  .box-title{{font-size:.78rem;font-weight:700;color:#6b8cbf;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.5rem}}
+  table{{width:100%;border-collapse:collapse}}
+  .ft{{background:#f8faff;padding:1rem 2rem;text-align:center;font-size:.8rem;color:#6b8cbf}}
+</style></head><body>
+<div class="w">
+  <div class="hd"><h1>🔄 Đổi lịch thành công</h1><p>Mã đặt chỗ #{booking_id}</p></div>
+  <div class="bd">
+    <p>Xin chào <strong>{name}</strong>,</p>
+    <p>Lịch đặt chỗ của bạn đã được cập nhật thành công.</p>
+
+    <div class="box">
+      <div class="box-title">📋 Thông tin dịch vụ</div>
+      <table>{row("Dịch vụ", f"<strong>{service_name}</strong>")}{date_rows}</table>
+    </div>
+
+    <div class="box">
+      <div class="box-title">💵 Chi tiết giá</div>
+      <table>{price_rows}</table>
+    </div>
+
+    {payment_block}
+
+    <p style="font-size:.85rem;color:#6b8cbf;margin-top:1.5rem">
+      Mọi thắc mắc vui lòng liên hệ VIVU Travel qua email hoặc hotline.
+    </p>
+  </div>
+  <div class="ft">VIVU Travel — Chúc bạn có chuyến đi vui vẻ! 🌟</div>
+</div></body></html>"""
 
     await fm.send_message(MessageSchema(
         subject=f"🔄 Đổi lịch đặt chỗ #{booking_id} — VIVU Travel",

@@ -29,7 +29,7 @@
 
 ---
 
-+## 1. Tổng quan kiến trúc
+## 1. Tổng quan kiến trúc
 
 ```
 Người dùng (Browser)
@@ -37,19 +37,20 @@ Người dùng (Browser)
         ▼
 ┌─────────────────────────────────────┐
 │  Next.js 16 Frontend (React 19)     │
-│  - App Router (26 routes)           │
+│  - App Router (31+ routes)          │
 │  - Zustand (global state)           │
 │  - Axios interceptors (JWT auto)    │
-│  - Tailwind CSS + Inline styles     │
+│  - Tailwind CSS + Module CSS        │
 └─────────────┬───────────────────────┘
               │ HTTPS REST API
               ▼
 ┌─────────────────────────────────────┐
 │  FastAPI Backend (Python)           │
 │  - 18 routers                       │
-│  - JWT (python-jose)                │
-│  - SQLAlchemy (raw SQL + text())    │
+│  - JWT (python-jose, HS256)         │
+│  - SQLAlchemy raw SQL (text())      │
 │  - Asyncio background scheduler     │
+│  - SMTP email service               │
 └─────────────┬───────────────────────┘
               │ SQLAlchemy + PyMySQL
               ▼
@@ -57,6 +58,7 @@ Người dùng (Browser)
 │  MySQL Database (DATN)              │
 │  - ~30+ tables                      │
 │  - Polymorphic bookings             │
+│  - InnoDB SELECT...FOR UPDATE       │
 └─────────────────────────────────────┘
 
 Dịch vụ ngoài:
@@ -64,12 +66,14 @@ Dịch vụ ngoài:
   - Google Gemini API (travel planner, chatbot)
   - Cloudinary (upload ảnh)
   - VietQR API (mã QR thanh toán)
+  - SMTP (email xác nhận booking / đổi lịch)
 ```
 
 **Điểm đặc biệt về kiến trúc:**
 - Backend không dùng ORM model class — toàn bộ query viết bằng `text()` của SQLAlchemy (raw SQL).
 - Frontend không có server-side rendering thực sự — toàn bộ là Client Components (`"use client"`), kể cả root layout.
 - State xác thực lưu trong Zustand + `localStorage` (key `auth-storage`), Axios tự đọc token trước mỗi request.
+- Race condition cho booking khách sạn được xử lý bằng `SELECT ... FOR UPDATE` (MySQL InnoDB X-lock).
 
 ---
 
@@ -77,36 +81,119 @@ Dịch vụ ngoài:
 
 ```
 frontend/
-├── app/                    # Next.js App Router — các trang
-│   ├── layout.tsx          # Root layout: Navbar, Footer, ChatBot, GoogleOAuthProvider
-│   ├── page.tsx            # Trang chủ
-│   ├── (auth)/             # Route group: login, register, forgot-password
-│   ├── flights/            # Tìm kiếm chuyến bay
-│   ├── hotels/             # Tìm kiếm khách sạn (+ [hotel_id]/)
-│   ├── buses/              # Tìm kiếm xe khách
-│   ├── trains/             # Tìm kiếm tàu hỏa
-│   ├── booking/            # Form đặt vé
-│   ├── payment/[id]/       # Thanh toán booking
-│   ├── invoice/[id]/       # Hóa đơn
-│   ├── profile/            # Khu vực cá nhân (có layout riêng)
-│   │   ├── layout.tsx      # Profile layout (sidebar)
-│   │   ├── page.tsx        # Thông tin cá nhân
-│   │   ├── bookings/       # Danh sách đặt chỗ (+ [booking_id]/)
-│   │   ├── wallet/         # Ví điện tử
-│   │   ├── transactions/   # Lịch sử giao dịch
-│   │   ├── notifications/  # Thông báo
-│   │   └── membership/     # Hạng thành viên
-│   ├── travel-planner/     # Lập kế hoạch du lịch AI
-│   ├── promotion/          # Khuyến mãi
-│   └── admin/              # Quản trị
+├── app/                          # Next.js App Router
+│   ├── layout.tsx                # Root layout: Navbar, Footer, ChatBot
+│   │                             #   (ẩn khi chưa đăng nhập + đang ở /booking, /payment)
+│   ├── page.tsx                  # Trang chủ
+│   ├── error.tsx                 # Global error boundary
+│   ├── not-found.tsx             # 404 page
+│   ├── loading.tsx               # Global loading skeleton
+│   │
+│   ├── (auth)/                   # Route group xác thực
+│   │   ├── login/page.tsx
+│   │   ├── register/page.tsx
+│   │   └── forgot-password/page.tsx
+│   │
+│   ├── flights/                  # Tìm kiếm chuyến bay
+│   ├── hotels/                   # Tìm kiếm khách sạn
+│   │   └── [hotel_id]/page.tsx   # Chi tiết khách sạn
+│   ├── buses/                    # Tìm kiếm xe khách
+│   ├── trains/                   # Tìm kiếm tàu hỏa
+│   │
+│   ├── booking/page.tsx          # Form đặt vé (ẩn Navbar nếu chưa login)
+│   ├── payment/[booking_id]/     # Thanh toán (ẩn Navbar nếu chưa login)
+│   ├── invoice/[id]/             # Hóa đơn
+│   │
+│   ├── profile/                  # Khu vực cá nhân
+│   │   ├── layout.tsx            # Profile sidebar layout
+│   │   ├── page.tsx              # Thông tin cá nhân
+│   │   ├── bookings/             # Đặt chỗ (+ [booking_id]/)
+│   │   ├── wallet/               # Ví điện tử
+│   │   ├── transactions/         # Lịch sử giao dịch
+│   │   ├── notifications/        # Thông báo
+│   │   └── membership/           # Hạng thành viên
+│   │
+│   ├── travel-planner/           # Lập kế hoạch du lịch AI
+│   ├── promotion/                # Khuyến mãi
+│   ├── admin/                    # Quản trị
+│   │
+│   ├── chinh-sach-huy/           # Trang chính sách hủy
+│   ├── dieu-khoan/               # Trang điều khoản dịch vụ
+│   ├── faq/                      # Câu hỏi thường gặp
+│   ├── huong-dan/                # Hướng dẫn sử dụng
+│   └── thanh-vien/               # Thông tin hạng thành viên
 │
-├── components/             # React components tái sử dụng
-├── services/               # API service layer (gọi backend)
-├── store/                  # Zustand state stores
-├── hooks/                  # Custom React hooks
-├── types/                  # TypeScript type definitions
-├── lib/                    # axios instance, constants, utils
-└── backend/                # FastAPI Python backend (cùng repo)
+├── components/
+│   ├── layout/
+│   │   ├── Navbar.tsx
+│   │   └── Footer.tsx
+│   ├── booking/
+│   │   ├── BookingCard.tsx        # Tóm tắt giỏ hàng + promo (yêu cầu đăng nhập để dùng promo)
+│   │   ├── BookingForm.tsx
+│   │   └── BookingSuggestions.tsx
+│   ├── flight/
+│   │   ├── FlightCard.tsx
+│   │   ├── FlightList.tsx
+│   │   └── FlightTicketModal.tsx
+│   ├── hotel/
+│   │   ├── HotelCard.tsx
+│   │   └── HotelList.tsx
+│   ├── bus/
+│   │   ├── BusCard.tsx
+│   │   ├── BusList.tsx
+│   │   └── BusTicketModal.tsx
+│   ├── train/
+│   │   ├── TrainCard.tsx
+│   │   └── TrainTicketModal.tsx
+│   ├── ui/
+│   │   ├── DestinationInput.tsx
+│   │   ├── ToastContainer.tsx
+│   │   ├── button.tsx
+│   │   ├── card.tsx
+│   │   ├── input.tsx
+│   │   └── modal.tsx
+│   ├── wallet/
+│   │   ├── WalletDeposit.tsx
+│   │   └── WalletWithdraw.tsx
+│   ├── review/
+│   │   ├── ReviewForm.tsx
+│   │   └── ReviewList.tsx
+│   ├── search/
+│   │   ├── SearchBar.tsx
+│   │   └── SearchResults.tsx
+│   ├── promotion/
+│   │   ├── promotionCard.tsx
+│   │   └── promotionList.tsx
+│   ├── profile/
+│   │   ├── OTPVerify.tsx
+│   │   └── ProfileLayout.tsx
+│   ├── gallery/
+│   │   └── ImageGallery.tsx
+│   ├── recommendation/
+│   │   └── DestinationRecommendations.tsx  # Điểm đến phổ biến (trang chủ)
+│   ├── BannerSlider.tsx
+│   ├── BookingModifyModal.tsx
+│   ├── ChatBot.tsx
+│   ├── CloudinaryUpload.tsx
+│   ├── CloudinaryMultiUpload.tsx
+│   ├── DestinationsSection.tsx
+│   ├── HeroBackground.tsx
+│   └── PromoSection.tsx
+│
+├── services/                     # API service layer
+├── store/                        # Zustand stores
+├── hooks/                        # Custom React hooks
+├── types/                        # TypeScript type definitions
+├── lib/                          # axios instance, utils
+├── styles/                       # CSS per page
+│   ├── booking.css
+│   ├── booking-form.css
+│   ├── buses.css
+│   ├── flights.css
+│   ├── hotels.css
+│   ├── search-bar.css
+│   └── trains.css
+└── backend/                      # FastAPI Python backend
 ```
 
 ---
@@ -121,7 +208,7 @@ useAuthStore
   ├── user: User | null        — thông tin user (id, name, email, wallet, role...)
   ├── token: string | null     — JWT token
   ├── isAuthenticated: boolean
-  ├── login(user, token)       — lưu vào store + localStorage tự động (persist)
+  ├── login(user, token)       — lưu vào store + localStorage (persist)
   ├── logout()                 — xóa toàn bộ
   ├── updateUser(partial)      — cập nhật 1 phần thông tin user
   └── refreshWallet()          — gọi /api/auth/me để lấy số dư ví mới nhất
@@ -135,12 +222,15 @@ Lưu thông tin item đang được đặt (entity_type, entity_id, seat_class, 
 **`store/paymentStore.ts` — Trạng thái thanh toán**  
 Lưu booking_id và phương thức thanh toán đang xử lý.
 
+**`store/toastStore.ts` — Thông báo toast**  
+Quản lý hàng đợi toast notification (success / error / info).
+
 ### Axios Interceptor (`lib/axios.ts`)
 
 Mỗi HTTP request tự động:
 1. Đọc JWT token từ `localStorage` (key `auth-storage` → `state.token`)
 2. Thêm header `Authorization: Bearer <token>`
-3. Nếu response 401 → tự xóa token khỏi localStorage (tránh lặp lại lỗi)
+3. Nếu response 401 → tự xóa token khỏi localStorage
 
 ### Custom Hooks
 
@@ -156,7 +246,7 @@ Mỗi HTTP request tự động:
 ## 4. Frontend — Các trang (App Router)
 
 ### Trang chủ (`app/page.tsx`)
-Hiển thị: Hero banner, BannerSlider, DestinationsSection (top destinations), gợi ý recommendation từ ML nếu user đã login.
+Hiển thị: Hero banner, BannerSlider, DestinationsSection (top destinations), `DestinationRecommendations` (popular cities), `PromoSection`, gợi ý recommendation từ ML nếu user đã login.
 
 ### Tìm kiếm dịch vụ
 
@@ -165,21 +255,30 @@ Hiển thị: Hero banner, BannerSlider, DestinationsSection (top destinations),
 - Gọi `GET /api/flights?from=...&to=...&date=...`
 - Hiển thị `FlightList` → `FlightCard`
 - Click card → mở `FlightTicketModal` → chọn hạng ghế → redirect `/booking`
+- Phần dưới: **Điểm đến phổ biến** (5 card) + **Khách sạn nổi bật** (tabs theo thành phố + 4 hotel card)
 
 **`app/hotels/page.tsx`**  
-- Hero search box + Popular destinations + Filter sidebar
-- Auto-search khi có URL params `?search=...&destination_id=...` (từ travel planner)
+- Hero search box + **Popular destinations** (5 card, 5 cột) + Filter sidebar
+- Auto-search khi có URL params `?search=...&destination_id=...`
 - Filter: giá/đêm, đánh giá, tiện nghi, hoàn tiền
 - Gọi `GET /api/hotels?search=...`
 
-**`app/buses/page.tsx`** và **`app/trains/page.tsx`**  
-Tương tự flights — form tìm kiếm, list kết quả, modal chọn ghế.
+**`app/buses/page.tsx`**  
+- Form tìm kiếm, list kết quả, modal chọn ghế
+- Phần dưới: **Điểm đến phổ biến** (5 card) + **Khách sạn nổi bật** (tabs + 4 hotel card)
+
+**`app/trains/page.tsx`**  
+- Tương tự buses
+- Phần dưới: **Điểm đến phổ biến** (5 card) + **Khách sạn nổi bật** (tabs + 4 hotel card)
 
 ### Đặt vé (`app/booking/page.tsx`)
-- Đọc state từ `bookingStore` (entity_type, entity_id, seat_class, price...)
+- Đọc state từ `bookingStore`
 - Form điền thông tin hành khách
-- Chọn mã khuyến mãi (gọi `POST /api/promotions/apply`)
+- `BookingCard`: chọn mã khuyến mãi — **yêu cầu đăng nhập** (hiện hint đăng nhập nếu chưa login)
 - Submit → `POST /api/bookings` → nhận `booking_id` → redirect `/payment/{booking_id}`
+- Nếu email đã có tài khoản: hiển thị lỗi inline tại field email
+
+> **Ẩn Navbar/Footer/ChatBot:** khi user chưa đăng nhập và đang ở `/booking` hoặc `/payment/*`
 
 ### Thanh toán (`app/payment/[booking_id]/page.tsx`)
 - Hiển thị tóm tắt booking
@@ -188,53 +287,65 @@ Tương tự flights — form tìm kiếm, list kết quả, modal chọn ghế.
 - QR Banking: hiển thị mã QR VietQR, polling kiểm tra trạng thái
 
 ### Profile — Đặt chỗ (`app/profile/bookings/`)
-- `page.tsx`: danh sách booking (tab theo loại, filter). Gọi `GET /api/bookings/my` (chỉ hiện booking còn hiệu lực)
-- `[booking_id]/page.tsx`: chi tiết booking + nút đổi lịch/hủy + lịch sử thay đổi
+- `page.tsx`: danh sách booking (tab theo loại, filter)
+- `[booking_id]/page.tsx`: chi tiết + nút đổi lịch/hủy + timeline lịch sử thay đổi
 
 ### Profile — Giao dịch (`app/profile/transactions/page.tsx`)
-Gọi `GET /api/bookings/history` — hiển thị **tất cả** booking kể cả đã hết hạn.
+Gọi `GET /api/bookings/history` — hiển thị tất cả booking kể cả đã hết hạn.
 
 ### Travel Planner (`app/travel-planner/page.tsx`)
-- Form nhập sở thích: ngân sách, thời gian, phong cách du lịch, phương tiện ưu tiên
-- Gọi `POST /api/travel-planner/suggest` → Gemini AI trả về gợi ý địa điểm JSON
-- Hiển thị trending destinations từ `GET /api/travel-planner/trending`
-- Nút "Xem khách sạn" → link đến `/hotels?destination_id=...&search=...`
+- Form: ngân sách, thời gian, phong cách, **phương tiện ưu tiên** (✈️ Máy bay / 🚆 Tàu hỏa / 🚌 Xe khách / 🚗 Tự lái)
+- Gọi `POST /api/travel-planner/suggest` → Gemini AI
+- Nút "Đặt vé / Xem vé" trỏ đúng trang tương ứng:
+  - flight → `/flights?to={city}`
+  - train → `/trains?to={city}`
+  - bus → `/buses?to={city}`
+  - self_drive → ẩn nút phương tiện
+
+### Trang thông tin tĩnh
+- `app/chinh-sach-huy/` — Chính sách hủy
+- `app/dieu-khoan/` — Điều khoản dịch vụ
+- `app/faq/` — Câu hỏi thường gặp
+- `app/huong-dan/` — Hướng dẫn sử dụng
+- `app/thanh-vien/` — Thông tin hạng thành viên
 
 ---
 
 ## 5. Frontend — Components
 
 ### Layout
-- **`Navbar.tsx`**: Navigation bar, hiển thị/ẩn menu dựa vào `isAuthenticated`, dropdown profile
-- **`Footer.tsx`**: Footer chuẩn
+- **`Navbar.tsx`**: Navigation bar, dropdown profile; ẩn khi user chưa login + đang ở checkout
+- **`Footer.tsx`**: Footer với links đến chinh-sach-huy, dieu-khoan, faq, huong-dan
 
 ### Booking Components
-- **`BookingForm.tsx`**: Form điền thông tin hành khách, số lượng, ghi chú
-- **`BookingModifyModal.tsx`**: Modal đổi lịch/hủy booking — 4 bước:
-  1. Chọn hành động (đổi lịch / hủy)
-  2. Chọn tùy chọn mới (chuyến mới / hạng ghế mới / phòng mới)
-  3. Preview chênh lệch tiền và phí
-  4. Xác nhận với breakdown: giá cũ / giá mới / chênh lệch / phí đổi
-- **`BookingSuggestions.tsx`**: Gợi ý đặt thêm sau khi booking thành công
+- **`BookingCard.tsx`**: Tóm tắt giỏ hàng + phần mã giảm giá
+  - Khi chưa đăng nhập: hiện hint "🔒 Đăng nhập để dùng mã giảm giá"
+  - Khi đã đăng nhập: hiện input + nút Áp dụng + dropdown danh sách mã
+- **`BookingForm.tsx`**: Form thông tin hành khách, số lượng, ghi chú
+- **`BookingModifyModal.tsx`**: Modal đổi lịch/hủy — 4 bước
+- **`BookingSuggestions.tsx`**: Gợi ý đặt thêm sau booking
 
 ### Transport Components
-- **`FlightCard.tsx`**, **`BusCard.tsx`**, **`TrainCard.tsx`**: Card hiển thị thông tin chuyến
-- **`FlightTicketModal.tsx`**, **`BusTicketModal.tsx`**, **`TrainTicketModal.tsx`**: Modal chọn hạng ghế, số lượng, hiển thị giá
+- **`FlightCard/BusCard/TrainCard`**: Card chuyến đi với thông tin chi tiết
+- **`FlightTicketModal/BusTicketModal/TrainTicketModal`**: Modal chọn hạng ghế + số lượng
 
 ### Hotel Components
-- **`HotelCard.tsx`**: Card khách sạn với ảnh, rating, giá từ, tiện nghi
+- **`HotelCard.tsx`**: Card với ảnh, rating, giá từ, tiện nghi
 - **`HotelList.tsx`**: Grid khách sạn
 
 ### UI Components
-- **`DestinationInput.tsx`**: Input với autocomplete địa điểm (gọi `/api/destinations/search`)
-- **`modal.tsx`**: Modal wrapper có backdrop
-- **`card.tsx`**, **`button.tsx`**, **`input.tsx`**: UI primitives
+- **`DestinationInput.tsx`**: Input autocomplete địa điểm
+- **`ToastContainer.tsx`**: Hệ thống toast notification
+- **`modal.tsx`**, **`card.tsx`**, **`button.tsx`**, **`input.tsx`**: UI primitives
 
 ### Tiện ích
-- **`ChatBot.tsx`**: Chatbot nổi góc dưới phải, gọi `/api/chat`
-- **`CloudinaryUpload.tsx`**: Upload ảnh lên Cloudinary
+- **`ChatBot.tsx`**: Chatbot nổi góc dưới phải, gọi `/api/chat`; ẩn ở trang checkout (chưa login)
 - **`BannerSlider.tsx`**: Slider banner trang chủ
-- **`DestinationsSection.tsx`**: Grid điểm đến nổi bật
+- **`DestinationsSection.tsx`**: Grid điểm đến (trang chủ)
+- **`DestinationRecommendations.tsx`**: Popular cities với ảnh nền, hover effect
+- **`PromoSection.tsx`**: Banner khuyến mãi nổi bật
+- **`CloudinaryUpload.tsx`** / **`CloudinaryMultiUpload.tsx`**: Upload ảnh
+- **`ImageGallery.tsx`**: Gallery ảnh khách sạn
 
 ---
 
@@ -244,21 +355,20 @@ Mỗi service là một object với các async function gọi `axiosInstance`:
 
 ```
 services/
-├── authService.ts      — login, register, loginGoogle, forgotPassword, resetPassword
-├── flightService.ts    — searchFlights, getFlightById, getClasses
-├── hotelService.ts     — getHotels, getHotelById
-├── busService.ts       — searchBuses, getBusById
-├── trainService.ts     — searchTrains, getTrainById
-├── bookingService.ts   — createBooking, getMyBookings, cancelBooking
-├── promotionService.ts — getPromotions, applyPromotion
-├── reviewService.ts    — getReviews, submitReview
-├── invoiceService.ts   — getInvoice
-├── searchService.ts    — globalSearch
-├── imageService.ts     — uploadImage (Cloudinary)
+├── api.ts               — base axios config + interceptors
+├── authService.ts       — login, register, loginGoogle, forgotPassword, resetPassword
+├── flightService.ts     — searchFlights, getFlightById, getClasses
+├── hotelService.ts      — getHotels, getHotelById
+├── busService.ts        — searchBuses, getBusById
+├── trainService.ts      — searchTrains, getTrainById
+├── bookingService.ts    — createBooking, getMyBookings, cancelBooking
+├── promotionService.ts  — getPromotions, applyPromotion
+├── reviewService.ts     — getReviews, submitReview
+├── invoiceService.ts    — getInvoice
+├── searchService.ts     — globalSearch
+├── imageService.ts      — uploadImage (Cloudinary)
 └── detinationService.ts — getDestinations (typo trong tên file)
 ```
-
-Tất cả service đều dùng `axiosInstance` từ `lib/axios.ts` — token JWT được tự động đính kèm.
 
 ---
 
@@ -270,18 +380,22 @@ Khi `uvicorn main:app --reload` chạy:
 
 1. Load biến môi trường từ `.env`
 2. Khởi tạo FastAPI app
-3. Cấu hình CORS (cho phép `localhost:3000` và `vivuvuive.io.vn`)
+3. Cấu hình CORS
 4. `lifespan` context manager:
    - Load ML model NCF (nếu PyTorch đã cài và model đã train)
    - Khởi động `booking_expire_loop` background task (asyncio)
 5. Register 18 routers
 
 **Kết nối database (`backend/database.py`)**  
-SQLAlchemy engine kết nối MySQL:
 ```
 mysql+pymysql://root:123456@localhost/DATN
 ```
-Toàn bộ backend dùng `engine.begin()` (transaction) và `text()` để viết raw SQL — không dùng ORM models.
+Toàn bộ backend dùng `engine.begin()` + `text()` — không dùng ORM models.
+
+**Email service (`backend/email_service.py`)**  
+SMTP gửi email xác nhận:
+- `send_booking_confirmation_email` — xác nhận đặt vé
+- `send_reschedule_confirmation_email` — xác nhận đổi lịch với đầy đủ: ngày cũ/mới, giá cũ/mới, phí đổi, số tiền thanh toán thêm/hoàn
 
 ---
 
@@ -295,7 +409,14 @@ Toàn bộ backend dùng `engine.begin()` (transaction) và `text()` để viế
 | `verify_password(plain, hashed)` | Kiểm tra mật khẩu |
 | `create_access_token(data)` | Tạo JWT với expire 7 ngày, HS256 |
 | `get_current_user(token)` | Dependency — decode JWT, trả `user_id`. Raise 401 nếu invalid |
-| `get_optional_user(token)` | Như trên nhưng trả `None` thay vì 401 (dùng cho endpoint public) |
+| `get_optional_user(token)` | Như trên nhưng trả `None` thay vì 401 |
+
+**Cấu hình:**
+```python
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+ALGORITHM  = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 ngày
+```
 
 **Luồng đăng nhập:**
 ```
@@ -303,17 +424,10 @@ POST /api/auth/login
   → verify_password
   → create_access_token({"user_id": user.id})
   → trả về {access_token, user}
-
-Mỗi request tiếp theo:
-  Header: Authorization: Bearer <token>
-  → get_current_user dependency decode JWT → trả user_id
 ```
 
 **Đăng nhập Google (`routers/auth_google.py`)**  
-- Nhận `google_token` từ frontend (Google OAuth flow)
-- Verify với Google API
-- Nếu email chưa có → tạo account mới
-- Tạo JWT nội bộ → trả về giống login thường
+Verify `google_token` → tạo account nếu email mới → tạo JWT nội bộ.
 
 ---
 
@@ -322,94 +436,90 @@ Mỗi request tiếp theo:
 ### `routers/flights.py`
 - `GET /api/flights` — tìm kiếm theo `from`, `to`, `date`, `seat_class`, `passengers`
 - `GET /api/flights/{id}` — chi tiết chuyến bay
-- `GET /api/flights/{id}/classes` — các hạng ghế còn trống và giá
+- `GET /api/flights/{id}/classes` — hạng ghế còn trống
 
-Dữ liệu: bảng `flights`, `flight_seats`, `airports`, `destinations`.  
-Ghế được tính theo `seat_class` (economy/business/first) với multiplier:
-```
-economy: 1.0x  |  business: 1.8x  |  first: 2.5x
-```
+Multiplier ghế: `economy: 1.0x | business: 1.8x | first: 2.5x`
 
 ### `routers/hotels.py`
-- `GET /api/hotels` — tìm kiếm với filter: `search`, `destination_id`, `min_price`, `max_price`, `sort`, `min_guests`
-- `GET /api/hotels/{id}` — chi tiết khách sạn (kèm room types, ảnh, reviews)
-- `GET /api/hotels/{id}/reschedule-options` — phòng trống cho ngày mới khi đổi lịch
+- `GET /api/hotels` — filter: `search`, `destination_id`, `min_price`, `max_price`, `sort`, `min_guests`
+- `GET /api/hotels/{id}` — chi tiết + room types + reviews
+- `GET /api/hotels/{id}/reschedule-options` — phòng trống cho ngày mới
 
-Giá phòng = `price_per_night * nights * quantity * 1.21` (bao gồm thuế/phí).
+Giá phòng = `price_per_night × nights × quantity × 1.21` (thuế/phí).
 
 ### `routers/buses.py` và `routers/trains.py`
-Tương tự flights. Ghế bus có `standard/vip/sleeper` (multiplier 1.0/1.4/1.6).
+Tương tự flights. Multiplier bus: `standard: 1.0x | vip: 1.4x | sleeper: 1.6x`.
 
-### `routers/bookings.py` (file lớn nhất — ~119KB)
+### `routers/bookings.py`
 
-File trung tâm của hệ thống. Xem chi tiết ở phần [10](#10-backend--luồng-đặt-vé-chi-tiết) và [11](#11-backend--đổi-lịch--hủy-booking).
-
-Các endpoint chính:
+File trung tâm (~119KB). Các endpoint:
 ```
-POST   /api/bookings                    — Tạo booking mới
-POST   /api/bookings/{id}/pay           — Thanh toán
-GET    /api/bookings/my                 — Booking đang hiệu lực (có filter service-ended)
-GET    /api/bookings/history            — Toàn bộ booking (không filter)
-GET    /api/bookings/{id}               — Chi tiết booking + lịch sử thay đổi
-GET    /api/bookings/{id}/class-options — Hạng ghế có thể đổi sang
-GET    /api/bookings/{id}/reschedule-options — Lịch/phòng có thể đổi sang
-POST   /api/bookings/{id}/reschedule    — Đổi lịch
-POST   /api/bookings/{id}/cancel        — Hủy booking
-GET    /api/bookings/{id}/cancel/preview — Xem trước hoàn tiền nếu hủy
-POST   /api/bookings/{id}/pay-extra     — Thanh toán chênh lệch khi đổi lịch đắt hơn
+POST   /api/bookings                      — Tạo booking mới
+POST   /api/bookings/{id}/pay             — Thanh toán
+GET    /api/bookings/my                   — Booking đang hiệu lực
+GET    /api/bookings/history              — Toàn bộ booking
+GET    /api/bookings/{id}                 — Chi tiết + lịch sử thay đổi
+GET    /api/bookings/{id}/class-options   — Hạng ghế có thể đổi
+GET    /api/bookings/{id}/reschedule-options — Lịch/phòng có thể đổi
+POST   /api/bookings/{id}/reschedule      — Đổi lịch
+POST   /api/bookings/{id}/cancel          — Hủy booking
+GET    /api/bookings/{id}/cancel/preview  — Preview hoàn tiền nếu hủy
+POST   /api/bookings/{id}/pay-extra       — Thanh toán chênh lệch sau đổi lịch
 ```
 
 ### `routers/wallet.py`
 ```
-GET  /api/wallet          — Số dư ví
-POST /api/wallet/deposit  — Nạp tiền (tạo giao dịch pending + QR)
-POST /api/wallet/withdraw — Rút tiền
-GET  /api/wallet/transactions — Lịch sử giao dịch ví
+GET  /api/wallet                — Số dư ví
+POST /api/wallet/deposit        — Nạp tiền (tạo QR VietQR)
+POST /api/wallet/withdraw       — Rút tiền
+GET  /api/wallet/transactions   — Lịch sử giao dịch
 ```
 
 ### `routers/promotions.py`
 ```
-GET  /api/promotions        — Danh sách mã khuyến mãi
-POST /api/promotions/apply  — Áp dụng mã, trả về discount_amount
+GET  /api/promotions        — Danh sách mã
+POST /api/promotions/apply  — Áp dụng mã (yêu cầu auth)
 ```
-
-Kiểm tra: mã có tồn tại, còn hạn, chưa dùng hết, áp dụng cho entity_type phù hợp, user chưa dùng mã này.
-
-### `routers/reviews.py`
-Chỉ cho phép review sau khi booking `completed`. Lưu rating + comment, cập nhật `avg_rating` của entity.
-
-### `routers/admin.py` (~80KB)
-Quản lý toàn bộ dữ liệu: thêm/sửa/xóa chuyến bay, khách sạn, xe khách, tàu hỏa; quản lý người dùng, booking, promotions; thống kê doanh thu.
-
-### `routers/recommendations.py`
-```
-GET /api/recommendations         — Top gợi ý cho user đang login (NCF model)
-GET /api/recommendations/popular — Gợi ý phổ biến (không cần login)
-```
+Kiểm tra: tồn tại, còn hạn, chưa dùng hết, đúng entity_type, user chưa dùng.
 
 ### `routers/travel_planner.py`
 ```
-POST /api/travel-planner/suggest  — Gợi ý địa điểm bằng Gemini AI
-GET  /api/travel-planner/trending — Top điểm đến xu hướng (tính từ booking + interaction)
-POST /api/travel-planner/feedback — Lưu phản hồi về gợi ý
+POST /api/travel-planner/suggest  — Gợi ý địa điểm Gemini AI
+GET  /api/travel-planner/trending — Top điểm đến xu hướng
+POST /api/travel-planner/feedback — Lưu phản hồi
 ```
+
+Phương tiện hỗ trợ: `flight` (Máy bay) | `train` (Tàu hỏa) | `bus` (Xe khách) | `self_drive` (Tự lái).  
+Transport chỉ dùng làm context cho prompt Gemini — không ảnh hưởng ML model.
 
 ### `routers/chat.py`
 ```
-POST /api/chat  — Chatbot du lịch, dùng Gemini API, có context lịch sử chat
+POST /api/chat  — Chatbot, Gemini API, context lịch sử chat
 ```
+Hỗ trợ optional JWT — nhận diện user đã login để cá nhân hóa câu trả lời.
+
+### `routers/recommendations.py`
+```
+GET /api/recommendations         — Top gợi ý cho user login (NCF model)
+GET /api/recommendations/popular — Gợi ý phổ biến (không cần login)
+```
+
+### `routers/reviews.py`
+Chỉ cho phép review sau khi booking `completed`. Cập nhật `avg_rating` entity.
 
 ### `routers/interactions.py`
 ```
 POST /api/interactions/log  — Ghi lại hành động user (view, search, click)
 ```
-Dùng để feed data cho ML model.
 
 ### `routers/notifications.py`
 ```
-GET  /api/notifications         — Danh sách thông báo
-PUT  /api/notifications/{id}/read — Đánh dấu đã đọc
+GET /api/notifications              — Danh sách thông báo
+PUT /api/notifications/{id}/read    — Đánh dấu đã đọc
 ```
+
+### `routers/admin.py`
+Quản lý dữ liệu (CRUD), thống kê doanh thu.
 
 ---
 
@@ -420,119 +530,92 @@ PUT  /api/notifications/{id}/read — Đánh dấu đã đọc
 ```
 Request: {
   entity_type: "flight" | "hotel" | "bus" | "train",
-  entity_id: number,
-  seat_class: string,        // flight/bus/train
-  quantity: number,
-  check_in_date: string,     // hotel
-  check_out_date: string,    // hotel
-  contact_name: string,
-  contact_phone: string,
-  promo_code?: string
+  entity_id, seat_class, quantity,
+  check_in_date, check_out_date,   // hotel
+  contact_name, contact_phone, contact_email?,
+  promo_code?
 }
 
 Xử lý:
 1. Tính giá:
-   - Flight/Bus/Train: base_price * class_multiplier * quantity
-   - Hotel: price_per_night * nights * quantity * 1.21
-2. Áp dụng promo nếu có (giảm từ total_price)
+   - Flight/Bus/Train: base_price × class_multiplier × quantity
+   - Hotel: price_per_night × nights × quantity × 1.21
+2. Áp dụng promo (nếu có) → discount_amount
 3. INSERT bookings (status='pending')
 4. INSERT booking_items
-5. Giữ ghế (UPDATE flight_seats/bus_seats/train_seats SET is_booked=1)
-   - Dùng SELECT ... FOR UPDATE để tránh race condition
-6. Gửi notification cho user
+5. Giữ ghế (SELECT...FOR UPDATE → UPDATE is_booked=1)
+6. Gửi notification
 
 Response: {booking_id, total_price, final_amount, ...}
 ```
+
+**Race condition (hotel):** `SELECT ... FOR UPDATE` trên `room_types` tạo MySQL InnoDB X-lock, serialize các request đồng thời. Request thứ 2 block cho đến khi request 1 commit, sau đó đọc dữ liệu đã commit → thấy 0 phòng còn → từ chối.
 
 **Booking tự động hủy sau 15 phút nếu không thanh toán** (xem phần 16).
 
 ### Bước 2: Thanh toán (`POST /api/bookings/{id}/pay`)
 
 ```
-Request: {
-  payment_method: "wallet" | "bank"
-}
-
 Xử lý (trong transaction):
-1. Kiểm tra booking tồn tại và status='pending'
-2. Kiểm tra user sở hữu booking
-3. Nếu wallet: kiểm tra số dư đủ, trừ tiền từ wallet
-4. UPDATE bookings SET status='confirmed'
-5. INSERT wallet_transactions (loại 'payment')
-6. Gửi notification "Đặt vé thành công"
+1. Kiểm tra booking tồn tại, status='pending', user sở hữu
+2. Nếu wallet: kiểm tra số dư, trừ tiền
+3. UPDATE bookings SET status='confirmed'
+4. INSERT wallet_transactions (type='payment')
+5. Gửi email xác nhận + notification
 ```
 
-### Hiển thị booking
-
-**`GET /api/bookings/my`** — Dùng cho trang "Đặt chỗ của tôi":
-- Loại booking đã hết hạn dịch vụ (hotel: `check_out_date < CURDATE()`, transport: arrive_time đã qua)
-- **Ngoại lệ**: vẫn hiển thị nếu có refund đang chờ duyệt (`booking_modifications` có status=`pending` và `refund_amount > 0`)
-
-**`GET /api/bookings/history`** — Dùng cho trang "Giao dịch":
-- Trả về **tất cả** booking không lọc, kèm entity_name, check_in/out date
+### Booking khách booking dạng guest
+- User điền `contact_email` không thuộc tài khoản nào → tạo booking bình thường
+- Nếu `contact_email` đã có tài khoản → backend trả 400 với message "đã có tài khoản"
+- Frontend hiện lỗi inline tại field email (không dùng toast)
 
 ---
 
 ## 11. Backend — Đổi lịch & Hủy booking
 
-### Kiểm tra thời gian (`_check_transport_time`)
-
-Với transport (flight/bus/train), trước khi cho phép đổi/hủy:
-1. Lấy `depart_time` của chuyến
-2. Tính `hours_left = (depart_time - now) / 3600`
-3. Nếu `hours_left < 0` → chuyến đã qua, từ chối
-4. Đọc policy từ bảng `policies` (key `min_hours_before`)
-5. Nếu `hours_left < min_hours` → từ chối với thông báo thời gian tối thiểu
-
 ### Đổi lịch (`POST /api/bookings/{id}/reschedule`)
 
 ```
 Các trường hợp:
-A. Cùng entity, đổi hạng ghế (flight/bus):
-   - Tính giá mới: economy_base = old_price / old_multiplier
-                   new_price = economy_base * new_multiplier
-   - Tính diff = new_price - old_price
-   - Tính fee = diff > 0 ? diff * reschedule_fee_rate : 0
-   - Nếu diff > 0: tạo booking_modification với status='pending_payment'
-                   user phải gọi /pay-extra
-   - Nếu diff <= 0: hoàn tiền vào ví, tạo modification với refund_amount
+A. Đổi hạng ghế (cùng entity):
+   economy_base = old_price / old_multiplier
+   new_price    = economy_base × new_multiplier
+   diff = new_price - old_price
 
 B. Đổi sang entity mới (chuyến khác / phòng khác):
-   - _transfer_seats(): giải phóng ghế cũ, giữ ghế mới
-   - Tính diff và fee tương tự
-   - UPDATE booking_items với entity mới, giá mới
-```
+   _transfer_seats(): giải phóng ghế cũ, giữ ghế mới
+   UPDATE booking_items với entity mới, giá mới
 
-**Hoàn tiền khi downgrade** (ví dụ từ business → economy):
-- `economy_base = old_price / 1.8` (normalize về economy)
-- `new_price = economy_base * 1.0` (áp multiplier mới)
-- `diff = new_price - old_price` → âm → hoàn tiền `|diff|` vào ví
+Tính phí:
+   fee = diff > 0 ? diff × reschedule_fee_rate : 0
+   
+Kết quả:
+   diff > 0 → status='pending_payment', user gọi /pay-extra
+   diff ≤ 0 → hoàn tiền ngay vào ví
+
+Email xác nhận đổi lịch bao gồm:
+   - Ngày check-in/out cũ (đỏ) và mới (xanh)
+   - Giá cũ, giá mới, phí đổi
+   - Số tiền thanh toán thêm hoặc hoàn lại
+   - Phương thức hoàn (ví / ngân hàng)
+```
 
 ### Hủy booking (`POST /api/bookings/{id}/cancel`)
 
 ```
-Xử lý:
-1. Kiểm tra thời gian (transport) hoặc ngày check-in (hotel)
-2. Đọc cancel_fee_rate từ policies
-3. Tính refund = final_amount * (1 - cancel_fee_rate)
-4. UPDATE bookings SET status='cancelled'
-5. Giải phóng ghế (flight/bus/train)
-6. Nếu đã thanh toán: INSERT wallet_transactions (refund)
-7. INSERT booking_modifications (type='cancel', refund_amount=refund)
-8. Gửi notification
+1. Kiểm tra thời gian (transport) hoặc check-in date (hotel)
+2. refund = final_amount × (1 - cancel_fee_rate)
+3. UPDATE bookings SET status='cancelled'
+4. Giải phóng ghế (transport)
+5. INSERT wallet_transactions (refund)
+6. INSERT booking_modifications (type='cancel')
+7. Gửi notification
 ```
 
-### Lịch sử thay đổi
-
-Bảng `booking_modifications`:
-```sql
-mod_id, booking_id, type (reschedule/cancel), status,
-old_price, new_price, refund_amount, fee_amount,
-new_seat_class, new_entity_id, new_check_in, new_check_out,
-bank_info, created_at, approved_at
-```
-
-Hiển thị trong `app/profile/bookings/[booking_id]/page.tsx` dưới dạng timeline.
+### Kiểm tra thời gian (`_check_transport_time`)
+- Lấy `depart_time`, tính `hours_left`
+- Đọc `min_hours_before` từ bảng `policies`
+- Từ chối nếu `hours_left < min_hours`
 
 ---
 
@@ -540,13 +623,13 @@ Hiển thị trong `app/profile/bookings/[booking_id]/page.tsx` dưới dạng t
 
 ### Bảng dữ liệu
 - `wallets`: `wallet_id`, `user_id`, `balance`
-- `wallet_transactions`: `id`, `wallet_id`, `type` (deposit/payment/refund/withdraw), `amount`, `description`, `created_at`
+- `wallet_transactions`: `id`, `wallet_id`, `type` (deposit/payment/refund/withdraw), `amount`, `description`
 
-### Nạp tiền (Deposit)
+### Nạp tiền
 1. Tạo `wallet_transactions` với `status='pending'`
-2. Tạo mã QR VietQR với nội dung `VIVU-{transaction_id}`
+2. Tạo QR VietQR với nội dung `VIVU-{transaction_id}`
 3. Frontend polling kiểm tra trạng thái
-4. Khi xác nhận (manual hoặc webhook): cộng tiền vào `wallets.balance`
+4. Khi xác nhận: cộng tiền vào `wallets.balance`
 
 ### Thanh toán booking
 ```
@@ -555,7 +638,7 @@ wallet_transactions INSERT (type='payment', amount=-final_amount)
 bookings.status = 'confirmed'
 ```
 
-### Hoàn tiền (Refund)
+### Hoàn tiền
 ```
 wallet.balance += refund_amount
 wallet_transactions INSERT (type='refund', amount=+refund_amount)
@@ -573,41 +656,23 @@ booking_modifications.status = 'refunded'
 ```
 Input: (user_id, item_id)
        ↓                ↓
-  GMF embeddings    MLP embeddings
-  (32-dim)          (32-dim each)
+  GMF embeddings    MLP embeddings (32-dim)
        ↓                ↓
-  element-wise *   concat → Linear layers [64→32→16]
-                   + BatchNorm + ReLU + Dropout(0.2)
+  element-wise ×   concat → Linear [64→32→16] + BN + ReLU + Dropout(0.2)
        ↓                ↓
   GMF_out (32)     MLP_out (16)
-           ↓
-       concat (48)
-           ↓
-    Linear(48→1)
-           ↓
-        Sigmoid
-           ↓
-    Score [0, 1]
+           ↓ concat (48)
+    Linear(48→1) → Sigmoid → Score [0,1]
 ```
 
 ### Training (`backend/ml/train.py`)
 - Input: `interactions` table (user_id, item_type, item_id, weight)
-- Negative sampling: lấy ngẫu nhiên items user chưa tương tác
-- Loss: Binary Cross Entropy
-- Lưu model vào `ml/saved/ncf_best.pt`
+- Negative sampling, Binary Cross Entropy loss
+- Lưu model → `ml/saved/ncf_best.pt`
 
-### Inference (`backend/ml/recommend.py`)
-- Load model từ file `.pt`
-- Với user_id đã biết: tính score cho tất cả items → sort → top-K
-- Với user mới (cold start): fallback về popular items
-
-### Tracking tương tác (`routers/interactions.py`)
-Mỗi khi user view/search/click một entity:
-```
-POST /api/interactions/log {entity_type, entity_id, action}
-→ INSERT interactions (user_id, item_type, item_id, action, weight)
-```
-Dữ liệu này dùng để retrain NCF model.
+### Inference
+- User đã biết: tính score cho tất cả items → top-K
+- Cold start (user mới): fallback về popular items
 
 ---
 
@@ -619,27 +684,28 @@ Dữ liệu này dùng để retrain NCF model.
 Request: {
   budget: "under5m" | "5to10m" | "10to20m" | "over20m",
   interests: string[],
-  transport: "flight" | "bus" | "self_drive" | "any",
+  transport: "flight" | "train" | "bus" | "self_drive",
   duration: "short" | "medium" | "long",
   people: number,
   from_city?: string
 }
 
 Xử lý:
-1. Build prompt có cấu trúc gửi lên Gemini API
-2. Yêu cầu trả JSON array với các fields:
-   {city, tagline, why_match, highlights, budget_note,
-    transport_tip, itinerary, match_score}
-3. Parse JSON response
-4. Enrich với data thực từ DB (destination_id, min_price, avg_rating, image_url)
-5. Trả về cho frontend
+1. Build prompt → Gemini API
+2. Parse JSON response: [{city, tagline, why_match, highlights,
+   budget_note, transport_tip, itinerary, match_score}]
+3. Enrich từ DB: destination_id, min_price, avg_rating, image_url
+4. Trả về cho frontend
 ```
 
+Transport labels: `flight=Máy bay | train=Tàu hỏa | bus=Xe khách | self_drive=Tự lái`  
+→ Chỉ dùng làm text trong prompt Gemini, không ảnh hưởng ML model.
+
 ### `GET /api/travel-planner/trending`
-Tính điểm xu hướng từ:
-- `booking_score`: số booking trong 30 ngày gần đây
-- `interact_score`: số tương tác (view/search/click)
-- `trend_score` = booking_score * 0.6 + interact_score * 0.4
+```
+trend_score = booking_score × 0.6 + interact_score × 0.4
+(tính trong 30 ngày gần đây)
+```
 
 ---
 
@@ -648,11 +714,11 @@ Tính điểm xu hướng từ:
 ### `POST /api/chat`
 
 ```python
-Request: {messages: [{role, content}]}  # Toàn bộ lịch sử chat
+Request: {messages: [{role, content}], authorization?: string}
 ```
 
-- Gọi Gemini API với system prompt hướng đến tư vấn du lịch Việt Nam
-- Trả về `{reply: string}`
+- Gọi Gemini API với system prompt tư vấn du lịch Việt Nam (VIVU Travel)
+- Optional JWT: nếu user login, có thể cá nhân hóa câu trả lời
 - Frontend `ChatBot.tsx` lưu history trong component state, gửi toàn bộ history mỗi lần
 
 ---
@@ -661,8 +727,6 @@ Request: {messages: [{role, content}]}  # Toàn bộ lịch sử chat
 
 **`backend/booking_expire.py`**
 
-Chạy song song với server dưới dạng asyncio task:
-
 ```
 Mỗi 60 giây:
   SELECT booking_id, entity_type, entity_id, quantity
@@ -670,15 +734,11 @@ Mỗi 60 giây:
   WHERE status='pending' AND booking_date < NOW() - INTERVAL 15 MINUTE
 
   Với mỗi booking:
-    - Flight: giải phóng N ghế đầu tiên (is_booked=0) trong flight_seats
-    - Bus: tương tự bus_seats
-    - Train: tương tự train_seats
-    - Hotel: không cần giải phóng (phòng không bị hold)
+    - Flight/Bus/Train: giải phóng N ghế (is_booked=0)
+    - Hotel: không cần giải phóng
 
   UPDATE bookings SET status='cancelled' WHERE booking_id IN (...)
 ```
-
-Đảm bảo ghế được giải phóng để user khác có thể đặt.
 
 ---
 
@@ -686,30 +746,21 @@ Mỗi 60 giây:
 
 ### Polymorphic Association (Bookings)
 
-Thay vì có bảng `flight_bookings`, `hotel_bookings` riêng, hệ thống dùng **polymorphic association**:
-
 ```sql
-bookings (booking_id, user_id, status, total_price, final_amount, ...)
+bookings (booking_id, user_id, status, total_price, final_amount, payment_method, ...)
 booking_items (
-  item_id,
-  booking_id,         -- FK → bookings
-  entity_type,        -- 'flight' | 'hotel' | 'bus' | 'train'
-  entity_id,          -- FK logic đến bảng tương ứng
-  quantity,
-  price,
-  seat_class,
-  check_in_date,
-  check_out_date
+  item_id, booking_id,
+  entity_type,     -- 'flight' | 'hotel' | 'bus' | 'train'
+  entity_id,       -- FK logic đến bảng tương ứng
+  quantity, price, seat_class,
+  check_in_date, check_out_date
 )
 ```
-
-Ưu điểm: một hệ thống booking cho tất cả loại dịch vụ, dễ mở rộng.  
-Nhược điểm: không có foreign key constraint thực sự cho entity_id.
 
 ### Các bảng chính
 
 ```
-users              — user_id, email, password_hash, name, phone, wallet_balance, role, membership_level
+users              — user_id, email, password_hash, name, phone, role, membership_level
 wallets            — wallet_id, user_id, balance
 wallet_transactions — id, wallet_id, type, amount, description, created_at
 
@@ -717,15 +768,16 @@ destinations       — destination_id, city, country, image_url
 flights            — flight_id, from_dest, to_dest, depart_time, arrive_time, base_price, airline
 flight_seats       — seat_id, flight_id, seat_number, seat_class, is_booked
 hotels             — hotel_id, name, destination_id, stars, amenities, allows_refund, avg_rating
-room_types         — room_type_id, hotel_id, name, capacity, price_per_night, images
+room_types         — room_type_id, hotel_id, name, capacity, price_per_night, available_rooms, images
 buses              — bus_id, from_dest, to_dest, depart_time, arrive_time, base_price
 bus_seats          — seat_id, bus_id, seat_number, seat_class, is_booked
 trains             — train_id, from_dest, to_dest, depart_time, arrive_time, base_price
 train_seats        — seat_id, train_id, seat_number, seat_class, is_booked
 
-bookings           — booking_id, user_id, status, total_price, discount_amount, final_amount, payment_method
+bookings           — booking_id, user_id, status, total_price, discount_amount, final_amount
 booking_items      — item_id, booking_id, entity_type, entity_id, quantity, price, seat_class, check_in_date, check_out_date
-booking_modifications — mod_id, booking_id, type, status, old_price, new_price, refund_amount, fee_amount, new_seat_class, created_at
+booking_modifications — mod_id, booking_id, type, status, old_price, new_price, refund_amount,
+                        fee_amount, new_seat_class, new_entity_id, new_check_in, new_check_out, created_at
 
 promotions         — promo_id, code, discount_percent, max_discount, min_order, entity_type, expiry_date, max_uses
 promotion_usages   — id, promo_id, user_id, booking_id
@@ -734,7 +786,7 @@ reviews            — review_id, user_id, entity_type, entity_id, rating, comme
 notifications      — id, user_id, title, message, is_read, created_at
 interactions       — id, user_id, item_type, item_id, action, weight, created_at
 banners            — banner_id, image_url, link, is_active, order_index
-policies           — id, key, value (ví dụ: min_hours_before=2, cancel_fee_rate=0.1)
+policies           — id, key, value  (min_hours_before, cancel_fee_rate, reschedule_fee_rate, ...)
 ```
 
 ---
@@ -744,76 +796,43 @@ policies           — id, key, value (ví dụ: min_hours_before=2, cancel_fee_
 ### Luồng đặt vé máy bay
 
 ```
-1. User vào /flights, nhập điểm đi/đến/ngày
-   → GET /api/flights?from=...&to=...&date=...
-   → FlightList hiện danh sách chuyến
-
-2. Click chuyến bay
-   → FlightTicketModal hiện hạng ghế + giá
-   → User chọn hạng, số lượng
-   → GET /api/flights/{id}/classes (kiểm tra ghế còn)
-
-3. Click "Đặt vé"
-   → bookingStore.set({entity_type:'flight', entity_id, seat_class, price, quantity})
-   → redirect /booking
-
-4. Trang /booking:
-   → Điền thông tin hành khách
-   → Chọn mã khuyến mãi (tùy chọn)
-   → POST /api/bookings
-   → Nhận booking_id, status='pending'
-   → redirect /payment/{booking_id}
-
-5. Trang /payment:
-   → Chọn "Ví nội bộ"
-   → POST /api/bookings/{id}/pay {payment_method:'wallet'}
-   → Backend: trừ ví, status='confirmed'
-   → Hiện màn hình thành công + link xem chi tiết
-
-6. Sau chuyến bay (service ended):
-   → Booking biến khỏi /profile/bookings (GET /api/bookings/my lọc ra)
-   → Vẫn hiện ở /profile/transactions (GET /api/bookings/history)
-   → User có thể để lại review
+1. /flights → nhập điểm đi/đến/ngày → GET /api/flights
+2. Click chuyến → FlightTicketModal → chọn hạng + số lượng
+3. "Đặt vé" → bookingStore.set(...) → redirect /booking
+4. /booking → điền thông tin → chọn promo (cần login) → POST /api/bookings
+5. /payment → chọn Ví → POST /api/bookings/{id}/pay → confirmed
+6. Sau chuyến: biến khỏi /profile/bookings, vẫn ở /profile/transactions
 ```
 
-### Luồng đổi lịch bay
+### Luồng đổi lịch
 
 ```
-1. Vào /profile/bookings/{id}
-   → Trang hiển thị booking detail
-   → Nút "Đổi lịch" khả dụng nếu còn đủ thời gian (hours_left >= min_hours)
-
-2. Click "Đổi lịch" → BookingModifyModal
-   → GET /api/bookings/{id}/class-options → list hạng ghế có thể đổi
-   → User chọn hạng mới
-
-3. Preview (Step 3 của modal)
-   → GET /api/bookings/{id}/reschedule (dry-run hoặc preview endpoint)
-   → Hiện: Giá cũ / Giá mới / Chênh lệch / Phí đổi lịch
-
-4. Xác nhận
-   → POST /api/bookings/{id}/reschedule {new_seat_class, ...}
-   → Nếu giá mới > giá cũ: POST /api/bookings/{id}/pay-extra
-   → Nếu giá mới < giá cũ: hoàn tiền vào ví ngay lập tức
-
-5. Lịch sử thay đổi hiển thị trong trang chi tiết booking
+1. /profile/bookings/{id} → "Đổi lịch" → BookingModifyModal
+2. Chọn hạng mới / chuyến mới
+3. Preview: giá cũ / giá mới / chênh lệch / phí đổi
+4. Xác nhận → POST /api/bookings/{id}/reschedule
+5. Nếu đắt hơn → POST /pay-extra
+   Nếu rẻ hơn → hoàn tiền ví ngay
+6. Email xác nhận với đầy đủ thông tin ngày, giá, phí
 ```
 
 ### Luồng travel planner
 
 ```
-1. User vào /travel-planner
-   → Xem trending destinations (GET /api/travel-planner/trending)
+1. /travel-planner → chọn phương tiện (máy bay / tàu / xe / tự lái)
+2. Điền form ngân sách, sở thích, thời gian
+3. POST /api/travel-planner/suggest → Gemini → 3-5 gợi ý
+4. "Đặt vé {phương tiện}" → link đúng trang (/flights, /trains, /buses)
+   "Xem khách sạn" → /hotels?destination_id=...&search={city}
+```
 
-2. Điền form: ngân sách, sở thích, thời gian, phương tiện
+### Luồng booking khách (guest)
 
-3. Click "Lên kế hoạch"
-   → POST /api/travel-planner/suggest
-   → Backend build prompt → Gemini API → parse JSON → enrich từ DB
-   → Hiện 3-5 gợi ý địa điểm với match score
-
-4. Click "Xem khách sạn tại [city]"
-   → Link đến /hotels?destination_id=...&search=[city]
-   → Hotels page auto-trigger search (useEffect[searchParams])
-   → Hiện danh sách khách sạn tại điểm đến được gợi ý
+```
+1. Chưa login → vào /booking → Navbar/Footer/ChatBot bị ẩn
+2. Điền contact_email
+   - Nếu email chưa có tài khoản → booking bình thường
+   - Nếu email đã có tài khoản → lỗi inline "Email đã có tài khoản, vui lòng đăng nhập"
+3. Promo code disabled → hiện hint đăng nhập
+4. /payment → thanh toán QR
 ```
