@@ -6,7 +6,22 @@ import { useSearchParams } from "next/navigation";
 import BusList from "@/components/bus/BusList";
 import { Bus } from "@/types/bus";
 import { busService } from "@/services/busService";
+import Link from "next/link";
+import Image from "next/image";
+import { useRouter } from "next/navigation";
 import DestinationInput from "@/components/ui/DestinationInput";
+import { promotionService } from "@/services/promotionService";
+import { Promotion } from "@/types/promotion";
+import api from "@/lib/axios";
+import { hotelService } from "@/services/hotelService";
+import { Hotel } from "@/types/hotel";
+
+interface Destination {
+    destination_id: number;
+    city: string;
+    hotel_count: number;
+    image_url: string | null;
+}
 
 const SORT_OPTIONS = [
     { label: "Giá thấp nhất", value: "price_asc" },
@@ -60,14 +75,44 @@ export default function BusesPage() {
     const [timeIdx, setTimeIdx] = useState(0);
     const [sortVal, setSortVal] = useState("price_asc");
 
+    const router = useRouter();
+    const [destinations, setDestinations] = useState<Destination[]>([]);
+    const [activeDestTab, setActiveDestTab] = useState<Destination | null>(null);
+    const [featuredHotels, setFeaturedHotels] = useState<Hotel[]>([]);
+    const [loadingHotels, setLoadingHotels] = useState(false);
+
     // Results
     const [buses, setBuses] = useState<Bus[]>([]);
+    const [promos, setPromos] = useState<Promotion[]>([]);
     const [loading, setLoading] = useState(false);
     const [searched, setSearched] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
+        if (destinations.length > 0 && !activeDestTab) setActiveDestTab(destinations[0]);
+    }, [destinations, activeDestTab]);
+
+    useEffect(() => {
+        if (!activeDestTab) return;
+        setLoadingHotels(true);
+        hotelService.getHotels({ destination_id: activeDestTab.destination_id, sort: "rating", limit: 4 })
+            .then(setFeaturedHotels).catch(() => setFeaturedHotels([]))
+            .finally(() => setLoadingHotels(false));
+    }, [activeDestTab]);
+
+    useEffect(() => {
+        api.get("/api/destinations?country=Vietnam&limit=5")
+            .then(r => setDestinations(r.data)).catch(() => { });
         busService.getCompanies().then(setCompanies).catch(() => { });
+        Promise.all([promotionService.getPromotions("bus"), promotionService.getPromotions("all")])
+            .then(([specific, all]) => {
+                const seen = new Set<number>();
+                const merged = [...specific, ...all].filter(p => {
+                    if (seen.has(p.promo_id) || p.status !== "active") return false;
+                    seen.add(p.promo_id); return true;
+                });
+                setPromos(merged.slice(0, 6));
+            }).catch(() => { });
     }, []);
 
     const isSwapping = useRef(false);
@@ -221,6 +266,99 @@ export default function BusesPage() {
 
                 {/* ── CONTENT ── */}
                 <div className="bp-content">
+                    {promos.length > 0 && (
+                        <>
+                            <div className="bp-section-header">
+                                <div className="bp-section-title">🎁 Ưu đãi vé xe khách</div>
+                                <Link href="/promotion" className="bp-section-link">Xem tất cả →</Link>
+                            </div>
+                            <div className="bp-promo-strip">
+                                {promos.map((p) => (
+                                    <div key={p.promo_id} className="bp-promo-card">
+                                        <div className="bp-promo-card-icon">🚌</div>
+                                        <div className="bp-promo-card-info">
+                                            <div className="bp-promo-card-discount">
+                                                {p.discount_type === "percent"
+                                                    ? `Giảm ${p.discount_percent}% · Tối đa ${(p.max_discount / 1000).toFixed(0)}K`
+                                                    : `Giảm ${(p.max_discount / 1000).toFixed(0)}K`}
+                                            </div>
+                                            <div className="bp-promo-card-code">{p.code}</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                    {!searched && destinations.length > 0 && (
+                        <>
+                            <div className="bp-section-header">
+                                <div className="bp-section-title">📍 Điểm đến thu hút</div>
+                            </div>
+                            <div className="bp-dest-grid">
+                                {destinations.map((item) => (
+                                    <div
+                                        key={item.destination_id}
+                                        className="bp-dest-card"
+                                        onClick={() => router.push(`/hotels?search=${encodeURIComponent(item.city)}&destination_id=${item.destination_id}`)}
+                                    >
+                                        <div className="bp-dest-card-img">
+                                            {item.image_url
+                                                ? <Image src={item.image_url} alt={item.city} fill style={{ objectFit: "cover" }} />
+                                                : "🏙️"}
+                                        </div>
+                                        <div className="bp-dest-card-body">
+                                            <div className="bp-dest-card-name">{item.city}</div>
+                                            <div className="bp-dest-card-count">{item.hotel_count} khách sạn</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                    {!searched && destinations.length > 0 && (
+                        <>
+                            <div className="bp-section-header" style={{ marginTop: "2.5rem" }}>
+                                <div className="bp-section-title">🏨 Khách sạn nổi bật</div>
+                                {activeDestTab && (
+                                    <Link href={`/hotels?search=${encodeURIComponent(activeDestTab.city)}&destination_id=${activeDestTab.destination_id}`} className="bp-section-link">
+                                        Xem thêm các chỗ nghỉ ({activeDestTab.city}) →
+                                    </Link>
+                                )}
+                            </div>
+                            <div className="bp-hotel-tabs">
+                                {destinations.map(d => (
+                                    <button
+                                        key={d.destination_id}
+                                        className={`bp-hotel-tab${activeDestTab?.destination_id === d.destination_id ? " active" : ""}`}
+                                        onClick={() => setActiveDestTab(d)}
+                                    >{d.city}</button>
+                                ))}
+                            </div>
+                            {loadingHotels ? (
+                                <div className="bp-loading"><div className="bp-spinner" /><span>Đang tải...</span></div>
+                            ) : (
+                                <div className="bp-hotel-grid">
+                                    {featuredHotels.map(h => (
+                                        <div key={h.hotel_id} className="bp-hotel-card" onClick={() => router.push(`/hotels/${h.hotel_id}`)}>
+                                            <div className="bp-hotel-card-img">
+                                                {h.avg_rating && <span className="bp-hotel-rating">{h.avg_rating.toFixed(1)}</span>}
+                                                {h.image_url
+                                                    ? <Image src={h.image_url} alt={h.name} fill style={{ objectFit: "cover" }} />
+                                                    : <span style={{ fontSize: "2.5rem" }}>🏨</span>}
+                                            </div>
+                                            <div className="bp-hotel-card-body">
+                                                <div className="bp-hotel-card-name">{h.name}</div>
+                                                <div className="bp-hotel-card-addr">📍 {h.destination_city || h.address}</div>
+                                                <div className="bp-hotel-card-price">
+                                                    {h.min_price ? `VND ${h.min_price.toLocaleString("vi-VN")}` : "Liên hệ"}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </>
+                    )}
                     {!searched ? (
                         <div className="bp-hint">
                             <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🚌</div>

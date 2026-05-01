@@ -7,9 +7,11 @@ import { useSearchParams } from "next/navigation";
 import HotelList from "@/components/hotel/HotelList";
 import { Hotel } from "@/types/hotel";
 import { hotelService } from "@/services/hotelService";
+import Image from "next/image";
 import { promotionService } from "@/services/promotionService";
 import { Promotion } from "@/types/promotion";
 import DestinationInput from "@/components/ui/DestinationInput";
+import api from "@/lib/axios";
 
 function localDate(offsetDays = 0): string {
     const d = new Date();
@@ -48,22 +50,20 @@ const AMENITIES_LIST = [
     { label: "Nhà hàng", value: "Nhà hàng", icon: "🍽️" },
 ];
 
-const POPULAR_CITIES_HP = [
-    { city: "Hà Nội", emoji: "🏛️", label: "Thủ đô ngàn năm" },
-    { city: "TP. Hồ Chí Minh", emoji: "🌆", label: "Thành phố sôi động" },
-    { city: "Đà Nẵng", emoji: "🌊", label: "Thành phố đáng sống" },
-    { city: "Hội An", emoji: "🏮", label: "Phố cổ di sản" },
-    { city: "Nha Trang", emoji: "🏖️", label: "Thiên đường biển" },
-    { city: "Đà Lạt", emoji: "🌸", label: "Thành phố ngàn hoa" },
-    { city: "Phú Quốc", emoji: "🏝️", label: "Đảo ngọc nhiệt đới" },
-    { city: "Huế", emoji: "🏯", label: "Cố đô lịch sử" },
-];
+interface Destination {
+    destination_id: number;
+    city: string;
+    name: string;
+    hotel_count: number;
+    image_url: string | null;
+}
 
 export default function HotelsPage() {
     // Data
     const [topHotels, setTopHotels] = useState<Hotel[]>([]);
     const [hotels, setHotels] = useState<Hotel[]>([]);
     const [promos, setPromos] = useState<Promotion[]>([]);
+    const [destinations, setDestinations] = useState<Destination[]>([]);
 
     // Loading states
     const [loadingTop, setLoadingTop] = useState(true);
@@ -79,6 +79,7 @@ export default function HotelsPage() {
     const [refundFilter, setRefundFilter] = useState<"all" | "refundable" | "non_refundable">("all");
     const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
     const [selectedCity, setSelectedCity] = useState<string | null>(null);
+    const [urlDestId, setUrlDestId] = useState<number | undefined>(undefined);
     const [checkIn, setCheckIn] = useState(() => localDate(0));
     const [checkOut, setCheckOut] = useState(() => {
         return localDate(1);
@@ -129,6 +130,8 @@ export default function HotelsPage() {
         if (!qSearch && !qDestId) return;
 
         if (qSearch) { setSearchInput(qSearch); setSearch(qSearch); setSelectedCity(qSearch); }
+        const destId = qDestId ? Number(qDestId) : undefined;
+        if (destId) setUrlDestId(destId);
         const qCheckIn = searchParams?.get("check_in");
         const qCheckOut = searchParams?.get("check_out");
         if (qCheckIn) setCheckIn(qCheckIn);
@@ -139,7 +142,7 @@ export default function HotelsPage() {
         setLoadingHotels(true);
         hotelService.getHotels({
             search: qSearch || undefined,
-            destination_id: qDestId ? Number(qDestId) : undefined,
+            destination_id: destId,
             sort: "rating",
             min_guests: guestsPerRoom,
         }).then(setHotels).catch(() => setHotels([])).finally(() => {
@@ -156,12 +159,14 @@ export default function HotelsPage() {
 
         promotionService.getPromotions("hotel")
             .then(setPromos).catch(() => { });
+        api.get("/api/destinations?country=Vietnam&limit=5")
+            .then(r => setDestinations(r.data)).catch(() => { });
     }, []);
 
     const fetchAbortRef = useRef<AbortController | null>(null);
 
     // ── Fetch filtered hotels ─────────────────────────────────────
-    const fetchHotels = useCallback(async (keyword?: string) => {
+    const fetchHotels = useCallback(async (keyword?: string, destId?: number) => {
         fetchAbortRef.current?.abort();
         const controller = new AbortController();
         fetchAbortRef.current = controller;
@@ -170,6 +175,7 @@ export default function HotelsPage() {
             const price = PRICE_OPTIONS[priceIdx];
             const data = await hotelService.getHotels({
                 search: keyword || undefined,
+                destination_id: destId,
                 min_price: price.min,
                 max_price: price.max,
                 sort: sortVal as "rating" | "price_asc" | "price_desc",
@@ -200,7 +206,7 @@ export default function HotelsPage() {
     // Tự động re-fetch khi filter/sort thay đổi (chỉ khi đã tìm kiếm)
     useEffect(() => {
         if (!showFilter) return;
-        fetchHotels(search);
+        fetchHotels(search, urlDestId);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [priceIdx, ratingIdx, sortVal, guestsPerRoom, refundFilter, selectedAmenities]);
 
@@ -208,8 +214,9 @@ export default function HotelsPage() {
         if (!searchInput.trim()) { setSearchError("Vui lòng nhập tên khách sạn hoặc địa điểm"); return; }
         setSearchError("");
         setSearch(searchInput);
+        setUrlDestId(undefined);
         setShowFilter(true);
-        fetchHotels(searchInput);
+        fetchHotels(searchInput, undefined);
         setTimeout(() => listRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     };
 
@@ -217,6 +224,7 @@ export default function HotelsPage() {
         setSearchInput("");
         setPriceIdx(0); setRatingIdx(0);
         setSortVal("rating"); setSelectedCity(null);
+        setUrlDestId(undefined);
         setRefundFilter("all"); setSelectedAmenities([]);
         setShowFilter(false); setHotels([]);
     };
@@ -339,7 +347,7 @@ export default function HotelsPage() {
                         <>
                             <div className="hp-section-header">
                                 <div className="hp-section-title">🎁 Ưu đãi dành cho khách sạn</div>
-                                <Link href="/promotions" className="hp-section-link">Xem tất cả →</Link>
+                                <Link href="/promotion" className="hp-section-link">Xem tất cả →</Link>
                             </div>
                             <div className="hp-promo-strip">
                                 {promos.slice(0, 6).map((p) => (
@@ -370,21 +378,23 @@ export default function HotelsPage() {
                         )}
                     </div>
                     <div className="hp-dest-grid">
-                        {POPULAR_CITIES_HP.map((item) => (
+                        {destinations.map((item) => (
                             <div
-                                key={item.city}
+                                key={item.destination_id}
                                 className={`hp-dest-card${selectedCity === item.city ? " active" : ""}`}
                                 onClick={() => {
                                     if (selectedCity === item.city) {
                                         setSelectedCity(null);
+                                        setUrlDestId(undefined);
                                         setShowFilter(false);
                                         setHotels([]);
                                     } else {
                                         setSelectedCity(item.city);
+                                        setUrlDestId(item.destination_id);
                                         setSearchInput(item.city);
                                         setShowFilter(true);
                                         setLoadingHotels(true);
-                                        hotelService.getHotels({ search: item.city, sort: "rating", min_guests: guestsPerRoom })
+                                        hotelService.getHotels({ destination_id: item.destination_id, sort: "rating", min_guests: guestsPerRoom })
                                             .then(setHotels).catch(() => setHotels([]))
                                             .finally(() => {
                                                 setLoadingHotels(false);
@@ -393,12 +403,14 @@ export default function HotelsPage() {
                                     }
                                 }}
                             >
-                                <div className="hp-dest-card-img" style={{ fontSize: "1.8rem" }}>
-                                    {item.emoji}
+                                <div className="hp-dest-card-img">
+                                    {item.image_url
+                                        ? <Image src={item.image_url} alt={item.city} fill style={{ objectFit: "cover" }} />
+                                        : "🏙️"}
                                 </div>
                                 <div className="hp-dest-card-body">
                                     <div className="hp-dest-card-name">{item.city}</div>
-                                    <div className="hp-dest-card-count">{item.label}</div>
+                                    <div className="hp-dest-card-count">{item.hotel_count} khách sạn</div>
                                 </div>
                             </div>
                         ))}

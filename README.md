@@ -33,7 +33,7 @@ uvicorn main:app --reload
  
 #NGhĩa
 #GEMINI_API_KEY=AIzaSyAdEC9mZY_-_rHelf4VT1mi4Vz4zbI9XiI
-
+AIzaSyBcOYmvkoc2XT0PuCOPRlz54qn8v6F372I
 
 
 NOTE MAI SỬA:

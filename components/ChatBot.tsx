@@ -108,6 +108,37 @@ function renderMarkdown(text: string) {
     return elements;
 }
 
+// Danh sách tỉnh/thành phố Việt Nam để fallback auto-link
+const VN_CITIES = [
+    "Hà Nội","Hồ Chí Minh","Đà Nẵng","Hội An","Huế","Nha Trang","Đà Lạt",
+    "Phú Quốc","Quy Nhơn","Vũng Tàu","Hạ Long","Sapa","Sa Pa","Ninh Bình",
+    "Mũi Né","Phan Thiết","Cần Thơ","Hải Phòng","Buôn Ma Thuột","Pleiku",
+    "Quảng Ninh","Quảng Nam","Bình Định","Khánh Hòa","Lâm Đồng","Kiên Giang",
+    "Côn Đảo","Phong Nha","Mộc Châu","Cao Bằng","Hà Giang","Lai Châu",
+];
+// Regex match tên thành phố (dùng khi bold text không có link)
+const CITY_RE = new RegExp(`\\b(${VN_CITIES.map(c => c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`, "g");
+
+function autoLinkCities(text: string): React.ReactNode[] {
+    const parts: React.ReactNode[] = [];
+    let last = 0;
+    let match: RegExpExecArray | null;
+    CITY_RE.lastIndex = 0;
+    while ((match = CITY_RE.exec(text)) !== null) {
+        if (match.index > last) parts.push(text.slice(last, match.index));
+        const city = match[1];
+        parts.push(
+            <a key={match.index} href={`/hotels?search=${encodeURIComponent(city)}`}
+                style={{ color: "#0052cc", fontWeight: 600, textDecoration: "underline" }}>
+                {city}
+            </a>
+        );
+        last = match.index + city.length;
+    }
+    if (last < text.length) parts.push(text.slice(last));
+    return parts.length > 1 ? parts : [text];
+}
+
 function normalizeHref(url: string): string {
     try {
         const parsed = new URL(url);
@@ -123,21 +154,31 @@ function renderInline(text: string): React.ReactNode[] {
     return parts.map((part, j) => {
         const link = part.match(/^\[(.*?)\]\((.*?)\)$/);
         if (link) {
-            // Render link text as plain bold text — destinations shown as chips below
-            return <strong key={j} style={{ color: "#1a3c6b" }}>{link[1]}</strong>;
+            return (
+                <a
+                    key={j}
+                    href={normalizeHref(link[2])}
+                    style={{ color: "#0052cc", fontWeight: 600, textDecoration: "underline" }}
+                >
+                    {link[1]}
+                </a>
+            );
         }
-        if (/^\*\*(.*?)\*\*$/.test(part)) return <strong key={j}>{part.slice(2, -2)}</strong>;
+        if (/^\*\*(.*?)\*\*$/.test(part)) {
+            return <strong key={j}>{renderInline(part.slice(2, -2))}</strong>;
+        }
         if (/^`[^`]+`$/.test(part)) return (
             <code key={j} style={{ background: "#f0f4ff", borderRadius: 4, padding: "0 4px", fontSize: "0.82rem", fontFamily: "monospace" }}>
                 {part.slice(1, -1)}
             </code>
         );
-        return <span key={j}>{part}</span>;
+        const linked = autoLinkCities(part);
+        return linked.length > 1 ? <span key={j}>{linked}</span> : <span key={j}>{part}</span>;
     });
 }
 
 export default function ChatBot() {
-    const STORAGE_KEY = "vivu-chat-history";
+    const STORAGE_KEY = "vivu-chat-v2";
 
     const [open, setOpen] = useState(false);
     const [messages, setMessages] = useState<Message[]>(() => {
@@ -287,12 +328,6 @@ export default function ChatBot() {
         setMessages([{ ...INIT_MSG, ts: Date.now() }]);
         setLoading(false);
         setStreaming(false);
-    };
-
-    // Trích xuất danh sách city từ các link /hotels?search=CityName trong message
-    const extractCities = (text: string): string[] => {
-        const matches = [...text.matchAll(/\/hotels\?search=([^&)\s"]+)/g)];
-        return [...new Set(matches.map(m => { try { return decodeURIComponent(m[1]); } catch { return m[1]; } }))].filter(Boolean);
     };
 
     return (
@@ -497,30 +532,6 @@ export default function ChatBot() {
                                             </button>
                                         )}
                                     </div>
-                                    {/* Địa điểm cụ thể (tên riêng) trích từ link /hotels?search= */}
-                                    {msg.role === "model" && !streaming && (() => {
-                                        const cities = extractCities(msg.text).filter(c => /^\p{Lu}/u.test(c));
-                                        if (!cities.length) return null;
-                                        return (
-                                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
-                                                {cities.map(city => (
-                                                    <a
-                                                        key={city}
-                                                        href={`/hotels?search=${encodeURIComponent(city)}`}
-                                                        style={{
-                                                            fontSize: "0.75rem", fontWeight: 600,
-                                                            color: "#0052cc", background: "#eef4ff",
-                                                            border: "1px solid #c8d8ff", borderRadius: 99,
-                                                            padding: "0.15rem 0.65rem", textDecoration: "none",
-                                                            display: "inline-block",
-                                                        }}
-                                                    >
-                                                        📍 {city}
-                                                    </a>
-                                                ))}
-                                            </div>
-                                        );
-                                    })()}
                                     <div className="cb-ts">{fmtTime(msg.ts)}</div>
                                 </div>
                             </div>

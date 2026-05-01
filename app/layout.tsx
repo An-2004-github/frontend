@@ -9,6 +9,7 @@ import ToastContainer from "@/components/ui/ToastContainer";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import { useAuthInit } from "@/hooks/useAuthInit";
 import { usePathname } from "next/navigation";
+import { useAuthStore } from "@/store/authStore";
 
 const inter = Inter({ subsets: ["latin", "vietnamese"] });
 
@@ -19,21 +20,23 @@ export default function RootLayout({
 }) {
   useAuthInit();
   const pathname = usePathname();
+  const { user } = useAuthStore();
   const isAdmin = pathname?.startsWith("/admin");
+  const isCheckout = !user && (pathname?.startsWith("/booking") || pathname?.startsWith("/payment"));
 
   return (
     <html lang="vi">
       <body className={`${inter.className} bg-slate-50 text-slate-900 flex flex-col min-h-screen`}>
         <GoogleOAuthProvider clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!}>
 
-          {!isAdmin && <Navbar />}
+          {!isAdmin && !isCheckout && <Navbar />}
 
-          <main className={isAdmin ? "" : "grow container mx-auto px-4 py-8"}>
+          <main className={isAdmin || isCheckout ? "" : "grow container mx-auto px-4 py-8"}>
             {children}
           </main>
 
-          {!isAdmin && <Footer />}
-          {!isAdmin && <ChatBot />}
+          {!isAdmin && !isCheckout && <Footer />}
+          {!isAdmin && !isCheckout && <ChatBot />}
           <ToastContainer />
 
         </GoogleOAuthProvider>

@@ -89,7 +89,10 @@ Khi user hỏi về lịch trình / itinerary tại một địa điểm, hãy:
 - Hoàn tiền ví: tức thì. Hoàn ngân hàng: 2–5 ngày làm việc
 
 ## LINK ĐIỀU HƯỚNG
-Luôn kèm link theo định dạng Markdown `[text](url)` khi đề cập địa điểm hoặc dịch vụ.
+**BẮT BUỘC**: Mọi tên tỉnh/thành phố/địa điểm du lịch đều phải là link có thể click, KHÔNG bao giờ dùng `**tên thành phố**` (bold) đứng một mình.
+
+- Khi liệt kê địa điểm: `[Đà Nẵng](/hotels?search=Đà Nẵng)`, `[Phú Quốc](/hotels?search=Phú Quốc)`, ... (KHÔNG viết `**Đà Nẵng**`)
+- Khi gợi ý dịch vụ: dùng link đầy đủ với icon
 
 **QUAN TRỌNG**: Chỉ dùng đường dẫn tương đối, KHÔNG bao giờ dùng domain (không có https://, không có tên miền).
 
@@ -99,8 +102,9 @@ URL mẫu (thay X=điểm đi, Y=điểm đến, ngày theo YYYY-MM-DD):
 - Tàu: `/trains?from=X&to=Y` hoặc `/trains?from=X&to=Y&date=YYYY-MM-DD`
 - Xe: `/buses?from=X&to=Y` hoặc `/buses?from=X&to=Y&date=YYYY-MM-DD`
 
-Ví dụ đúng: `[🏨 Khách sạn Đà Nẵng](/hotels?search=Đà Nẵng)`
-Ví dụ SAI: `[🏨 Khách sạn Đà Nẵng](https://vivuvuive.io.vn/hotels?search=Đà Nẵng)` ← tuyệt đối không làm vậy
+Ví dụ đúng khi liệt kê: `Biển đảo: [Đà Nẵng](/hotels?search=Đà Nẵng), [Phú Quốc](/hotels?search=Phú Quốc), [Nha Trang](/hotels?search=Nha Trang)`
+Ví dụ SAI: `Biển đảo: **Đà Nẵng**, **Phú Quốc**, **Nha Trang**` ← không làm vậy
+Ví dụ SAI: `[🏨 Khách sạn Đà Nẵng](https://vivuvuive.io.vn/hotels?search=Đà Nẵng)` ← không dùng domain
 
 Định dạng ngày trong URL: **YYYY-MM-DD** (ví dụ: 2026-04-20)
 - "15/4" → 2026-04-15

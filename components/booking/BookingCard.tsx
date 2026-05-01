@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { BookingData } from "@/store/bookingStore";
+import { useAuthStore } from "@/store/authStore";
 import api from "@/lib/axios";
 
 const fmt = (n: number) => n.toLocaleString("vi-VN") + " VND";
@@ -41,6 +42,7 @@ interface Props {
 }
 
 export default function BookingCard({ booking, onContinue, submitting }: Props) {
+    const { user } = useAuthStore();
     const [priceOpen, setPriceOpen] = useState(true);
 
     // Promo code state
@@ -85,6 +87,10 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
     }, [appliesTo]);
 
     const handleApplyPromo = async (codeToApply?: string) => {
+        if (!user) {
+            setPromoError("Vui lòng đăng nhập để sử dụng mã giảm giá");
+            return;
+        }
         const code = (codeToApply || promoCode).trim().toUpperCase();
         if (!code) return;
         setPromoCode(code);
@@ -172,6 +178,7 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                 .bc-promo-dropdown-btn.open { background: #0052cc; color: #fff; border-color: #0052cc; }
                 .bc-promo-success { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem; font-size: 0.8rem; color: #00875a; font-weight: 500; }
                 .bc-promo-error { margin-top: 0.4rem; font-size: 0.8rem; color: #bf2600; }
+                .bc-promo-login-hint { font-size: 0.82rem; color: #6b778c; background: #f4f5f7; border-radius: 8px; padding: 0.55rem 0.75rem; margin-top: 0.25rem; }
                 .bc-discount-row { display: flex; justify-content: space-between; margin-top: 0.75rem; }
                 .bc-discount-label { font-size: 0.84rem; color: #00875a; font-weight: 600; }
                 .bc-discount-val { font-size: 0.84rem; color: #00875a; font-weight: 700; }
@@ -313,59 +320,67 @@ export default function BookingCard({ booking, onContinue, submitting }: Props) 
                     {/* Mã giảm giá */}
                     <div className="bc-promo-wrap" ref={promoWrapRef}>
                         <div className="bc-promo-label">🏷️ Mã giảm giá</div>
-                        <div className="bc-promo-row">
-                            <input
-                                className="bc-promo-input"
-                                type="text"
-                                placeholder="Nhập mã khuyến mãi..."
-                                value={promoCode}
-                                disabled={!!promoResult}
-                                onChange={e => {
-                                    setPromoCode(e.target.value);
-                                    setPromoError(null);
-                                }}
-                                onKeyDown={e => e.key === "Enter" && !promoResult && handleApplyPromo()}
-                            />
-                            {promoResult ? (
-                                <button className="bc-promo-btn remove" onClick={handleRemovePromo}>
-                                    Xóa
-                                </button>
-                            ) : (
-                                <button
-                                    className="bc-promo-btn"
-                                    onClick={() => handleApplyPromo()}
-                                    disabled={promoLoading || !promoCode.trim()}
-                                >
-                                    {promoLoading ? "..." : "Áp dụng"}
-                                </button>
-                            )}
-                            {availablePromos.length > 0 && !promoResult && (
-                                <button
-                                    className={`bc-promo-dropdown-btn${dropdownOpen ? " open" : ""}`}
-                                    onClick={() => { setDropdownOpen(o => !o); setShowAll(false); }}
-                                    title="Xem mã khuyến mãi có thể áp dụng"
-                                >
-                                    🏷️{dropdownOpen ? " ▲" : " ▼"}
-                                </button>
-                            )}
-                        </div>
+                        {!user ? (
+                            <div className="bc-promo-login-hint">
+                                🔒 <a href="/login" style={{ color: "#0052cc", fontWeight: 600 }}>Đăng nhập</a> để sử dụng mã giảm giá
+                            </div>
+                        ) : (
+                            <>
+                                <div className="bc-promo-row">
+                                    <input
+                                        className="bc-promo-input"
+                                        type="text"
+                                        placeholder="Nhập mã khuyến mãi..."
+                                        value={promoCode}
+                                        disabled={!!promoResult}
+                                        onChange={e => {
+                                            setPromoCode(e.target.value);
+                                            setPromoError(null);
+                                        }}
+                                        onKeyDown={e => e.key === "Enter" && !promoResult && handleApplyPromo()}
+                                    />
+                                    {promoResult ? (
+                                        <button className="bc-promo-btn remove" onClick={handleRemovePromo}>
+                                            Xóa
+                                        </button>
+                                    ) : (
+                                        <button
+                                            className="bc-promo-btn"
+                                            onClick={() => handleApplyPromo()}
+                                            disabled={promoLoading || !promoCode.trim()}
+                                        >
+                                            {promoLoading ? "..." : "Áp dụng"}
+                                        </button>
+                                    )}
+                                    {availablePromos.length > 0 && !promoResult && (
+                                        <button
+                                            className={`bc-promo-dropdown-btn${dropdownOpen ? " open" : ""}`}
+                                            onClick={() => { setDropdownOpen(o => !o); setShowAll(false); }}
+                                            title="Xem mã khuyến mãi có thể áp dụng"
+                                        >
+                                            🏷️{dropdownOpen ? " ▲" : " ▼"}
+                                        </button>
+                                    )}
+                                </div>
 
-                        {promoResult && (
-                            <div className="bc-promo-success">✅ {promoResult.message}</div>
-                        )}
-                        {promoError && (
-                            <div className="bc-promo-error">❌ {promoError}</div>
+                                {promoResult && (
+                                    <div className="bc-promo-success">✅ {promoResult.message}</div>
+                                )}
+                                {promoError && (
+                                    <div className="bc-promo-error">❌ {promoError}</div>
+                                )}
+                            </>
                         )}
 
                         {/* Dropdown danh sách mã */}
-                        {dropdownOpen && !promoResult && availablePromos.length === 0 && (
+                        {user && dropdownOpen && !promoResult && availablePromos.length === 0 && (
                             <div className="bc-promo-dropdown">
                                 <div style={{ padding: "1rem", textAlign: "center", color: "#6b8cbf", fontSize: "0.85rem" }}>
                                     Không có mã khuyến mãi khả dụng
                                 </div>
                             </div>
                         )}
-                        {dropdownOpen && !promoResult && availablePromos.length > 0 && (() => {
+                        {user && dropdownOpen && !promoResult && availablePromos.length > 0 && (() => {
                             // Sắp xếp: applicable trước, trong mỗi nhóm sort theo giảm nhiều nhất
                             const calcDiscount = (p: Promotion) =>
                                 p.discount_type === "percent"

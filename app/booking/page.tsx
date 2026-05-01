@@ -221,10 +221,17 @@ export default function BookingPage() {
         } catch (err: unknown) {
             const status = (err as { response?: { status?: number } })?.response?.status;
             const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-            const msg = status === 500
-                ? "Hệ thống đang bận (có thể do tranh chấp đặt chỗ), vui lòng thử lại sau vài giây"
-                : (detail || "Đặt chỗ thất bại, vui lòng thử lại");
-            toast.error(msg);
+            if (status === 400 && detail?.includes("đã có tài khoản")) {
+                setErrors(e => ({ ...e, contactEmail: detail }));
+                setTimeout(() => {
+                    document.querySelector(".bf-err")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                }, 50);
+            } else {
+                const msg = status === 500
+                    ? "Hệ thống đang bận (có thể do tranh chấp đặt chỗ), vui lòng thử lại sau vài giây"
+                    : (detail || "Đặt chỗ thất bại, vui lòng thử lại");
+                toast.error(msg);
+            }
         } finally {
             submittingRef.current = false;
             setSubmitting(false);

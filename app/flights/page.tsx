@@ -6,7 +6,15 @@ import { useSearchParams } from "next/navigation";
 import FlightList from "@/components/flight/FlightList";
 import { Flight } from "@/types/flight";
 import { flightService } from "@/services/flightService";
+import Link from "next/link";
+import Image from "next/image";
+import { useRouter } from "next/navigation";
 import DestinationInput from "@/components/ui/DestinationInput";
+import { promotionService } from "@/services/promotionService";
+import { Promotion } from "@/types/promotion";
+import api from "@/lib/axios";
+import { hotelService } from "@/services/hotelService";
+import { Hotel } from "@/types/hotel";
 
 const SORT_OPTIONS = [
     { label: "Giá thấp nhất", value: "price_asc" },
@@ -30,6 +38,14 @@ const TIME_OPTIONS = [
     { label: "Buổi tối (18–24h)", start: "18:00", end: "23:59" },
 ];
 
+interface Destination {
+    destination_id: number;
+    city: string;
+    name: string;
+    hotel_count: number;
+    image_url: string | null;
+}
+
 const POPULAR_ROUTES = [
     { from: "Hà Nội", to: "Hồ Chí Minh" },
     { from: "Hồ Chí Minh", to: "Đà Nẵng" },
@@ -49,6 +65,7 @@ function addDays(dateStr: string, days: number): string {
 
 export default function FlightsPage() {
     const searchParams = useSearchParams();
+    const router = useRouter();
 
     // Search form
     const [tripType, setTripType] = useState<"one_way" | "round_trip">(
@@ -77,8 +94,15 @@ export default function FlightsPage() {
     const [timeIdx, setTimeIdx] = useState(0);
     const [sortVal, setSortVal] = useState("price_asc");
 
+    // Featured hotels
+    const [activeDestTab, setActiveDestTab] = useState<Destination | null>(null);
+    const [featuredHotels, setFeaturedHotels] = useState<Hotel[]>([]);
+    const [loadingHotels, setLoadingHotels] = useState(false);
+
     // Results
     const [flights, setFlights] = useState<Flight[]>([]);
+    const [promos, setPromos] = useState<Promotion[]>([]);
+    const [destinations, setDestinations] = useState<Destination[]>([]);
     const [loading, setLoading] = useState(false);
     const [searched, setSearched] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -96,10 +120,33 @@ export default function FlightsPage() {
         return () => document.removeEventListener("mousedown", handleClick);
     }, []);
 
-    // Load airlines for filter
+    // Load airlines + promos + destinations
     useEffect(() => {
         flightService.getAirlines().then(setAirlines).catch(() => { });
+        api.get("/api/destinations?country=Vietnam&limit=5")
+            .then(r => setDestinations(r.data)).catch(() => { });
+        Promise.all([promotionService.getPromotions("flight"), promotionService.getPromotions("all")])
+            .then(([specific, all]) => {
+                const seen = new Set<number>();
+                const merged = [...specific, ...all].filter(p => {
+                    if (seen.has(p.promo_id) || p.status !== "active") return false;
+                    seen.add(p.promo_id); return true;
+                });
+                setPromos(merged.slice(0, 6));
+            }).catch(() => { });
     }, []);
+
+    useEffect(() => {
+        if (destinations.length > 0 && !activeDestTab) setActiveDestTab(destinations[0]);
+    }, [destinations, activeDestTab]);
+
+    useEffect(() => {
+        if (!activeDestTab) return;
+        setLoadingHotels(true);
+        hotelService.getHotels({ destination_id: activeDestTab.destination_id, sort: "rating", limit: 4 })
+            .then(setFeaturedHotels).catch(() => setFeaturedHotels([]))
+            .finally(() => setLoadingHotels(false));
+    }, [activeDestTab]);
 
     // Load destination cities when fromCity or departDate changes
     const isFirstFromCity = useRef(true);
@@ -347,6 +394,101 @@ export default function FlightsPage() {
 
                 {/* ── CONTENT ── */}
                 <div className="fp-content">
+                    {promos.length > 0 && (
+                        <>
+                            <div className="fp-section-header">
+                                <div className="fp-section-title">🎁 Ưu đãi vé máy bay</div>
+                                <Link href="/promotion" className="fp-section-link">Xem tất cả →</Link>
+                            </div>
+                            <div className="fp-promo-strip">
+                                {promos.map((p) => (
+                                    <div key={p.promo_id} className="fp-promo-card">
+                                        <div className="fp-promo-card-icon">✈️</div>
+                                        <div className="fp-promo-card-info">
+                                            <div className="fp-promo-card-discount">
+                                                {p.discount_type === "percent"
+                                                    ? `Giảm ${p.discount_percent}% · Tối đa ${(p.max_discount / 1000).toFixed(0)}K`
+                                                    : `Giảm ${(p.max_discount / 1000).toFixed(0)}K`}
+                                            </div>
+                                            <div className="fp-promo-card-code">{p.code}</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                    {/* ── POPULAR DESTINATIONS ── */}
+                    {!searched && destinations.length > 0 && (
+                        <>
+                            <div className="fp-section-header">
+                                <div className="fp-section-title">📍 Điểm đến thu hút</div>
+                            </div>
+                            <div className="fp-dest-grid">
+                                {destinations.map((item) => (
+                                    <div
+                                        key={item.destination_id}
+                                        className="fp-dest-card"
+                                        onClick={() => router.push(`/hotels?search=${encodeURIComponent(item.city)}&destination_id=${item.destination_id}`)}
+                                    >
+                                        <div className="fp-dest-card-img">
+                                            {item.image_url
+                                                ? <Image src={item.image_url} alt={item.city} fill style={{ objectFit: "cover" }} />
+                                                : "🏙️"}
+                                        </div>
+                                        <div className="fp-dest-card-body">
+                                            <div className="fp-dest-card-name">{item.city}</div>
+                                            <div className="fp-dest-card-count">{item.hotel_count} khách sạn</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
+
+                    {!searched && destinations.length > 0 && (
+                        <>
+                            <div className="fp-section-header" style={{ marginTop: "2.5rem" }}>
+                                <div className="fp-section-title">🏨 Khách sạn nổi bật</div>
+                                {activeDestTab && (
+                                    <Link href={`/hotels?search=${encodeURIComponent(activeDestTab.city)}&destination_id=${activeDestTab.destination_id}`} className="fp-section-link">
+                                        Xem thêm các chỗ nghỉ ({activeDestTab.city}) →
+                                    </Link>
+                                )}
+                            </div>
+                            <div className="fp-hotel-tabs">
+                                {destinations.map(d => (
+                                    <button
+                                        key={d.destination_id}
+                                        className={`fp-hotel-tab${activeDestTab?.destination_id === d.destination_id ? " active" : ""}`}
+                                        onClick={() => setActiveDestTab(d)}
+                                    >{d.city}</button>
+                                ))}
+                            </div>
+                            {loadingHotels ? (
+                                <div className="fp-loading"><div className="fp-spinner" /><span>Đang tải...</span></div>
+                            ) : (
+                                <div className="fp-hotel-grid">
+                                    {featuredHotels.map(h => (
+                                        <div key={h.hotel_id} className="fp-hotel-card" onClick={() => router.push(`/hotels/${h.hotel_id}`)}>
+                                            <div className="fp-hotel-card-img">
+                                                {h.avg_rating && <span className="fp-hotel-rating">{h.avg_rating.toFixed(1)}</span>}
+                                                {h.image_url
+                                                    ? <Image src={h.image_url} alt={h.name} fill style={{ objectFit: "cover" }} />
+                                                    : <span style={{ fontSize: "2.5rem" }}>🏨</span>}
+                                            </div>
+                                            <div className="fp-hotel-card-body">
+                                                <div className="fp-hotel-card-name">{h.name}</div>
+                                                <div className="fp-hotel-card-addr">📍 {h.destination_city || h.address}</div>
+                                                <div className="fp-hotel-card-price">
+                                                    {h.min_price ? `VND ${h.min_price.toLocaleString("vi-VN")}` : "Liên hệ"}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </>
+                    )}
                     {!searched ? (
                         <div className="fp-hint" style={{ marginTop: "1.5rem" }}>
                             <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>✈️</div>

@@ -53,8 +53,8 @@ const SPECIAL_OPTIONS: Record<BookingType, { key: string; label: string }[]> = {
         { key: "adjoining_room", label: "Phòng liên thông" },
         { key: "high_floor", label: "Tầng cao" },
         { key: "low_floor", label: "Tầng thấp" },
-        { key: "early_checkin", label: "Nhận phòng sớm" },
-        { key: "late_checkout", label: "Trả phòng muộn" },
+        { key: "early_checkin", label: "Gần thang máy" },
+        { key: "late_checkout", label: "Xa thang máy" },
     ],
     flight: [
         { key: "window_seat", label: "Ghế cửa sổ" },
