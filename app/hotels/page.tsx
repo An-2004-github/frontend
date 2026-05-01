@@ -12,6 +12,7 @@ import { promotionService } from "@/services/promotionService";
 import { Promotion } from "@/types/promotion";
 import DestinationInput from "@/components/ui/DestinationInput";
 import api from "@/lib/axios";
+import { logSearch } from "@/lib/logInteraction";
 
 function localDate(offsetDays = 0): string {
     const d = new Date();
@@ -213,6 +214,7 @@ export default function HotelsPage() {
     const handleSearch = () => {
         if (!searchInput.trim()) { setSearchError("Vui lòng nhập tên khách sạn hoặc địa điểm"); return; }
         setSearchError("");
+        logSearch(searchInput.trim());
         setSearch(searchInput);
         setUrlDestId(undefined);
         setShowFilter(true);

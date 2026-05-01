@@ -322,12 +322,13 @@ export default function LoginPage() {
                         <div className="login-tagline">
                             <h2>Khám phá thế giới theo cách của bạn</h2>
                             <p>
-                                Đặt khách sạn, vé máy bay và trải nghiệm du lịch tuyệt vời chỉ trong vài cú nhấp chuột.
+                                Đặt dịch vụ và trải nghiệm du lịch tuyệt vời chỉ trong vài cú nhấp chuột.
                             </p>
                             <div className="login-badges">
-                                <span className="login-badge">✈ Máy bay</span>
                                 <span className="login-badge">🏨 Khách sạn</span>
+                                <span className="login-badge">✈ Máy bay</span>
                                 <span className="login-badge">🚌 Xe khách</span>
+                                <span className="login-badge">🚆 Tàu hỏa</span>
                             </div>
                         </div>
                     </div>

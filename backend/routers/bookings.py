@@ -1210,11 +1210,15 @@ def get_reschedule_options(
         if not item:
             raise HTTPException(404, "Không tìm thấy thông tin đặt chỗ")
 
-        item_d      = dict(item._mapping)
-        entity_type = item_d["entity_type"]
-        entity_id   = item_d["entity_id"]
-        old_price   = float(item_d["price"])
-        seat_class  = item_d.get("seat_class") or ""
+        item_d          = dict(item._mapping)
+        booking_d       = dict(booking._mapping)
+        entity_type     = item_d["entity_type"]
+        entity_id       = item_d["entity_id"]
+        # Dùng final_amount (giá user thực trả) để khớp với logic submit
+        old_price       = float(booking_d["final_amount"])
+        original_price  = float(booking_d["total_price"])
+        discount_amount = float(booking_d.get("discount_amount") or 0)
+        seat_class      = item_d.get("seat_class") or ""
 
         # ── PHÒNG KHÁCH SẠN ─────────────────────────────────────
         if entity_type == "room" and check_in and check_out:
@@ -1284,6 +1288,8 @@ def get_reschedule_options(
                 "options":              [dict(r._mapping) for r in rows],
                 "reschedule_fee_info":  fee_info,
                 "allows_refund":        allows_refund,
+                "discount_amount":      discount_amount,
+                "original_price":       original_price,
             }
 
         # ── CHUYẾN BAY ──────────────────────────────────────────
@@ -1331,12 +1337,14 @@ def get_reschedule_options(
                 options.append(rd)
 
             return {
-                "entity_type":   "flight",
-                "old_price":     old_price,
+                "entity_type":    "flight",
+                "old_price":      old_price,
                 "old_seat_class": seat_class,
-                "old_entity":    fd,
+                "old_entity":     fd,
                 "current_policy": cur_policy,
-                "options": options,
+                "options":        options,
+                "discount_amount":  discount_amount,
+                "original_price":   original_price,
             }
 
         # ── XE KHÁCH ────────────────────────────────────────────
@@ -1385,7 +1393,9 @@ def get_reschedule_options(
                 "old_seat_class": seat_class,
                 "old_entity":     bd,
                 "current_policy": cur_policy,
-                "options": options,
+                "options":        options,
+                "discount_amount":  discount_amount,
+                "original_price":   original_price,
             }
 
         # ── TÀU HỎA ─────────────────────────────────────────────
@@ -1434,7 +1444,9 @@ def get_reschedule_options(
                 "old_seat_class": seat_class,
                 "old_entity":     td,
                 "current_policy": cur_policy,
-                "options": options,
+                "options":        options,
+                "discount_amount":  discount_amount,
+                "original_price":   original_price,
             }
 
         raise HTTPException(400, "Thiếu thông tin ngày mới")

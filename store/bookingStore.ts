@@ -40,6 +40,7 @@ export interface FlightBooking {
     taxAndFees: number;
     totalPrice: number;
     isInternational: boolean;
+    isRoundTrip?: boolean;
 }
 
 export interface BusBooking {

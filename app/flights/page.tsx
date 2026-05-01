@@ -13,6 +13,7 @@ import DestinationInput from "@/components/ui/DestinationInput";
 import { promotionService } from "@/services/promotionService";
 import { Promotion } from "@/types/promotion";
 import api from "@/lib/axios";
+import { logSearch } from "@/lib/logInteraction";
 import { hotelService } from "@/services/hotelService";
 import { Hotel } from "@/types/hotel";
 
@@ -174,6 +175,7 @@ export default function FlightsPage() {
         if (!toCity.trim())   errs.toCity   = "Vui lòng nhập điểm đến";
         if (Object.keys(errs).length > 0) { setErrors(errs); return; }
         setErrors({});
+        logSearch(`${fromCity.trim()} → ${toCity.trim()}`);
         searchAbortRef.current?.abort();
         const controller = new AbortController();
         searchAbortRef.current = controller;
@@ -597,6 +599,7 @@ export default function FlightsPage() {
                                         adults={adults}
                                         childrenCount={childrenCount}
                                         infants={infants}
+                                        tripType={tripType}
                                     />
                                 )}
                             </div>

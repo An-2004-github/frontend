@@ -964,6 +964,8 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
                         const oldPrice = classOnly
                             ? Number(classOptions!.old_price)
                             : Number(optionsData!.old_price || 0);
+                        const discountAmount = classOnly ? 0 : Number((optionsData as Record<string, unknown>)?.discount_amount || 0);
+                        const originalPrice  = classOnly ? oldPrice : Number((optionsData as Record<string, unknown>)?.original_price || oldPrice);
                         const rawDiff   = Math.round(newPrice - oldPrice);
                         const curPolicy = classOnly ? undefined : (optionsData?.current_policy as Record<string, unknown> | undefined);
 
@@ -1025,7 +1027,15 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
                                             {selectedClass && <InfoRow label="Hạng ghế mới" value={CLASS_LABEL[selectedClass.seat_class] ?? selectedClass.seat_class} valueColor="#0052cc" />}
                                         </>
                                     )}
-                                    <InfoRow label="Giá vé cũ" value={fmt(oldPrice)} />
+                                    {discountAmount > 0 ? (
+                                        <>
+                                            <InfoRow label="Giá vé gốc" value={fmt(originalPrice)} />
+                                            <InfoRow label="Giảm giá đã áp dụng" value={`-${fmt(discountAmount)}`} valueColor="#00875a" />
+                                            <InfoRow label="Giá bạn đã trả" value={fmt(oldPrice)} valueColor="#0052cc" />
+                                        </>
+                                    ) : (
+                                        <InfoRow label="Giá vé cũ" value={fmt(oldPrice)} />
+                                    )}
                                     <InfoRow label="Giá vé mới" value={fmt(newPrice)} />
                                     <InfoRow
                                         label={`Chênh lệch giá`}

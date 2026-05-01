@@ -11,6 +11,7 @@ interface Props {
     adults?: number;
     childrenCount?: number;
     infants?: number;
+    tripType?: "one_way" | "round_trip";
 }
 
 const AIRLINE_LOGOS: Record<string, string> = {
@@ -36,11 +37,12 @@ function formatDuration(minutes: number) {
     return `${h}g${m > 0 ? ` ${m}p` : ""}`;
 }
 
-export default function FlightCard({ flight, passengers = 1, adults = 1, childrenCount = 0, infants = 0 }: Props) {
+export default function FlightCard({ flight, passengers = 1, adults = 1, childrenCount = 0, infants = 0, tripType = "one_way" }: Props) {
     const [showModal, setShowModal] = useState(false);
 
     const duration = flight.duration_minutes ?? 0;
-    const totalPrice = flight.price * passengers;
+    const priceMultiplier = tripType === "round_trip" ? 2 : 1;
+    const totalPrice = flight.price * passengers * priceMultiplier;
     const logo = AIRLINE_LOGOS[flight.airline] ?? "✈️";
     const isLowSeat = (flight.available_seats ?? 99) <= 5;
     const isPast = new Date(flight.depart_time) < new Date();
@@ -120,9 +122,14 @@ export default function FlightCard({ flight, passengers = 1, adults = 1, childre
                 {/* Footer */}
                 <div className="fcard-footer">
                     <div className="fcard-price-wrap">
+                        {tripType === "round_trip" && (
+                            <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#0052cc", background: "#e8f0fe", padding: "0.15rem 0.5rem", borderRadius: 99, marginBottom: "0.2rem", display: "inline-block" }}>
+                                🔄 Khứ hồi (×2)
+                            </div>
+                        )}
                         {passengers > 1 && (
                             <div className="fcard-price-per">
-                                {flight.price.toLocaleString("vi-VN")}₫/khách
+                                {(flight.price * priceMultiplier).toLocaleString("vi-VN")}₫/khách
                             </div>
                         )}
                         <div className="fcard-price">
@@ -155,6 +162,7 @@ export default function FlightCard({ flight, passengers = 1, adults = 1, childre
                     adults={adults}
                     childrenCount={childrenCount}
                     infants={infants}
+                    tripType={tripType}
                     onClose={() => setShowModal(false)}
                 />
             )}

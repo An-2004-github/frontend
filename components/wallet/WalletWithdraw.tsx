@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import api from "@/lib/axios";
 
 interface WithdrawalRequest {
-    id: number;
+    wr_id: number;
     amount: number;
     bank_name: string;
     account_no: string;
@@ -35,6 +35,9 @@ export default function WalletWithdraw() {
     // History
     const [history, setHistory] = useState<WithdrawalRequest[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(true);
+    const [polling, setPolling] = useState(false);
+    const hasPendingRef = useRef(false);
+    const historyRef = useRef<WithdrawalRequest[]>([]);
 
     const amountNum = parseFloat(amount.replace(/,/g, "")) || 0;
     const insufficient = amountNum > balance;
@@ -55,6 +58,36 @@ export default function WalletWithdraw() {
     };
 
     useEffect(() => { loadBalance(); loadHistory(); }, []);
+
+    // Sync refs khi history thay đổi
+    useEffect(() => {
+        historyRef.current = history;
+        hasPendingRef.current = history.some(h => h.status === "pending");
+        setPolling(hasPendingRef.current);
+    }, [history]);
+
+    // Polling chạy liên tục từ khi mount, dùng ref để không cần re-create interval
+    useEffect(() => {
+        const interval = setInterval(async () => {
+            if (!hasPendingRef.current) return;
+            try {
+                const res = await api.get("/api/wallet/withdrawals");
+                const newHistory: WithdrawalRequest[] = res.data;
+
+                // Phát hiện item nào vừa được xử lý (pending → completed/rejected)
+                const anyResolved = historyRef.current.some(prev => {
+                    if (prev.status !== "pending") return false;
+                    const updated = newHistory.find(n => n.wr_id === prev.wr_id);
+                    return updated && updated.status !== "pending";
+                });
+
+                setHistory(newHistory);
+                if (anyResolved) loadBalance();
+            } catch { }
+        }, 3000);
+        return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleSubmit = async () => {
         setSubmitting(true);
@@ -258,7 +291,26 @@ export default function WalletWithdraw() {
 
             {/* History */}
             <div className="wd-card">
-                <div className="wd-title">📋 Lịch sử yêu cầu rút tiền</div>
+                <div className="wd-title">
+                    📋 Lịch sử yêu cầu rút tiền
+                    {polling && (
+                        <span style={{
+                            marginLeft: "auto", fontSize: "0.72rem", fontWeight: 600,
+                            color: "#0052cc", background: "#e8f0fe",
+                            padding: "0.15rem 0.6rem", borderRadius: 99,
+                            display: "flex", alignItems: "center", gap: "0.35rem",
+                        }}>
+                            <span style={{
+                                width: 7, height: 7, borderRadius: "50%",
+                                background: "#0052cc",
+                                animation: "wd-pulse 1.2s ease-in-out infinite",
+                                display: "inline-block", flexShrink: 0,
+                            }} />
+                            Đang cập nhật
+                        </span>
+                    )}
+                </div>
+                <style>{`@keyframes wd-pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }`}</style>
 
                 {loadingHistory ? (
                     <div style={{ textAlign: "center", padding: "2rem", color: "#6b8cbf" }}>Đang tải...</div>
@@ -271,7 +323,7 @@ export default function WalletWithdraw() {
                     history.map(req => {
                         const st = STATUS_MAP[req.status] ?? { label: req.status, color: "#6b8cbf", bg: "#f0f4ff" };
                         return (
-                            <div key={req.id} className="wd-hist-row">
+                            <div key={req.wr_id} className="wd-hist-row">
                                 <div className="wd-hist-icon">🏦</div>
                                 <div className="wd-hist-info">
                                     <div className="wd-hist-bank">{req.bank_name}</div>

@@ -31,6 +31,7 @@ interface Props {
     adults:        number;
     childrenCount: number;
     infants:       number;
+    tripType?:     "one_way" | "round_trip";
     onClose:       () => void;
 }
 
@@ -72,7 +73,7 @@ function PolicyTag({ ok, label }: { ok: boolean; label: string }) {
     );
 }
 
-export default function FlightTicketModal({ flight, passengers, adults, childrenCount, infants, onClose }: Props) {
+export default function FlightTicketModal({ flight, passengers, adults, childrenCount, infants, tripType = "one_way", onClose }: Props) {
     const router = useRouter();
     const { setBooking } = useBookingStore();
     const [seatClasses, setSeatClasses] = useState<SeatClassInfo[]>([]);
@@ -87,9 +88,12 @@ export default function FlightTicketModal({ flight, passengers, adults, children
             .finally(() => setLoading(false));
     }, [flight.flight_id]);
 
+    const isRoundTrip = tripType === "round_trip";
+    const priceMultiplier = isRoundTrip ? 2 : 1;
+
     const handleSelect = () => {
         if (!selected) return;
-        const basePrice  = selected.price * passengers;
+        const basePrice  = selected.price * passengers * priceMultiplier;
         const taxAndFees = Math.round(basePrice * 0.1);
         setBooking({
             type:            "flight",
@@ -108,6 +112,7 @@ export default function FlightTicketModal({ flight, passengers, adults, children
             taxAndFees,
             totalPrice:      basePrice + taxAndFees,
             isInternational: !isDomesticFlight(flight.from_city, flight.to_city),
+            isRoundTrip,
         });
         onClose();
         router.push("/booking");
@@ -223,7 +228,6 @@ export default function FlightTicketModal({ flight, passengers, adults, children
                             {seatClasses.map((sc) => {
                                 const notEnough  = sc.available < passengers;
                                 const isSelected = selected?.seat_class === sc.seat_class;
-                                const totalPrice = sc.price * passengers;
 
                                 return (
                                     <div
@@ -248,9 +252,21 @@ export default function FlightTicketModal({ flight, passengers, adults, children
                                         </div>
 
                                         {/* Price */}
-                                        <div style={{ fontFamily: "Nunito, sans-serif", fontSize: "1.2rem", fontWeight: 800, color: "#1a3c6b" }}>
-                                            {totalPrice.toLocaleString("vi-VN")}₫
-                                            {passengers > 1 && <span style={{ fontSize: "0.78rem", fontWeight: 400, color: "#6b8cbf" }}> / {passengers} khách</span>}
+                                        <div>
+                                            {isRoundTrip && (
+                                                <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#0052cc", background: "#e8f0fe", padding: "0.15rem 0.5rem", borderRadius: 99, marginBottom: "0.3rem", display: "inline-block" }}>
+                                                    🔄 Khứ hồi (×2)
+                                                </div>
+                                            )}
+                                            <div style={{ fontFamily: "Nunito, sans-serif", fontSize: "1.2rem", fontWeight: 800, color: "#1a3c6b" }}>
+                                                {(sc.price * passengers * priceMultiplier).toLocaleString("vi-VN")}₫
+                                                {passengers > 1 && <span style={{ fontSize: "0.78rem", fontWeight: 400, color: "#6b8cbf" }}> / {passengers} khách</span>}
+                                            </div>
+                                            {isRoundTrip && (
+                                                <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>
+                                                    ({sc.price.toLocaleString("vi-VN")}₫/khách × 2 chiều)
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="ftm-divider" />
@@ -312,9 +328,11 @@ export default function FlightTicketModal({ flight, passengers, adults, children
                         <div>
                             {selected ? (
                                 <>
-                                    <div style={{ fontSize: "0.88rem", color: "#6b8cbf" }}>{selected.label} · {passengers} khách</div>
+                                    <div style={{ fontSize: "0.88rem", color: "#6b8cbf" }}>
+                                        {selected.label} · {passengers} khách{isRoundTrip ? " · Khứ hồi" : ""}
+                                    </div>
                                     <div style={{ fontFamily: "Nunito, sans-serif", fontSize: "1.1rem", fontWeight: 800, color: ACCENT }}>
-                                        {(selected.price * passengers).toLocaleString("vi-VN")}₫
+                                        {(selected.price * passengers * priceMultiplier).toLocaleString("vi-VN")}₫
                                     </div>
                                 </>
                             ) : (

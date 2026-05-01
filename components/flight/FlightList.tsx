@@ -7,9 +7,10 @@ interface Props {
     adults?: number;
     childrenCount?: number;
     infants?: number;
+    tripType?: "one_way" | "round_trip";
 }
 
-export default function FlightList({ flights, passengers = 1, adults = 1, childrenCount = 0, infants = 0 }: Props) {
+export default function FlightList({ flights, passengers = 1, adults = 1, childrenCount = 0, infants = 0, tripType = "one_way" }: Props) {
     if (!flights || flights.length === 0) {
         return (
             <div className="fl-empty">
@@ -30,6 +31,7 @@ export default function FlightList({ flights, passengers = 1, adults = 1, childr
                     adults={adults}
                     childrenCount={childrenCount}
                     infants={infants}
+                    tripType={tripType}
                 />
             ))}
         </div>

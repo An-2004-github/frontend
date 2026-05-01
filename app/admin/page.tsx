@@ -178,7 +178,8 @@ function WalletSection() {
             loadWithdrawals();
             loadWallets(); // cập nhật số dư ví sau khi duyệt
         } catch (e: unknown) {
-            const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+            const raw = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+            const detail = typeof raw === "string" ? raw : raw ? JSON.stringify(raw) : null;
             alert(detail || "Thao tác thất bại");
         }
     };
@@ -283,13 +284,14 @@ function WalletSection() {
                                     <tr>
                                         <th>#</th><th>Khách hàng</th><th>Số tiền</th>
                                         <th>Ngân hàng</th><th>Số TK / Chủ TK</th>
-                                        <th>Ngày yêu cầu</th><th>Trạng thái</th><th>Thao tác</th>
+                                        <th>Ngày yêu cầu</th><th>Trạng thái</th>
+                                        <th>Xác nhận bởi</th><th>Thao tác</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {filteredWd.map((row, i) => (
-                                        <tr key={String(row.id ?? i)}>
-                                            <td style={{ color: "#6b8cbf" }}>#{String(row.id)}</td>
+                                        <tr key={String(row.wr_id ?? i)}>
+                                            <td style={{ color: "#6b8cbf" }}>#{String(row.wr_id)}</td>
                                             <td>
                                                 <div style={{ fontWeight: 600 }}>{String(row.full_name || "—")}</div>
                                                 <div style={{ fontSize: "0.75rem", color: "#6b8cbf" }}>{String(row.email || "")}</div>
@@ -310,11 +312,20 @@ function WalletSection() {
                                                     {wdStatusLabel[String(row.status)] || String(row.status)}
                                                 </span>
                                             </td>
+                                            <td style={{ fontSize: "0.82rem", color: "#1a3c6b", whiteSpace: "nowrap" }}>
+                                                {row.approved_by_name
+                                                    ? <span style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                                                        <span style={{ color: "#0052cc" }}>👤</span>
+                                                        {String(row.approved_by_name)}
+                                                      </span>
+                                                    : <span style={{ color: "#b0bcd8" }}>—</span>
+                                                }
+                                            </td>
                                             <td>
                                                 {String(row.status) === "pending" && (
                                                     <>
-                                                        <button className="adm-action-btn adm-approve-btn" onClick={() => handleWithdrawalAction(Number(row.id), "approve")}>✅ Xác nhận CK</button>
-                                                        <button className="adm-action-btn adm-reject-btn" onClick={() => handleWithdrawalAction(Number(row.id), "reject")}>✕ Từ chối</button>
+                                                        <button className="adm-action-btn adm-approve-btn" onClick={() => handleWithdrawalAction(Number(row.wr_id), "approve")}>✅ Xác nhận CK</button>
+                                                        <button className="adm-action-btn adm-reject-btn" onClick={() => handleWithdrawalAction(Number(row.wr_id), "reject")}>✕ Từ chối</button>
                                                     </>
                                                 )}
                                             </td>

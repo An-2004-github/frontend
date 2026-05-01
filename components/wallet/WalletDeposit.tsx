@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import api from "@/lib/axios";
 import { useAuthStore } from "@/store/authStore";
@@ -35,6 +35,8 @@ export default function WalletDeposit() {
     const [showQr, setShowQr] = useState(false);
     const [qrTimeLeft, setQrTimeLeft] = useState(QR_TIMEOUT);
     const qrExpired = qrTimeLeft <= 0;
+    // Lưu balance tại thời điểm bắt đầu hiển thị QR để so sánh
+    const baseBalanceRef = useRef(0);
 
     const QUICK_AMOUNTS = [50_000, 100_000, 200_000, 500_000, 1_000_000];
 
@@ -73,33 +75,36 @@ export default function WalletDeposit() {
         return () => clearInterval(interval);
     }, [showQr, qrExpired]);
 
-    // ── Polling sau khi nhấn "Đã chuyển khoản" ──
+    // ── Tự động polling khi QR hiển thị ──
+    useEffect(() => {
+        if (!showQr || qrExpired) {
+            setChecking(false);
+            return;
+        }
+        // Lưu số dư lúc bắt đầu để so sánh
+        baseBalanceRef.current = balance;
+        setChecking(true);
+        setCheckMsg(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showQr, qrExpired]);
+
     useEffect(() => {
         if (!checking) return;
-        let attempts = 0;
-        const MAX_ATTEMPTS = 24;
         const interval = setInterval(async () => {
-            attempts++;
             try {
                 const newBalance = await refreshBalance();
-                if (newBalance > balance) {
+                if (newBalance > baseBalanceRef.current) {
                     setChecking(false);
                     setCheckMsg("✅ Nạp tiền thành công!");
-                    clearInterval(interval);
-                    return;
                 }
             } catch { }
-            if (attempts >= MAX_ATTEMPTS) {
-                setChecking(false);
-                setCheckMsg("⏱ Không tìm thấy giao dịch. Vui lòng kiểm tra lại nội dung chuyển khoản.");
-                clearInterval(interval);
-            }
-        }, 5000);
+        }, 8000);
         return () => clearInterval(interval);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [checking, balance]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [checking]);
 
     const handleShowQr = () => {
+        baseBalanceRef.current = balance;
         setQrTimeLeft(QR_TIMEOUT);
         setCheckMsg(null);
         setChecking(false);
@@ -355,6 +360,26 @@ export default function WalletDeposit() {
                         {/* ── BƯỚC 2: QR ── */}
                         {showQr && (
                             <>
+                                {checkMsg?.startsWith("✅") ? (
+                                    <div className="wd-card" style={{ textAlign: "center", padding: "2.5rem 1.5rem" }}>
+                                        <div style={{ fontSize: "4rem", marginBottom: "1rem" }}>✅</div>
+                                        <div style={{ fontFamily: "'Nunito', sans-serif", fontSize: "1.4rem", fontWeight: 800, color: "#00875a", marginBottom: "0.5rem" }}>
+                                            Nạp tiền thành công!
+                                        </div>
+                                        <div style={{ fontSize: "0.9rem", color: "#6b8cbf", marginBottom: "1.5rem" }}>
+                                            Đã nhận <strong style={{ color: "#0052cc" }}>{Number(amount).toLocaleString("vi-VN")}₫</strong> vào ví của bạn
+                                        </div>
+                                        <div style={{ background: "#f0f4ff", borderRadius: 10, padding: "1rem", marginBottom: "1.5rem" }}>
+                                            <div style={{ fontSize: "0.82rem", color: "#6b8cbf", marginBottom: "0.25rem" }}>Số dư hiện tại</div>
+                                            <div style={{ fontFamily: "'Nunito', sans-serif", fontSize: "1.5rem", fontWeight: 800, color: "#1a3c6b" }}>
+                                                {balance.toLocaleString("vi-VN")}₫
+                                            </div>
+                                        </div>
+                                        <button className="wd-btn" onClick={() => { setShowQr(false); setAmount(""); setCheckMsg(null); setChecking(false); }}>
+                                            💵 Nạp thêm tiền
+                                        </button>
+                                    </div>
+                                ) : (<>
                                 <div className="wd-card">
                                     <div className="wd-card-title">
                                         📱 Quét QR để nạp tiền
@@ -395,7 +420,7 @@ export default function WalletDeposit() {
                                                 Vui lòng tạo mã QR mới để tiếp tục.
                                             </div>
                                             <button
-                                                onClick={() => { setQrTimeLeft(QR_TIMEOUT); setCheckMsg(null); setChecking(false); }}
+                                                onClick={() => { baseBalanceRef.current = balance; setQrTimeLeft(QR_TIMEOUT); setCheckMsg(null); setChecking(false); }}
                                                 style={{
                                                     padding: "0.55rem 1.4rem", background: "#0052cc", color: "#fff",
                                                     border: "none", borderRadius: 8, fontWeight: 700, fontSize: "0.88rem", cursor: "pointer",
@@ -458,29 +483,39 @@ export default function WalletDeposit() {
                                     Hệ thống tự động cập nhật số dư sau 5–30 giây khi nhận được tiền.
                                 </div>
 
-                                {/* Nút xác nhận */}
-                                <button
-                                    className="wd-btn"
-                                    onClick={() => { setChecking(true); setCheckMsg(null); }}
-                                    disabled={checking || qrExpired}
-                                >
-                                    {checking ? (
-                                        <><div className="wd-spinner" style={{ width: 20, height: 20, borderWidth: 2 }} /> Đang kiểm tra...</>
-                                    ) : (
-                                        "✅ Tôi đã chuyển khoản xong"
-                                    )}
-                                </button>
-
-                                {checking && (
-                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "0.75rem" }}>
-                                        <p style={{ margin: 0, fontSize: "0.8rem", color: "#6b8cbf" }}>
-                                            Đang kiểm tra giao dịch (tối đa 2 phút)...
-                                        </p>
+                                {/* Trạng thái tự động kiểm tra */}
+                                {!checkMsg && (
+                                    <div style={{
+                                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                                        background: "#f0f4ff", borderRadius: 10,
+                                        padding: "0.75rem 1rem", marginBottom: "0.5rem",
+                                    }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                                            <div className="wd-spinner" style={{ width: 18, height: 18, borderWidth: 2, flexShrink: 0 }} />
+                                            <span style={{ fontSize: "0.85rem", color: "#1a3c6b", fontWeight: 500 }}>
+                                                Đang chờ xác nhận giao dịch...
+                                            </span>
+                                        </div>
                                         <button
-                                            onClick={() => { setChecking(false); setCheckMsg(null); }}
-                                            style={{ fontSize: "0.78rem", color: "#6b8cbf", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+                                            disabled={qrExpired}
+                                            onClick={async () => {
+                                                try {
+                                                    const newBalance = await refreshBalance();
+                                                    if (newBalance > baseBalanceRef.current) {
+                                                        setChecking(false);
+                                                        setCheckMsg("✅ Nạp tiền thành công!");
+                                                    } else {
+                                                        setCheckMsg(null);
+                                                    }
+                                                } catch { }
+                                            }}
+                                            style={{
+                                                fontSize: "0.78rem", color: "#0052cc", background: "none",
+                                                border: "1px solid #c8d8ff", borderRadius: 6, padding: "0.25rem 0.6rem",
+                                                cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap",
+                                            }}
                                         >
-                                            Hủy
+                                            Kiểm tra ngay
                                         </button>
                                     </div>
                                 )}
@@ -503,6 +538,7 @@ export default function WalletDeposit() {
                                         ← Đổi số tiền
                                     </button>
                                 )}
+                                </>)}
                             </>
                         )}
                     </>

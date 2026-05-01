@@ -95,9 +95,9 @@ const NATIONALITIES = [
 ];
 
 const PASSENGER_TYPE_OPTIONS = [
-    { value: "adult", label: "Người lớn (trên 12 tuổi)" },
-    { value: "child", label: "Trẻ em (2 – 11 tuổi)" },
-    { value: "infant", label: "Em bé (dưới 2 tuổi)" },
+    { value: "adult", label: "Người lớn (trên 12 tuổi)", shortLabel: "Người lớn" },
+    { value: "child", label: "Trẻ em (2 – 11 tuổi)", shortLabel: "Trẻ em" },
+    { value: "infant", label: "Em bé (dưới 2 tuổi)", shortLabel: "Em bé" },
 ];
 
 function getBirthYears(type: PassengerInfo["type"]): number[] {
@@ -473,7 +473,7 @@ export default function BookingForm({
                                         Hành khách {i + 1} / {passengerCount}
                                     </span>
                                     <span className={`bf-passenger-type-badge ${badgeClass}`}>
-                                        {PASSENGER_TYPE_OPTIONS.find(o => o.value === p.type)?.label}
+                                        {PASSENGER_TYPE_OPTIONS.find(o => o.value === p.type)?.shortLabel}
                                     </span>
                                 </div>
 
@@ -487,7 +487,7 @@ export default function BookingForm({
                                             onChange={e => onPassengerChange(i, "type", e.target.value)}
                                         >
                                             {PASSENGER_TYPE_OPTIONS.map(opt => (
-                                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                <option key={opt.value} value={opt.value}>{opt.shortLabel}</option>
                                             ))}
                                         </select>
                                     </div>
@@ -619,8 +619,8 @@ export default function BookingForm({
             <div className="bf-card">
                 <div className="bf-title">☑ Yêu cầu đặc biệt</div>
                 <div className="bf-sub">
-                    {bookingType === "hotel" && "Tất cả các yêu cầu đặc biệt tùy thuộc vào tình trạng sẵn có và không được đảm bảo. Nhận phòng sớm hoặc trả phòng muộn có thể phát sinh thêm phí."}
-                    {bookingType === "flight" && "Các yêu cầu đặc biệt sẽ được chuyển tới hãng bay. Một số yêu cầu có thể phát sinh phụ phí hoặc tùy thuộc vào tình trạng chỗ trống."}
+                    {bookingType === "hotel" && "Tất cả các yêu cầu đặc biệt tùy thuộc vào tình trạng sẵn có và không được đảm bảo. Vui lòng liên hệ khách sạn để xác nhận thêm."}
+                    {bookingType === "flight" && "Các yêu cầu đặc biệt sẽ được chuyển tới hãng bay. Vui lòng liên hệ hãng bay để xác nhận thêm."}
                     {bookingType === "bus" && "Các yêu cầu đặc biệt tùy thuộc vào tình trạng xe và không được đảm bảo. Vui lòng liên hệ nhà xe để xác nhận thêm."}
                 </div>
                 <div className="bf-special-grid">

@@ -749,9 +749,11 @@ def admin_delete_review(review_id: int, admin_id: int = Depends(get_admin_user))
 def admin_list_withdrawals(admin_id: int = Depends(get_admin_user)):
     with engine.connect() as conn:
         rows = conn.execute(text("""
-            SELECT wr.*, u.full_name, u.email
+            SELECT wr.*, u.full_name, u.email,
+                   a.full_name AS approved_by_name
             FROM withdrawal_requests wr
             JOIN users u ON u.user_id = wr.user_id
+            LEFT JOIN users a ON a.user_id = wr.approved_by
             ORDER BY wr.created_at DESC
         """)).fetchall()
     return [dict(r._mapping) for r in rows]
