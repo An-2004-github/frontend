@@ -2,309 +2,64 @@
 
 ## 1. Tổng quan
 
-Website sử dụng mô hình **Neural Collaborative Filtering (NCF)** — cụ thể là kiến trúc **NeuMF (Neural Matrix Factorization)** — để cá nhân hóa gợi ý điểm đến du lịch cho từng người dùng.
-
-Mô hình được cài đặt bằng **PyTorch**, huấn luyện trên dữ liệu lấy từ hành vi thực tế của người dùng trong hệ thống (booking, review, click, tìm kiếm).
+Website sử dụng mô hình **Neural Collaborative Filtering (NCF)**, cụ thể là kiến trúc **NeuMF (Neural Matrix Factorization)**, để cá nhân hóa gợi ý điểm đến du lịch cho từng người dùng. Mô hình được cài đặt bằng PyTorch và huấn luyện hoàn toàn trên dữ liệu hành vi thực tế thu thập từ hệ thống, bao gồm lịch sử đặt vé, đánh giá, lượt click và từ khóa tìm kiếm.
 
 ---
 
-## 2. Kiến trúc Mô hình — NeuMF
+## 2. Kiến trúc Mô hình
 
-NeuMF kết hợp hai nhánh song song:
+NeuMF được thiết kế để kết hợp ưu điểm của hai phương pháp: **Generalized Matrix Factorization (GMF)** và **Multi-Layer Perceptron (MLP)**, chạy song song và hợp nhất ở tầng cuối.
 
-```
-User ID ──┬──→ [Embedding GMF 32d] ──→ element-wise product ──→ GMF_out (32d)
-          │
-Item ID ──┘──→ [Embedding GMF 32d]
+Trong nhánh GMF, mỗi người dùng và điểm đến được ánh xạ thành một vector nhúng (embedding) 32 chiều riêng biệt. Tích element-wise của hai vector này tạo ra một biểu diễn tuyến tính thể hiện mức độ tương đồng giữa người dùng và điểm đến theo từng chiều không gian ẩn. Đây chính là cơ chế tương tự Matrix Factorization truyền thống, nhưng được đặt trong khung học sâu.
 
-User ID ──┬──→ [Embedding MLP 32d] ──→ concat (64d) ──→ [Linear 64→32 + BN + ReLU + Dropout]
-          │                                            ──→ [Linear 32→16 + BN + ReLU + Dropout]
-Item ID ──┘──→ [Embedding MLP 32d]                   ──→ MLP_out (16d)
+Trong nhánh MLP, mỗi người dùng và điểm đến cũng có một bộ embedding 32 chiều riêng (tách biệt hoàn toàn với GMF để hai nhánh học đặc trưng độc lập). Hai vector này được nối (concatenate) thành vector 64 chiều, sau đó đi qua ba tầng fully-connected với kích thước lần lượt là 64, 32, và 16 nơ-ron. Mỗi tầng có Batch Normalization để ổn định gradient, hàm kích hoạt ReLU, và Dropout 0.2 để tránh overfitting. Nhánh MLP cho phép mô hình học được các mối quan hệ phi tuyến tính phức tạp mà GMF không thể nắm bắt.
 
-                    GMF_out (32d)
-                    MLP_out (16d)
-                         │
-                    concat (48d)
-                         │
-                  [Linear 48 → 1]
-                         │
-                    Sigmoid → score ∈ (0, 1)
-```
+Đầu ra của hai nhánh — vector 32 chiều từ GMF và vector 16 chiều từ MLP — được ghép lại thành vector 48 chiều, rồi đi qua một tầng Linear duy nhất và hàm Sigmoid để cho ra điểm số cuối cùng trong khoảng từ 0 đến 1, biểu thị xác suất người dùng quan tâm đến điểm đến đó.
 
-### Tham số kiến trúc
-
-| Tham số | Giá trị |
-|---------|---------|
-| Embedding dimension (GMF & MLP) | 32 |
-| MLP hidden layers | [64, 32, 16] |
-| Dropout rate | 0.2 |
-| Batch Normalization | Có (sau mỗi Linear trong MLP) |
-| Hàm kích hoạt | ReLU (ẩn), Sigmoid (output) |
-| Output | Score ∈ (0, 1) — xác suất user quan tâm đến điểm đến |
-
-### Tổng số tham số (thực tế với meta.json)
-
-- `num_users = 1017`, `num_items = 109`
-- 4 embedding tables: `(1018 × 32) × 4 ≈ 130.000` tham số
-- MLP tower: `64×32 + 32×32 + 16×32 + 48×1 ≈ 5.000` tham số
-- **Tổng: ~135.000 tham số** — mô hình nhẹ, phù hợp chạy CPU
+Về quy mô, với 1.017 người dùng và 109 điểm đến trong tập dữ liệu hiện tại, mô hình có bốn bảng embedding tổng cộng khoảng 130.000 tham số, cộng với khoảng 5.000 tham số trong phần MLP, tổng cộng xấp xỉ **135.000 tham số** — đủ nhẹ để chạy trên CPU môi trường production mà không cần GPU.
 
 ---
 
 ## 3. Khởi tạo Trọng số
 
-```python
-# Embedding: phân phối chuẩn, std nhỏ để tránh bão hòa đầu ra sigmoid
-nn.init.normal_(embedding.weight, std=0.01)
-
-# Linear: Xavier Uniform — duy trì phương sai gradient qua nhiều lớp
-nn.init.xavier_uniform_(linear.weight)
-nn.init.zeros_(linear.bias)
-```
-
-**Lý do chọn Xavier cho Linear:** Xavier phân phối ngẫu nhiên theo kích thước lớp (`std = sqrt(2 / (fan_in + fan_out))`), giúp gradient không bị vanish hoặc explode khi lan truyền ngược qua nhiều lớp.
+Các tầng Embedding được khởi tạo theo phân phối chuẩn với độ lệch chuẩn rất nhỏ (std = 0.01), đảm bảo các vector ban đầu gần với gốc tọa độ, tránh bão hòa hàm Sigmoid ngay từ đầu. Các tầng Linear trong MLP được khởi tạo theo phương pháp **Xavier Uniform**, trong đó độ lệch chuẩn được tính dựa trên kích thước đầu vào và đầu ra của mỗi tầng theo công thức `std = sqrt(2 / (fan_in + fan_out))`. Cách khởi tạo này giúp phương sai của gradient được duy trì ổn định khi lan truyền ngược qua nhiều tầng, hạn chế hiện tượng vanishing gradient hoặc exploding gradient.
 
 ---
 
 ## 4. Dữ liệu Huấn luyện
 
-### 4.1 Nguồn dữ liệu (6 nguồn)
+Một điểm đặc biệt của hệ thống là dữ liệu huấn luyện được tổng hợp từ **sáu nguồn** khác nhau, không chỉ dựa vào đánh giá sao trực tiếp.
 
-| Nguồn | Loại | Score |
-|-------|------|-------|
-| Hotel booking `confirmed` | Implicit | 1.0 |
-| Hotel booking `pending` | Implicit | 0.8 |
-| Flight / Bus booking `confirmed` | Implicit | 0.9 |
-| Review rating 1–5 sao | Explicit | `rating / 5.0` (0.2 – 1.0) |
-| User interactions theo action | Implicit | Xem bảng dưới |
-| Search logs (keyword → destination) | Implicit | 0.35 – 0.65 |
+Nguồn mạnh nhất là lịch sử đặt phòng khách sạn đã được xác nhận (score = 1.0), tiếp theo là đặt phòng ở trạng thái chờ (score = 0.8), và đặt vé máy bay hoặc xe khách đến một thành phố (score = 0.9). Các đánh giá sao được chuẩn hóa trực tiếp về thang 0–1 bằng cách chia cho 5.
 
-### 4.2 Trọng số hành vi người dùng
+Ngoài ra, hệ thống theo dõi hành vi người dùng trên từng trang thông qua bảng `user_interactions`, với trọng số khác nhau tùy mức độ thể hiện sự quan tâm: đặt vé và thanh toán được gán điểm 1.0, xem trang chi tiết là 0.7, click là 0.6, chỉ lướt qua là 0.3–0.4. Từ khóa tìm kiếm trong `search_logs` cũng được xét đến, với điểm số từ 0.35 đến tối đa 0.65 tùy theo số lần tìm kiếm.
 
-```python
-ACTION_WEIGHTS = {
-    "book":        1.0,   # Đặt vé = tín hiệu mạnh nhất
-    "payment":     1.0,
-    "confirmed":   1.0,
-    "view_detail": 0.7,   # Xem chi tiết
-    "click":       0.6,
-    "view":        0.4,
-    "search":      0.35,
-    "view_list":   0.3,   # Chỉ lướt qua danh sách
-}
-```
+Với mỗi cặp (người dùng, điểm đến), hệ thống giữ lại **giá trị điểm số cao nhất** từ tất cả các nguồn thay vì lấy trung bình, đảm bảo một lần booking có giá trị 1.0 không bị kéo xuống bởi những lần chỉ lướt qua.
 
-### 4.3 Tổng hợp dữ liệu
-
-Với mỗi cặp `(user_id, destination_id)`, giữ **giá trị MAX** trong tất cả các nguồn:
-
-```python
-score_map[(user_id, dest_id)] = max(hiện_tại, score_mới)
-```
-
-Điều này đảm bảo một lần booking (score=1.0) không bị "trung bình hóa" bởi những lần chỉ view (score=0.3).
-
-### 4.4 Negative Sampling
-
-Tỉ lệ 4:1 (4 negative/positive):
-
-```
-Với mỗi (user, dest_pos, score) → thêm 4 (user, dest_neg, 0.0)
-trong đó dest_neg ∉ tập điểm đến user đã tương tác
-```
-
-Kết quả: dataset huấn luyện có ~5× kích thước tập positive.
+Để tạo dataset cân bằng, hệ thống áp dụng **negative sampling** theo tỉ lệ 4:1: với mỗi cặp tương tác dương (người dùng đã có tín hiệu với điểm đến), mô hình được thêm 4 mẫu âm là các điểm đến mà người dùng chưa từng tương tác, gán nhãn 0.0. Kết quả là tập huấn luyện có kích thước gấp 5 lần tập tương tác gốc.
 
 ---
 
 ## 5. Quá trình Huấn luyện
 
-### 5.1 Cấu hình
+Mô hình được huấn luyện qua 30 epoch với batch size 256. Optimizer Adam được sử dụng với learning rate 0.001 và L2 regularization (weight_decay = 1e-5) để hạn chế overfitting. Hàm mất mát là **Binary Cross-Entropy (BCE)**, phù hợp vì nhãn là giá trị liên tục trong khoảng 0–1 thay vì chỉ là 0 hoặc 1 thuần túy.
 
-| Hyper-parameter | Giá trị |
-|----------------|---------|
-| Epochs | 30 |
-| Batch size | 256 |
-| Optimizer | Adam (lr=0.001, weight_decay=1e-5) |
-| Loss function | BCELoss (Binary Cross-Entropy) |
-| LR Scheduler | ReduceLROnPlateau (patience=3, factor=0.5) |
-| Train/Val split | 90% / 10% (random_state=42) |
-
-### 5.2 Hàm mất mát
-
-```
-BCE = -[y·log(ŷ) + (1-y)·log(1-ŷ)]
-```
-
-- **y**: score thực tế (0.0 – 1.0, không nhất thiết là 0/1)
-- **ŷ**: score mô hình dự đoán qua Sigmoid
-- BCELoss phù hợp vì output là xác suất liên tục
-
-### 5.3 Vòng lặp huấn luyện
-
-```
-for epoch in 1..30:
-    for batch in train_loader:
-        pred = model(users, items)        # Forward
-        loss = BCELoss(pred, labels)      # Loss
-        loss.backward()                   # Backprop
-        optimizer.step()                  # Update weights
-
-    # Validation
-    val_loss = evaluate(val_loader)
-    scheduler.step(val_loss)              # Giảm LR nếu val_loss không cải thiện
-
-    if val_loss < best_val_loss:
-        save(model, "ncf_best.pt")        # Chỉ lưu model tốt nhất
-```
-
-### 5.4 Early stopping ngầm định
-
-Không dùng early stopping tường minh, nhưng chỉ lưu model khi `val_loss` giảm. Sau 30 epoch, `ncf_best.pt` luôn là checkpoint tốt nhất trên tập validation.
+Ở mỗi epoch, mô hình duyệt qua toàn bộ tập huấn luyện theo từng batch, tính loss, lan truyền ngược và cập nhật trọng số. Sau đó đánh giá trên tập validation (10% dữ liệu). Learning rate được điều chỉnh tự động thông qua `ReduceLROnPlateau`: nếu validation loss không cải thiện sau 3 epoch liên tiếp, learning rate sẽ giảm còn một nửa. Chỉ khi nào validation loss giảm xuống mức thấp nhất từ trước đến nay, model mới được lưu vào file `ncf_best.pt`. Sau 30 epoch, file này luôn chứa checkpoint tốt nhất trên tập validation.
 
 ---
 
-## 6. Inference — Tạo gợi ý
+## 6. Quá trình Inference và Search Boost
 
-### 6.1 Flow dự đoán cho user đã biết
+Khi người dùng đăng nhập và gọi API gợi ý, hệ thống lấy chỉ số embedding của người dùng đó, sau đó tính điểm số cho toàn bộ 109 điểm đến chỉ trong một lần forward pass (sử dụng `torch.no_grad()` để tiết kiệm bộ nhớ). Các điểm đến mà người dùng đã từng đặt phòng/vé thành công sẽ bị loại khỏi danh sách ứng viên để tránh gợi ý lại những nơi đã đến.
 
-```
-1. Lấy user_idx từ user2idx[user_id]
-2. Duyệt toàn bộ 109 điểm đến
-3. Với mỗi dest: score = model(user_idx, item_idx)  → tensor inference, no_grad
-4. Loại bỏ điểm đến user đã đặt (exclude_dest_ids)
-5. Áp dụng Search Boost (nếu user có search gần đây)
-6. Sắp xếp theo score giảm dần → lấy top-k (mặc định k=8)
-```
+Trước khi sắp xếp và trả về kết quả, hệ thống áp dụng cơ chế **Search Boost** — một lớp cá nhân hóa theo thời gian thực không cần retrain model. Hệ thống đọc các từ khóa mà người dùng đã tìm kiếm trong 7 ngày gần nhất, so khớp với tên thành phố và điểm đến trong database, rồi tính trọng số boost theo công thức `boost_weight = min(0.15 + count × 0.05, 0.4)`, trong đó `count` là số lần xuất hiện của từ khóa đó. Điểm số của điểm đến phù hợp được điều chỉnh theo công thức `score = score + boost_weight × (1 - score)`, đảm bảo score không vượt quá 1.0 dù boost bao nhiêu. Ví dụ, nếu người dùng tìm "Đà Nẵng" 3 lần, boost_weight sẽ là 0.30, tức là điểm đến Đà Nẵng được kéo thêm 30% khoảng còn lại tính từ score hiện tại đến 1.0.
 
-### 6.2 Search Boost — Real-time personalization
-
-```python
-boost_weight = min(0.15 + count * 0.05, 0.4)  # count = số lần tìm keyword
-score = score + boost_weight * (1.0 - score)   # Kéo score lên, không vượt quá 1.0
-```
-
-Boost được tính từ `search_logs` trong **7 ngày gần nhất**, match keyword với `destinations.city` / `destinations.name`.
-
-**Ví dụ:** User tìm "Đà Nẵng" 3 lần → `boost_weight = 0.15 + 3×0.05 = 0.30` → điểm đến Đà Nẵng được boost 30% khoảng còn lại đến 1.0.
-
-### 6.3 Fallback cho user mới (Cold Start)
-
-```python
-if user_id not in user2idx:
-    return _popular_items()  # Gợi ý top điểm đến phổ biến theo số booking
-```
+Đối với người dùng mới chưa có dữ liệu huấn luyện (cold start), hệ thống fallback về hàm `_popular_items()`, tính điểm trung bình của tất cả các user embedding đã biết với từng điểm đến, cho ra danh sách phổ biến mang tính đại diện cho toàn bộ cộng đồng người dùng.
 
 ---
 
-## 7. Tích hợp vào Hệ thống
+## 7. Ưu điểm và Hạn chế
 
-```
-App startup
-    └── load NCF model (ncf_best.pt + meta.json + *.pkl)
-            ↓
-GET /api/recommendations  (cần auth)
-    └── NCF.predict(user_id, top_k=8)
-            ↓
-        Kết hợp: NCF score + Search Boost
-            ↓
-        Trả về: [{destination_id, name, score, boosted, ...}]
+Kiến trúc NeuMF có lợi thế rõ ràng so với các phương pháp truyền thống nhờ khả năng học đồng thời cả quan hệ tuyến tính (qua GMF) và phi tuyến (qua MLP). Việc tổng hợp dữ liệu từ nhiều nguồn hành vi thay vì chỉ dựa vào đánh giá sao giúp mô hình phản ánh được sở thích thực tế của người dùng ngay cả khi họ chưa để lại review nào. Cơ chế Search Boost bổ sung khả năng thích nghi theo thời gian thực mà không tốn chi phí retrain. Với chỉ khoảng 135.000 tham số, mô hình có thể triển khai hoàn toàn trên CPU.
 
-GET /api/recommendations/guest  (không cần auth)
-    └── _popular_items() — sắp xếp theo booking_count
-```
-
----
-
-## 8. Lưu trữ Model
-
-```
-backend/ml/saved/
-├── ncf_best.pt      # 326 KB — PyTorch state_dict (trọng số tốt nhất)
-├── meta.json        # Config: num_users=1017, num_items=109, embed_dim=32...
-├── user2idx.pkl     # Dict: user_id → embedding index (1-indexed)
-├── item2idx.pkl     # Dict: destination_id → embedding index
-└── idx2item.pkl     # Dict ngược: embedding index → destination_id
-```
-
----
-
-## 9. Ưu điểm & Hạn chế
-
-### Ưu điểm
-
-| Điểm mạnh | Giải thích |
-|-----------|-----------|
-| **Kết hợp GMF + MLP** | GMF học tương tác tuyến tính (giống Matrix Factorization truyền thống), MLP học phi tuyến → bổ sung cho nhau |
-| **Multi-source implicit feedback** | Không chỉ dùng rating, mà tổng hợp 6 nguồn tín hiệu từ hành vi thực tế |
-| **Real-time boost** | Search intent gần đây được phản ánh ngay vào gợi ý mà không cần retrain |
-| **Cold start fallback** | User mới vẫn nhận được gợi ý hợp lý (popular-based) |
-| **Lightweight** | ~135K tham số, chạy được trên CPU production |
-
-### Hạn chế
-
-| Hạn chế | Giải thích |
-|---------|-----------|
-| **Không retrain tự động** | Model chỉ được cập nhật khi chạy lại `ml/train.py` thủ công; user mới sau khi train sẽ không có embedding |
-| **Cold start item** | Điểm đến mới thêm vào sau khi train sẽ không được model biết đến |
-| **Implicit feedback noise** | Một click không có nghĩa là user thích — chỉ là tín hiệu yếu |
-| **Không có context** | Không xét đến mùa du lịch, ngân sách, số người đi |
-
----
-
-## 10. So sánh với các phương pháp khác
-
-| Phương pháp | Ưu điểm | Nhược điểm | Lựa chọn |
-|-------------|---------|-----------|----------|
-| Content-Based Filtering | Không cần dữ liệu user khác | Không học được preference ẩn | Không dùng |
-| Matrix Factorization thuần | Đơn giản, hiệu quả | Chỉ học tương tác tuyến tính | Được thay bởi GMF trong NeuMF |
-| **NeuMF (đang dùng)** | Học cả tuyến tính và phi tuyến | Cần dữ liệu đủ lớn | ✅ |
-| Transformer-based (BERT4Rec) | Xét sequence hành vi | Phức tạp, cần nhiều data | Overkill với dataset này |
-
----
-
-## 11. Luồng dữ liệu đầy đủ
-
-```
-Người dùng tương tác
-    │ (click, view, book, review, search)
-    ↓
-Database (user_interactions, bookings, reviews, search_logs)
-    │
-    ↓ python -m ml.train
-    │
-load_interactions()  →  6 nguồn SQL  →  score_map (MAX aggregation)
-    │
-make_samples()  →  negative sampling 4:1  →  InteractionDataset
-    │
-DataLoader (batch_size=256, shuffle=True)
-    │
-NCF model (GMF + MLP)  →  BCELoss  →  Adam optimizer
-    │ 30 epochs, save best val_loss
-    ↓
-ncf_best.pt + meta.json + *.pkl
-    │
-    ↓ App startup: load model
-    │
-GET /api/recommendations
-    │
-NCF.predict()  +  Search Boost (7 ngày gần nhất)
-    │
-Top-8 điểm đến  →  Frontend hiển thị
-```
-“Dạ, trong hệ thống của nhóm em, phần gợi ý điểm đến được xây dựng dựa trên mô hình Neural Collaborative Filtering, cụ thể là kiến trúc NeuMF.
-
-Mô hình này có nhiệm vụ dự đoán mức độ phù hợp giữa người dùng và một điểm đến, dựa trên dữ liệu hành vi thực tế như tìm kiếm, click, và đặc biệt là booking.
-
-Về cách hoạt động, mỗi người dùng và mỗi điểm đến sẽ được biểu diễn dưới dạng vector. Sau đó, mô hình sử dụng hai nhánh song song:
-
-Nhánh thứ nhất là GMF, giúp học các quan hệ tuyến tính đơn giản giữa người dùng và điểm đến
-Nhánh thứ hai là MLP, giúp học các quan hệ phức tạp hơn từ hành vi người dùng
-
-Hai nhánh này được kết hợp lại để đưa ra một score từ 0 đến 1, thể hiện xác suất người dùng quan tâm đến điểm đến đó.
-
-Một điểm quan trọng trong hệ thống là nhóm em không chỉ sử dụng một nguồn dữ liệu, mà kết hợp nhiều tín hiệu khác nhau như booking, review, click và search, với các trọng số khác nhau để phản ánh mức độ quan tâm thực tế.
-
-Ngoài ra, hệ thống còn có cơ chế Search Boost, giúp ưu tiên các điểm đến mà người dùng vừa tìm kiếm gần đây, từ đó tăng tính cá nhân hóa theo thời gian thực mà không cần huấn luyện lại mô hình.
-
-Nhờ đó, hệ thống vừa đảm bảo tính chính xác của mô hình học máy, vừa linh hoạt theo hành vi người dùng trong thời gian ngắn.”
+Tuy nhiên, hệ thống vẫn còn một số hạn chế đáng lưu ý. Model không tự động retrain — mọi người dùng đăng ký sau lần huấn luyện cuối sẽ không có embedding và luôn nhận kết quả fallback. Tương tự, các điểm đến mới thêm vào hệ thống sau khi train cũng không được model biết đến. Dữ liệu implicit feedback vốn có nhiễu: một lượt click không nhất thiết phản ánh sự yêu thích thực sự. Ngoài ra, mô hình chưa xét đến các yếu tố ngữ cảnh như mùa du lịch, ngân sách hay số lượng người đi, vốn là những yếu tố ảnh hưởng lớn đến quyết định của người dùng.
