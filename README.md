@@ -1,86 +1,201 @@
-## Khởi động web
+# VIVU — Hệ thống đặt vé & du lịch trực tuyến
 
-Bật backend: - cd backend
-             - uvicorn main:app --reload
+Nền tảng đặt vé du lịch tích hợp: máy bay, khách sạn, xe khách và tàu hỏa. Hỗ trợ thanh toán ví điện tử, QR Banking, gợi ý hành trình bằng AI và hệ thống thành viên tích điểm.
 
-Bật frontend: - npm run dev
+---
 
-Bật deploy để liên kết với webhook: - ngrok http 8000
+## Tech Stack
 
-Chạy Cloudflare Tunnel : cloudflared tunnel run datn-server
+| Layer | Công nghệ |
+|---|---|
+| Framework | Next.js 16 (App Router) |
+| UI | React 19 + Tailwind CSS v4 |
+| State | Zustand v5 |
+| HTTP | Axios với interceptors tự động |
+| Auth | Google OAuth 2.0 + JWT |
+| Upload ảnh | Cloudinary |
+| AI | Google Gemini API |
+| Thanh toán | VietQR + Ví nội bộ |
 
-Để chạy:
+---
 
+## Yêu cầu hệ thống
 
-# 1. Cài thư viện
-pip install torch pandas numpy scikit-learn
+- **Node.js** >= 18.x
+- **npm** >= 9.x
+- **Python** >= 3.10 (cho backend FastAPI)
 
-# 2. Train model (chạy từ thư mục backend/)
+---
+
+## Cài đặt & Khởi động
+
+### 1. Clone repository
+
+```bash
+git clone <repo-url>
+cd frontend
+```
+
+### 2. Cài đặt dependencies
+
+```bash
+npm install
+```
+
+### 3. Cấu hình biến môi trường
+
+Tạo file `.env.local` tại thư mục `frontend/`:
+
+```env
+# API Backend
+NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# Google OAuth
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=your_google_client_id
+
+# Cloudinary
+NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=your_cloud_name
+NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET=your_upload_preset
+
+# Thông tin ngân hàng nhận thanh toán QR
+NEXT_PUBLIC_BANK_ID=MB
+NEXT_PUBLIC_BANK_ACCOUNT_NO=your_account_number
+NEXT_PUBLIC_BANK_ACCOUNT_NAME=YOUR_NAME
+```
+
+> **Lưu ý bảo mật:** Không commit file `.env.local` lên git. File này đã được thêm vào `.gitignore`.
+
+### 4. Khởi động backend (FastAPI)
+
+```bash
+cd ../backend
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+### 5. (Tùy chọn) Train ML model gợi ý
+
+```bash
 cd backend
 python -m ml.train
-
-# 3. Khởi động lại backend — model tự load
+# Restart backend sau khi train xong để model được load
 uvicorn main:app --reload
+```
 
+### 6. Khởi động frontend
 
-#An
-#GEMINI_API_KEY=AIzaSyAJefaqsthZ-AeTkfQMwzKMjD-IYjrJ9Iw
-#GEMINI_API_KEY=AIzaSyAsCZbnlccoUHan_MBAOTxwQ9NPy-u0mqI
-#GEMINI_API_KEY=AIzaSyAE98sJPMfVRqGr76hB6TFFbgDV-oKNqZY
-#GEMINI_API_KEY=AIzaSyDqkzcW33jWzNFGTSUz6bBi7u36Vnh14lw
-#GEMINI_API_KEY=AIzaSyDpR-1AWSPNxOUqZ9kkdR5N6pdiLk0EMx4
-#GEMINI_API_KEY=AIzaSyC_62hM5ChG01JFdOLWgb5Z89xUnyntplE
- 
-#NGhĩa
-#GEMINI_API_KEY=AIzaSyAdEC9mZY_-_rHelf4VT1mi4Vz4zbI9XiI
-AIzaSyBcOYmvkoc2XT0PuCOPRlz54qn8v6F372I
+```bash
+cd frontend
+npm run dev
+```
 
+Ứng dụng chạy tại: [http://localhost:3000](http://localhost:3000)
 
-NOTE MAI SỬA:
-tranh chấp dữ liệu 
-Sửa phương thức thanh toán / ngày giờ giao dịch
-Email đổi phòng
-Được đổi nhiều lần và lần nào update lần đấy
-Bỏ hoàn về đâu đối với không được phần không được hoàn 
-Trang admin đặt chỗ có xem chi tiết để hiển thị lịch sử đổi/ hủy
-sửa email hủy đối với không hoàn tiền
-yêu cầu đổi hủy có thể hiện người duyệt 
-Sửa phần Thời gian khi chọn sẽ tự động cập nhật loại lịch trình 
-Sửa phần tìm kiếm khách sạn khi link từ trang gợi ý
- Sửa phần đổi lịch 
+---
 
+## Deploy & Tunnel
 
- 🔴 Vấn đề nghiêm trọng (cần fix ngay)
-Bảo mật
+Kết nối backend với webhook (local dev):
 
-BANK_ID, ACCOUNT_NO hardcode trực tiếp trong client code — nên chuyển vào .env
-Google OAuth ClientID hardcode trong app/layout.tsx thay vì process.env
-Token lưu localStorage không có cơ chế refresh/expiry an toàn
-Crash không xử lý được
+```bash
+# Dùng ngrok
+ngrok http 8000
 
-Không có file error.tsx nào → khi API lỗi, trang sẽ crash trắng
-Không có not-found.tsx → URL sai trả về lỗi xấu
-Không có loading.tsx → không có skeleton khi chuyển trang
-🟠 UX/UI quan trọng
-alert() dùng ở nhiều nơi (profile, payment) → cần thay bằng toast notification
-Không có flow retry khi QR payment hết 15 phút → user bị kẹt
-Không có email xác nhận sau khi đặt chỗ thành công
-Không có trang itinerary sau thanh toán — user không biết đặt gì xong
-Thiếu skeleton loader trên BookingCard và SearchBar trong lúc fetch API
-🟡 SEO & Performance
-app/layout.tsx dùng "use client" → không thể export metadata → Google không index được
-Không có og:image, og:title cho từng trang
-Không có robots.txt, sitemap.xml
-Wallet polling 30 giây bất kể user có dùng hay không → lãng phí request
-🔵 Code quality
-Vấn đề	Gợi ý
-Validate form tự viết ở mỗi chỗ	Dùng react-hook-form + zod
-alert() scattered	Dùng react-hot-toast
-Không có error boundary	Thêm error.tsx mỗi route segment
-Không có accessibility	Thêm aria-label cho buttons/icons
-🟢 Tính năng còn thiếu (nên có)
-Flow huỷ đặt chỗ + hoàn tiền rõ ràng
-Trang lịch trình (itinerary) sau thanh toán
-Multi-language (i18n) — hiện chỉ có tiếng Việt
-Lưu phương thức thanh toán yêu thích
-Tìm kiếm kết hợp (combo flight + hotel)
+# Hoặc dùng Cloudflare Tunnel
+cloudflared tunnel run <tunnel-name>
+```
+
+---
+
+## Cấu trúc thư mục
+
+```
+frontend/
+├── app/                    # Next.js App Router (routes)
+│   ├── (auth)/            # Login, register, forgot-password
+│   ├── flights/           # Tìm kiếm & đặt vé máy bay
+│   ├── hotels/            # Tìm kiếm & đặt khách sạn
+│   ├── buses/             # Tìm kiếm & đặt xe khách
+│   ├── trains/            # Tìm kiếm & đặt tàu hỏa
+│   ├── booking/           # Form thông tin hành khách
+│   ├── payment/           # Trang thanh toán
+│   ├── invoice/           # Hóa đơn xác nhận
+│   ├── profile/           # Tài khoản, ví, lịch sử đặt chỗ
+│   ├── travel-planner/    # Gợi ý hành trình AI
+│   └── admin/             # Quản trị viên
+├── components/            # React components tái sử dụng
+│   └── ui/               # UI primitives (button, input, modal...)
+├── services/              # Axios API service layer
+├── store/                 # Zustand stores (auth, booking, payment, toast)
+├── hooks/                 # Custom React hooks
+├── types/                 # TypeScript interfaces & types
+├── lib/                   # Axios instance, utilities
+└── styles/                # CSS modules per-page
+```
+
+---
+
+## Tính năng chính
+
+### Tìm kiếm & Đặt chỗ
+- Tìm kiếm chuyến bay một chiều / khứ hồi với bộ lọc nâng cao
+- Đặt phòng khách sạn theo ngày, lọc theo tiện nghi, giá, sao
+- Đặt vé xe khách và tàu hỏa
+- Hỗ trợ khách không cần đăng ký (guest checkout)
+
+### Thanh toán
+- **Ví VIVU**: Thanh toán bằng số dư nội bộ, cashback theo hạng thành viên
+- **QR Banking**: Tích hợp VietQR, tự động xác nhận qua webhook
+- Đếm ngược 15 phút, tự hủy đặt chỗ khi hết giờ
+
+### Tài khoản người dùng
+- Đăng nhập qua Google hoặc email/mật khẩu
+- Quản lý ví: nạp tiền, rút tiền, lịch sử giao dịch
+- Lịch sử đặt chỗ, đổi lịch, hủy chỗ
+- Hệ thống thành viên: Bronze → Silver → Gold → Diamond
+- Thông báo trong ứng dụng
+
+### AI & Personalization
+- **Travel Planner**: Gợi ý hành trình bằng Gemini AI theo sở thích
+- **Chatbot**: Trợ lý tích hợp hỗ trợ người dùng
+- Gợi ý dựa trên lịch sử đặt chỗ (NCF model)
+
+---
+
+## Scripts
+
+| Lệnh | Mô tả |
+|---|---|
+| `npm run dev` | Khởi động dev server |
+| `npm run build` | Build production |
+| `npm run start` | Chạy production server |
+| `npm run lint` | Kiểm tra lỗi ESLint |
+
+---
+
+## Biến môi trường — Tham khảo đầy đủ
+
+| Biến | Bắt buộc | Mô tả |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | Có | URL backend FastAPI |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Có | Google OAuth Client ID |
+| `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME` | Có | Cloudinary cloud name |
+| `NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET` | Có | Cloudinary upload preset |
+| `NEXT_PUBLIC_BANK_ID` | Có | Mã ngân hàng (ví dụ: MB, VCB) |
+| `NEXT_PUBLIC_BANK_ACCOUNT_NO` | Có | Số tài khoản nhận tiền |
+| `NEXT_PUBLIC_BANK_ACCOUNT_NAME` | Có | Tên chủ tài khoản |
+
+---
+
+## Thành viên nhóm
+
+- **Lê Hoàng An** — Frontend & AI Integration
+- **Nghĩa** — Backend & ML Model
+
+---
+
+## Tài liệu thêm
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — Thiết kế hệ thống chi tiết
+- [TECH_STACK.md](TECH_STACK.md) — Chi tiết công nghệ sử dụng
+- [SECURITY.md](SECURITY.md) — Bảo mật và xác thực

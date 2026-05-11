@@ -8,22 +8,16 @@ const axiosInstance = axios.create({
     },
 });
 
-// ✅ Đọc token từ đúng key của zustand persist
 function getToken(): string | null {
     if (typeof window === 'undefined') return null;
-
-    // Thử đọc từ auth-storage (zustand persist)
     try {
         const raw = localStorage.getItem('auth-storage');
         if (raw) {
             const parsed = JSON.parse(raw);
-            const token = parsed?.state?.token;
-            if (token) return token;
+            return parsed?.state?.token ?? null;
         }
     } catch { }
-
-    // Fallback: đọc từ key 'token' cũ
-    return localStorage.getItem('token');
+    return null;
 }
 
 axiosInstance.interceptors.request.use(

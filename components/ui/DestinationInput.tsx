@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { destinationService, Destination } from "@/services/detinationService";
+import { destinationService, Destination } from "@/services/destinationService";
 
 interface Props {
     value: string;

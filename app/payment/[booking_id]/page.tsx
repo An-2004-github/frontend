@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Image from "next/image";
+import { AxiosError } from "axios";
 import api from "@/lib/axios";
 import { useAuthStore } from "@/store/authStore";
 import { usePaymentStore } from "@/store/paymentStore";
@@ -110,8 +111,9 @@ export default function PaymentPage() {
             setPaid(true);
             setTimeout(() => router.push(`/invoice/${bookingId}`), 1800);
         } catch (err: unknown) {
-            const detail = (err as { response?: { data?: { detail?: string } } })
-                ?.response?.data?.detail;
+            const detail = (err instanceof AxiosError)
+                ? err.response?.data?.detail
+                : undefined;
             toast.error(detail || "Thanh toán thất bại, vui lòng thử lại");
         } finally {
             setPaying(false);

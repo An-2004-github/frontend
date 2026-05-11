@@ -8,9 +8,9 @@ import { toast } from "@/store/toastStore";
 
 const refreshWalletGlobal = () => useAuthStore.getState().refreshWallet();
 
-const BANK_ID    = "MB";
-const ACCOUNT_NO = "0944934501";
-const ACCOUNT_NAME = "LE HOANG AN";
+const BANK_ID    = process.env.NEXT_PUBLIC_BANK_ID!;
+const ACCOUNT_NO = process.env.NEXT_PUBLIC_BANK_ACCOUNT_NO!;
+const ACCOUNT_NAME = process.env.NEXT_PUBLIC_BANK_ACCOUNT_NAME!;
 
 /* ── Types ─────────────────────────────────────────────────── */
 interface BookingItem {
@@ -731,7 +731,7 @@ export default function BookingModifyModal({ booking, mode, onClose, onDone }: P
                             <div style={{ fontWeight: 600, marginBottom: "0.4rem" }}>🎫 Đổi hạng ghế cùng chuyến</div>
                             <div style={{ color: "#6b8cbf", fontSize: "0.82rem" }}>
                                 Giữ nguyên chuyến {entityType === "flight" ? "bay" : entityType === "bus" ? "xe" : "tàu"} hiện tại,
-                                chỉ thay đổi hạng ghế. Bấm "Xem hạng ghế" để chọn.
+                                chỉ thay đổi hạng ghế. Bấm &ldquo;Xem hạng ghế&rdquo; để chọn.
                             </div>
                         </div>
                     ) : (
